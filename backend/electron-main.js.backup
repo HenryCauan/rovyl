@@ -1,0 +1,899 @@
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  globalShortcut,
+  screen,
+  nativeImage,
+  Menu,
+  Tray,
+  shell,
+  dialog,
+} = require("electron");
+const path = require("path");
+const { exec, spawn } = require("child_process");
+const os = require("os");
+const fs = require("fs");
+
+const logFile = path.join(__dirname, "../diagnostic.log");
+const diagLog = (msg) => {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  fs.appendFileSync(logFile, line);
+};
+diagLog("Zenith Main Process Started");
+
+// Stability: Fix cache errors & GPU crashes & Window management
+app.commandLine.appendSwitch("disable-gpu-cache");
+app.commandLine.appendSwitch("disable-gpu-sandbox");
+app.commandLine.appendSwitch("no-sandbox");
+app.commandLine.appendSwitch("disable-gpu-rasterization");
+app.commandLine.appendSwitch("enable-zero-copy-dxgi-video");
+app.commandLine.appendSwitch("disable-features", "WindowOcclusionPrediction"); // Prevent window from being hidden by OS
+app.setPath("userData", path.join(os.tmpdir(), "zenith-radial-menu-cache"));
+
+// Remove default menus (File, Edit, etc.)
+Menu.setApplicationMenu(null);
+
+// High Priority for Global Inputs
+try {
+  os.setPriority(os.constants.priority.PRIORITY_HIGH);
+  console.log("Process priority set to HIGH");
+} catch (e) {
+  console.error("Failed to set priority:", e);
+}
+
+let mainWindow;
+const isDev = process.env.NODE_ENV === "development";
+
+// Game Mode Configuration Storage
+let gameModeConfig = {
+  enabled: false,
+  blockFullscreen: true,
+  blockedApps: "",
+};
+
+async function createWindow() {
+  const { width, height } = screen.getPrimaryDisplay().bounds;
+
+  const newWindow = new BrowserWindow({
+    width: 1280,
+    height: 800,
+    x: 100,
+    y: 100,
+    frame: true,
+    transparent: false,
+    alwaysOnTop: false,
+    skipTaskbar: false,
+    show: true,
+    fullscreen: false,
+    hasShadow: true,
+    icon: path.join(__dirname, "../public/icon.png"),
+    backgroundColor: "#ffffff",
+    webPreferences: {
+      preload: path.join(__dirname, "electron-preload.js"),
+      nodeIntegration: false,
+      contextIsolation: true,
+      devTools: true,
+      backgroundThrottling: false,
+    },
+  });
+
+  // Handle window close event to hide it to tray instead of quitting
+  newWindow.on("close", (event) => {
+    if (newWindow.isVisible()) {
+      event.preventDefault(); // Prevent actual close
+      newWindow.hide();
+      newWindow.setSkipTaskbar(true); // Ensure it's not in the taskbar when hidden
+    }
+  });
+
+  return new Promise((resolve) => {
+    newWindow.once("ready-to-show", () => {
+      // FIXED: Keep window visible instead of hiding
+      newWindow.show();
+      newWindow.focus();
+      console.log("Main window showed and focused");
+      resolve(newWindow);
+    });
+  });
+}
+
+function setupMainWindow(window) {
+  // Nível máximo de sobreposição
+  window.setAlwaysOnTop(true, "screen-saver", 1);
+
+  // Enviar eventos de janelamento para o React
+  window.on("maximize", () =>
+    window.webContents.send("window-state", "maximized"),
+  );
+  window.on("unmaximize", () =>
+    window.webContents.send("window-state", "windowed"),
+  );
+
+  if (isDev) {
+    console.log("DEBUG: Loading URL http://localhost:5173");
+    window.loadURL("http://localhost:5173");
+  } else {
+    console.log("DEBUG: Loading file " + path.join(__dirname, "../dist/index.html"));
+    window.loadFile(path.join(__dirname, "../dist/index.html"));
+  }
+
+  // Add error handling
+  window.webContents.on("did-fail-load", (event, errorCode, errorDescription) => {
+    diagLog(`Renderer Failed to Load: Code ${errorCode} - ${errorDescription}`);
+    console.error(`DEBUG: Failed to load content: ${errorCode} - ${errorDescription}`);
+  });
+
+  window.webContents.on("crashed", (event, killed) => {
+    diagLog(`Renderer process crashed. Killed: ${killed}`);
+    console.error(`DEBUG: Renderer process crashed. Killed: ${killed}`);
+  });
+
+  window.webContents.on("render-process-gone", (event, details) => {
+    diagLog(`Renderer process gone. Reason: ${details.reason}, Exit Code: ${details.exitCode}`);
+    console.error(`DEBUG: Renderer process gone. Reason: ${details.reason}, Exit Code: ${details.exitCode}`);
+  });
+
+  window.webContents.on("did-finish-load", () => {
+    diagLog("Renderer: Content finished loading successfully");
+    console.log("DEBUG: Content finished loading successfully");
+  });
+
+  // IPC handler for renderer process logs
+  ipcMain.on("renderer-log", (event, level, message, ...args) => {
+    diagLog(`RENDERER [${level.toUpperCase()}]: ${message} ${args.join(' ')}`);
+  });
+
+  // Open dev tools
+  window.webContents.openDevTools();
+
+  // DISABLED FOR DEBUG: window.setIgnoreMouseEvents(true, { forward: true });
+}
+
+function showMenuAtCursor() {
+  if (!mainWindow) return;
+
+  mainWindow.setSkipTaskbar(true); // Ensure radial menu is not in taskbar
+
+  // Optimistic show: make it visible immediately before heavy updates
+  mainWindow.setOpacity(1);
+  mainWindow.setIgnoreMouseEvents(false);
+  if (!mainWindow.isVisible()) mainWindow.show();
+
+  // Force overlay mode if not already
+  if (!mainWindow.isFullScreen()) {
+    updateWindowSize("fullscreen");
+  } else {
+    // Just ensure it's on top and focused if already fullscreen
+    // This avoids the 'grey flicker' of a full window reset
+    mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
+    mainWindow.focus();
+  }
+
+  const cursorPoint = screen.getCursorScreenPoint();
+  mainWindow.webContents.send("open-menu", {
+    x: cursorPoint.x,
+    y: cursorPoint.y,
+  });
+}
+
+function updateWindowSize(mode) {
+  if (!mainWindow) return;
+
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width, height } = primaryDisplay.bounds;
+
+  if (mode === "fullscreen") {
+    if (!mainWindow.isFullScreen()) {
+      mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
+      mainWindow.setResizable(true);
+      mainWindow.setFullScreen(true);
+      mainWindow.setBounds({ x: 0, y: 0, width, height });
+    }
+    mainWindow.setIgnoreMouseEvents(false);
+  } else if (mode === "windowed") {
+    if (mainWindow.isFullScreen()) {
+      mainWindow.setFullScreen(false);
+    }
+    mainWindow.setResizable(true);
+    mainWindow.setSize(1280, 800);
+    mainWindow.center();
+    mainWindow.setAlwaysOnTop(false);
+    mainWindow.setIgnoreMouseEvents(false);
+    mainWindow.setOpacity(1);
+    if (!mainWindow.isVisible()) mainWindow.show();
+  } else if (mode === "small") {
+    if (mainWindow.isFullScreen()) {
+      mainWindow.setFullScreen(false);
+    }
+    mainWindow.setIgnoreMouseEvents(true, { forward: true });
+    mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
+    // Keep it large/fullscreen but transparent and ignore mouse to avoid resize flashes
+    // We use setBounds to ensure it covers the whole screen even if not "fullscreen" mode
+    mainWindow.setBounds({ x: 0, y: 0, width, height });
+    mainWindow.setOpacity(1);
+  }
+}
+
+// Function to check if a specific process is running (Basic implementation)
+const isProcessRunning = (processNames) => {
+  return new Promise((resolve) => {
+    const platform = process.platform;
+    let cmd = "";
+
+    // Normalize input list
+    const targets = processNames
+      .toLowerCase()
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    if (targets.length === 0) {
+      resolve(false);
+      return;
+    }
+
+    if (platform === "win32") {
+      cmd = "tasklist /FO CSV";
+    } else {
+      cmd = "ps -ax -o comm";
+    }
+
+    exec(cmd, (err, stdout, stderr) => {
+      if (err) {
+        resolve(false);
+        return;
+      }
+
+      const output = stdout.toLowerCase();
+      const isRunning = targets.some((target) => output.includes(target));
+      resolve(isRunning);
+    });
+  });
+};
+
+// Main function to decide if we should open
+const shouldOpenMenu = async () => {
+  if (!gameModeConfig.enabled) return true;
+
+  // 1. Check Fullscreen (Placeholder logic - requires native dependency 'active-win' for accurate results)
+  // For this simulated environment, we skip the actual fullscreen check or user has to add native logic.
+  // if (gameModeConfig.blockFullscreen) { /* check active-win */ }
+
+  // 2. Check Blocked Apps
+  if (gameModeConfig.blockedApps && gameModeConfig.blockedApps.length > 0) {
+    const isRunning = await isProcessRunning(gameModeConfig.blockedApps);
+    if (isRunning) {
+      console.log("Zenith blocked: Game/Focus mode active.");
+      return false;
+    }
+  }
+
+  return true;
+};
+
+let tray = null;
+
+app.whenReady().then(async () => {
+  mainWindow = await createWindow();
+  setupMainWindow(mainWindow);
+
+  // Configurar Ícone na Bandeja (Tray)
+  const iconPath = path.join(__dirname, "../public/icon.png");
+  try {
+    const trayIcon = nativeImage
+      .createFromPath(iconPath)
+      .resize({ width: 16, height: 16 });
+    tray = new Tray(trayIcon);
+    const contextMenu = Menu.buildFromTemplate([
+      {
+        label: "Abrir Dashboard Zenith",
+        click: async () => {
+          if (!mainWindow || mainWindow.isDestroyed()) {
+            mainWindow = await createWindow(); // Await the creation
+            setupMainWindow(mainWindow); // Setup the newly created window
+          }
+          mainWindow.show();
+          mainWindow.setSkipTaskbar(false); // Make it appear in the taskbar
+          mainWindow.focus();
+          mainWindow.webContents.send("open-dashboard");
+        },
+      },
+      { type: "separator" },
+      { label: "Sair", click: () => app.quit() },
+    ]);
+    tray.setToolTip("Zenith Radial Menu");
+    tray.setContextMenu(contextMenu);
+
+    // Feedback de início
+    console.log("Zenith iniciado com sucesso em background.");
+  } catch (err) {
+    console.error("Erro ao criar tray icon:", err);
+  }
+
+  // 1. Atalho Alt+Z (Principal)
+  const registered = globalShortcut.register("Alt+Z", async () => {
+    console.log("Alt+Z shortcut triggered");
+    const allowed = await shouldOpenMenu();
+    if (!allowed) return;
+    showMenuAtCursor();
+  });
+  console.log("Alt+Z shortcut registered:", registered);
+
+  // 2. PowerShell Mouse Hook para Botão do Meio (MMB) - Versão simplificada
+  // 2. PowerShell Mouse Hook (C# Low Level Hook) for Global Reliability
+  // Using SetWindowsHookEx(WH_MOUSE_LL) to capture events regardless of focus
+  // const psScript = `
+  //   Add-Type -TypeDefinition @" 
+  //   using System;
+  //   using System.Runtime.InteropServices;
+  //   using System.Diagnostics; 
+    
+  //   public class MouseHook {
+  //       public delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+  //       [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+  //       public static extern IntPtr SetWindowsHookEx(int idHook, LowLevelMouseProc lpfn, IntPtr hMod, uint dwThreadId);
+
+  //       [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+  //       [return: MarshalAs(UnmanagedType.Bool)]
+  //       public static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+  //       [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+  //       public static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+  //       [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+  //       public static extern IntPtr GetModuleHandle(string lpModuleName);
+        
+  //       [DllImport("user32.dll")]
+  //       public static extern bool GetMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+
+  //       [DllImport("user32.dll")]
+  //       public static extern bool TranslateMessage([In] ref MSG lpMsg);
+
+  //       [DllImport("user32.dll")]
+  //       public static extern IntPtr DispatchMessage([In] ref MSG lpMsg);
+
+  //       [StructLayout(LayoutKind.Sequential)]
+  //       public struct MSG {
+  //           public IntPtr hwnd;
+  //           public uint message;
+  //           public IntPtr wParam;
+  //           public IntPtr lParam;
+  //           public uint time;
+  //           public POINT pt;
+  //       }
+
+  //       [StructLayout(LayoutKind.Sequential)]
+  //       public struct POINT {
+  //           public int x;
+  //           public int y;
+  //       }
+
+  //       private const int WH_MOUSE_LL = 14;
+  //       private const int WM_MBUTTONDOWN = 0x0207;
+  //       private const int WM_MBUTTONUP = 0x0208;
+        
+  //       private static LowLevelMouseProc _proc = HookCallback;
+  //       private static IntPtr _hookID = IntPtr.Zero;
+
+  //       public static void Start() {
+  //           _hookID = SetHook(_proc);
+  //           MSG msg;
+  //           while (GetMessage(out msg, IntPtr.Zero, 0, 0)) {
+  //               TranslateMessage(ref msg);
+  //               DispatchMessage(ref msg);
+  //           }
+  //           UnhookWindowsHookEx(_hookID);
+  //       }
+
+  //       private static IntPtr SetHook(LowLevelMouseProc proc) {
+  //           using (Process curProcess = Process.GetCurrentProcess())
+  //           using (ProcessModule curModule = curProcess.MainModule) {
+  //               return SetWindowsHookEx(WH_MOUSE_LL, proc, GetModuleHandle(curModule.ModuleName), 0);
+  //           }
+  //       }
+
+  //       private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam) {
+  //           if (nCode >= 0) {
+  //               if (wParam == (IntPtr)WM_MBUTTONDOWN) {
+  //                    Console.WriteLine("MIDDLE_DOWN");
+  //               }
+  //               if (wParam == (IntPtr)WM_MBUTTONUP) {
+  //                    Console.WriteLine("MIDDLE_UP");
+  //               }
+  //           }
+  //           return CallNextHookEx(_hookID, nCode, wParam, lParam);
+  //       }
+  //   }
+  //   "@
+  //   [MouseHook]::Start()
+  // `;
+
+  // const mouseHook = spawn("powershell", ["-Command", psScript]);
+
+  // let middleHoldTimer = null;
+  // const HOLD_THRESHOLD_MS = 200; // Tempo necessário para considerar "segurar" 
+
+  // mouseHook.stdout.on("data", async (data) => {
+  //   const lines = data.toString().split(/\\r?\\n/);
+  //   for (const line of lines) {
+  //     const msg = line.trim();
+
+  //     if (msg === "MIDDLE_DOWN") {
+  //       // Iniciar timer de hold
+  //       if (!middleHoldTimer) {
+  //         middleHoldTimer = setTimeout(async () => {
+  //           const allowed = await shouldOpenMenu();
+  //           if (allowed) showMenuAtCursor();
+  //           middleHoldTimer = null; // Reset após disparar
+  //         }, HOLD_THRESHOLD_MS);
+  //       }
+  //     } else if (msg === "MIDDLE_UP") {
+  //       // Se soltou antes do tempo, cancela o timer (foi só um clique normal)
+  //       if (middleHoldTimer) {
+  //         clearTimeout(middleHoldTimer);
+  //         middleHoldTimer = null;
+  //         // Opcional: Enviar evento "click" para o app se quiser tratar clique rápido
+  //         mainWindow.webContents.send("mouse-up");
+  //       }
+  //     }
+  //   }
+  // });
+
+  // mouseHook.on("error", (err) => console.error("Mouse Hook Error:", err));
+});
+
+// IPC: Selecionar Arquivo (.exe)
+ipcMain.handle("select-file", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openFile"],
+    filters: [
+      { name: "Executables", extensions: ["exe", "lnk", "bat", "cmd"] },
+      { name: "All Files", extensions: ["*"] },
+    ],
+  });
+  return result.canceled ? null : result.filePaths[0];
+});
+
+// IPC: Recebe atualização de configuração do Game Mode
+ipcMain.on("set-game-mode", (event, config) => {
+  gameModeConfig = config;
+});
+
+// Helper function to escape command strings for Windows
+// Helper to resolve Shell Folder GUIDs (like {7C5A40EF...}) to real paths
+const resolveShellPath = (cmd) => {
+  if (!cmd || typeof cmd !== "string") return cmd;
+
+  // Common Windows Known Folder GUIDs
+  const guidMap = {
+    "{7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}":
+      process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)",
+    "{6D809371-213E-4545-97F7-7977F5C0D49C}":
+      process.env["ProgramFiles"] || "C:\\Program Files",
+    "{F38BF404-1D43-42F2-9305-67DE0B28FC23}":
+      process.env["SystemRoot"] || "C:\\Windows",
+    "{D65231B0-B2F1-4857-A4CE-A8E7C6EA7D27}": path.join(
+      process.env["SystemRoot"] || "C:\\Windows",
+      "System32",
+    ),
+    "{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}": path.join(
+      process.env["SystemRoot"] || "C:\\Windows",
+      "System32",
+    ),
+  };
+
+  let resolved = cmd;
+  for (const [guid, p] of Object.entries(guidMap)) {
+    if (resolved.includes(guid)) {
+      resolved = resolved.replace(guid, p);
+    }
+  }
+
+  // Also handle environment variables if they slipped in (e.g. %SystemRoot%)
+  resolved = resolved.replace(/%([^%]+)%/g, (_, n) => process.env[n] || _);
+
+  return resolved;
+};
+
+// Helper function to escape command strings for Windows
+const escapeCommand = (cmd) => {
+  // If it's a GUID/AUMID (contains ! or is wrapped in {}), don't escape for common paths
+  // but we might need quotes if it contains spaces
+  if (cmd.includes("!") || (cmd.startsWith("{ ") && cmd.includes("}"))) {
+    if (cmd.includes(" ") && !cmd.startsWith("\"")) {
+      return `"${cmd}"`;
+    }
+    return cmd;
+  }
+  // If it's a URL, don't escape
+  if (cmd.match(/^https?:\/\//i) || cmd.match(/^(steam|discord|spotify):/i)) {
+    return cmd;
+  }
+  // For file paths with spaces, ensure they're properly quoted
+  if (cmd.includes(" ") && !cmd.startsWith("\"")) {
+    return `"${cmd}"`;
+  }
+  return cmd;
+};
+
+// IPC: Recebe comando do React para executar app
+ipcMain.on("execute-command", async (event, command, commandType) => {
+  if (!command || typeof command !== "string" || command.trim() === "") {
+    console.warn("EXEC_ERROR: Received empty or invalid command");
+    if (mainWindow) {
+      mainWindow.webContents.send(
+        "execution-error",
+        "Comando vazio ou inválido",
+      );
+    }
+    return;
+  }
+
+  const trimmedCommand = command.trim();
+  console.log(`\n========================================`);
+  console.log(`EXEC_START: Attempting to launch`);
+  console.log(`Command: "${trimmedCommand}"`);
+  console.log(`Length: ${trimmedCommand.length} chars`);
+  console.log(`Command Type: ${commandType}`);
+  console.log(`========================================\n`);
+
+  const tryExecution = (method, cmd) => {
+    return new Promise((resolve, reject) => {
+      console.log(`  → [${method}] Trying...`);
+      let execCmd;
+      switch (method) {
+        case "shell.openExternal":
+          shell
+            .openExternal(cmd)
+            .then(() => {
+              console.log(`  ✓ [${method}] Success!`);
+              resolve(true);
+            })
+            .catch((err) => {
+              console.log(`  ✗ [${method}] Failed: ${err.message}`);
+              reject(err);
+            });
+          break;
+        case "shell.openPath":
+          shell.openPath(cmd).then((errMsg) => {
+            if (errMsg) {
+              console.log(`  ✗ [${method}] Failed: ${errMsg}`);
+              reject(new Error(errMsg));
+            } else {
+              console.log(`  ✓ [${method}] Success!`);
+              resolve(true);
+            }
+          });
+          break;
+        case "exec_start":
+          execCmd = `start "" ${escapeCommand(cmd)}`;
+          console.log(`  → [${method}] Running: ${execCmd}`);
+          exec(execCmd, (err, stdout, stderr) => {
+            if (err) {
+              console.log(`  ✗ [${method}] Failed: ${err.message}`);
+              if (stderr) console.log(`  stderr: ${stderr}`);
+              reject(err);
+            } else {
+              console.log(`  ✓ [${method}] Success!`);
+              if (stdout) console.log(`  stdout: ${stdout}`);
+              resolve(true);
+            }
+          });
+          break;
+        case "exec_explorer_shell":
+          // Use 'start shell:AppsFolder\ID' which is the Windows native way to launch
+          // both AUMIDs and Shell Namespace items (GUIDs).
+          // We wrap the path in quotes to handle spaces correctly.
+          const shellPath = `shell:AppsFolder\${cmd}`;
+          execCmd = `start "" "${shellPath}"`;
+          console.log(`  → [${method}] Running: ${execCmd}`);
+          exec(execCmd, (err, stdout, stderr) => {
+            if (err) {
+              console.log(`  ✗ [${method}] Failed: ${err.message}`);
+              if (stderr) console.log(`  stderr: ${stderr}`);
+              reject(err);
+            } else {
+              console.log(`  ✓ [${method}] Success!`);
+              resolve(true);
+            }
+          });
+          break;
+        case "exec_direct":
+          execCmd = `cmd.exe /c ${cmd}`;
+          console.log(`  → [${method}] Running: ${execCmd}`);
+          exec(execCmd, (err, stdout, stderr) => {
+            if (err) {
+              console.log(`  ✗ [${method}] Failed: ${err.message}`);
+              if (stderr) console.log(`  stderr: ${stderr}`);
+              reject(err);
+            } else {
+              console.log(`  ✓ [${method}] Success!`);
+              if (stdout) console.log(`  stdout: ${stdout}`);
+              resolve(true);
+            }
+          });
+          break;
+        default:
+          reject(new Error(`Unknown method: ${method}`));
+      }
+    });
+  };
+
+  try {
+    if (commandType === "url") {
+      console.log("  → Detected: Explicit URL (from commandType)");
+      await tryExecution("shell.openExternal", trimmedCommand);
+      console.log(
+        `\n✓✓✓ EXEC_SUCCESS: Launched URL with 'shell.openExternal' ✓✓✓\n`,
+      );
+      return; // Exit early if it's explicitly a URL
+    }
+
+    // Determine the best method based on command type
+    let methodsToTry = [];
+
+    // GUID/AUMID detection (Shell Namespace / UWP apps)
+    // Steam uses GUIDs like {7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\Steam\Steam.exe
+    // WhatsApp uses AUMIDs like 5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App
+    const isShellApp =
+      trimmedCommand.startsWith("{ ") ||
+      trimmedCommand.includes("!") ||
+      (trimmedCommand.includes(".") &&
+        !trimmedCommand.match(/\.(exe|lnk|bat|cmd)$/i) &&
+        !trimmedCommand.includes("\\") &&
+        !trimmedCommand.includes("/"));
+
+    // File path detection (.exe, .lnk, etc)
+    const isExplicitFile = 
+      trimmedCommand.includes("\\") || trimmedCommand.includes("/");
+    const isExe = trimmedCommand.toLowerCase().endsWith(".exe");
+
+    if (isShellApp) {
+      console.log("  → Detected: Shell App (GUID or AUMID)");
+      // For Shell apps, shell:AppsFolder is the primary method
+      methodsToTry = [
+        "exec_explorer_shell",
+        "shell.openExternal",
+        "exec_start",
+      ];
+    }
+    // URL detection
+    else if (
+      trimmedCommand.match(/^https?:\/\//i) ||
+      trimmedCommand.match(/^(steam|discord|spotify):/i)
+    ) {
+      console.log("  → Detected: URL/Protocol");
+      methodsToTry = ["shell.openExternal", "exec_start"];
+    }
+    // Commands starting with "start " (Windows shell commands)
+    else if (trimmedCommand.toLowerCase().startsWith("start ")) {
+      console.log("  → Detected: Windows 'start' command");
+      methodsToTry = ["exec_direct", "exec_start"];
+    }
+    // Executable file detection
+    else if (trimmedCommand.match(/\.(exe|lnk|bat|cmd)$/i) || isExplicitFile) {
+      console.log("  → Detected: Executable file");
+      methodsToTry = ["shell.openPath", "exec_start", "exec_direct"];
+    }
+    // Simple command / Alias (like "notepad", "calc", "MSEdge", "chrome")
+    else {
+      console.log("  → Detected: Simple command or Alias");
+      // Add 'exec_explorer_shell' as a final fallback for aliases that might be Shell AppIDs
+      methodsToTry = [
+        "exec_start",
+        "exec_direct",
+        "shell.openPath",
+        "exec_explorer_shell",
+      ];
+    }
+
+    // Try each method in order
+    let lastError = null;
+    for (const method of methodsToTry) {
+      try {
+        await tryExecution(method, trimmedCommand);
+        console.log(`\n✓✓✓ EXEC_SUCCESS: Launched with '${method}' ✓✓✓\n`);
+        return; // Success! Exit early
+      } catch (err) {
+        lastError = err;
+        // Continue to next method
+      }
+    }
+
+    // If we get here, all methods failed
+    const finalError = `Falha ao executar "${trimmedCommand.substring(0, 50)}${trimmedCommand.length > 50 ? "..." : ""}". Erro: ${lastError?.message || "Desconhecido"}`;
+    console.error(`\n✗✗✗ EXEC_ABORT: ${finalError} ✗✗✗\n`);
+    if (mainWindow) {
+      mainWindow.webContents.send("execution-error", finalError);
+    }
+  } catch (err) {
+    const finalError = `Erro inesperado ao executar comando: ${err.message}`;
+    console.error(`\n✗✗✗ EXEC_ABORT: ${finalError} ✗✗✗\n`);
+    if (mainWindow) {
+      mainWindow.webContents.send("execution-error", finalError);
+    }
+  }
+});
+
+// IPC: Recebe comando para esconder janela
+// IPC: Recebe comando para esconder janela
+ipcMain.on("hide-window", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return; // Do nothing if the window is not available
+  }
+  mainWindow.setIgnoreMouseEvents(true, { forward: true });
+  // Ensure the window is not in the taskbar when hidden/transparent
+  mainWindow.setSkipTaskbar(true);
+  // Instead of actual hiding (which removes from composition and takes time to restore), 
+  // we just make it fully transparent. This makes "showing" it later instant.
+  // mainWindow.hide();
+  mainWindow.setOpacity(0);
+
+  // Optional: Blur to release focus back to previous app immediately
+  mainWindow.blur();
+});
+
+// IPC: Show Window explicitly
+ipcMain.on("show-window", () => {
+  if (mainWindow) {
+    mainWindow.show();
+    mainWindow.focus();
+  }
+});
+
+// IPC: Toggle Window Size
+ipcMain.on("set-window-size", (event, mode) => {
+  updateWindowSize(mode);
+});
+
+// IPC: Window Controls
+ipcMain.on("minimize-window", () => {
+  if (mainWindow) {
+    mainWindow.hide();
+    mainWindow.setSkipTaskbar(true); // Send to tray
+  }
+});
+
+ipcMain.on("toggle-maximize", () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMaximized()) {
+    mainWindow.unmaximize();
+  } else {
+    mainWindow.maximize();
+  }
+});
+
+ipcMain.on("quit-app", () => {
+  app.quit();
+});
+
+// IPC: Get File Icon
+ipcMain.handle("get-file-icon", async (event, filePath) => {
+  try {
+    if (!filePath || typeof filePath !== "string") return null;
+
+    // Special case for Explorer
+    if (filePath === "Microsoft.Windows.Explorer") {
+      const explorerPath = path.join(
+        process.env["SystemRoot"] || "C:\\Windows",
+        "explorer.exe",
+      );
+      const icon = await app.getFileIcon(explorerPath, { size: "large" });
+      return icon.toDataURL();
+    }
+
+    // Resolve shell IDs and environment variables
+    let resolvedPath = resolveShellPath(filePath);
+
+    // Clean-up: Remove quotes if and only if it's a path
+    resolvedPath = resolvedPath.replace(/['"]/g, "");
+
+    // For UWP/AUMIDs (containing !), getFileIcon won't work directly.
+    // However, some AUMIDs correspond to folders.
+    // If it doesn't look like a real path, we return null or a generic icon.
+    if (!resolvedPath.includes("\\ ") && !resolvedPath.includes("/")) {
+      // It's a simple alias or a non-path AUMID
+      return null;
+    }
+
+    const icon = await app.getFileIcon(resolvedPath, { size: "large" });
+    return icon.toDataURL(); // Returns base64 image string
+  } catch (error) {
+    // Silently fail for icons to avoid console spam in selector
+    return null;
+  }
+});
+
+ipcMain.handle("get-installed-apps", async () => {
+  return new Promise((resolve) => {
+    const { exec } = require("child_process");
+
+    // Get-StartApps is much faster and reliable on Win 10/11
+    // It returns both Win32 (as paths) and UWP (as AUMIDs)
+    const psScript = `
+      $ErrorActionPreference = 'SilentlyContinue';
+      try {
+        $apps = Get-StartApps | Where-Object { $_.Name -and $_.AppID -and $_.Name -notmatch 'Help|Feedback|Contact|Support|Manual' } | Select-Object Name, AppID;
+        $results = @();
+        foreach ($app in $apps) {
+          $path = $app.AppID;
+          $iconPath = $path;
+          if ($path -match '!') { $iconPath = '' };
+          $results += [PSCustomObject]@{ 
+            Name = [string]$app.Name; 
+            DisplayName = [string]$app.Name; 
+            Path = [string]$app.AppID; 
+            IconPath = [string]$iconPath;
+          };
+        }
+        $results | ConvertTo-Json -Compress
+      } catch {
+        "[]"
+      }
+    `.replace(/#.*$/gm, "");
+
+    const command = `powershell -NoProfile -ExecutionPolicy Bypass -Command "${psScript
+      .replace(/"/g, '\\"')
+      .replace(/[\r\n]+/g, " ")
+      .trim()}"`;
+
+    exec(command, { maxBuffer: 1024 * 1024 * 50 }, (error, stdout) => {
+      if (error && !stdout) {
+        console.error("Scanner failed:", error);
+        resolve([]);
+        return;
+      }
+      try {
+        const apps = JSON.parse(stdout);
+        const appList = (Array.isArray(apps) ? apps : [apps]).filter(
+          (a) => a && a.Path && a.Name,
+        );
+        // Scanner found ${appList.length} valid apps
+        resolve(appList);
+      } catch (e) {
+        console.error("Parse error:", e);
+        console.debug("Raw scanner output:", stdout);
+        resolve([]);
+      }
+    });
+  });
+});
+
+// SYSTEM CONTROLS IPC
+const systemControl = require("./system-control");
+
+ipcMain.handle("get-volume", async () => {
+  return systemControl.getVolume();
+});
+
+ipcMain.on("set-volume", async (event, level) => {
+  systemControl.setVolume(level);
+});
+
+ipcMain.handle("get-brightness", async () => {
+  return systemControl.getBrightness();
+});
+
+ipcMain.on("set-brightness", async (event, level) => {
+  systemControl.setBrightness(level);
+});
+
+ipcMain.handle("toggle-bluetooth", async (event, enabled) => {
+  return systemControl.toggleBluetooth(enabled);
+});
+
+ipcMain.handle("toggle-wifi", async (event, enabled) => {
+  return systemControl.toggleWifi(enabled);
+});
+
+app.on("window-all-closed", (e) => {
+  // Prevent app from quitting when all windows are closed
+  // This ensures the app continues to run in the tray
+  e.preventDefault();
+});
+
+app.on("will-quit", () => {
+  globalShortcut.unregisterAll();
+});

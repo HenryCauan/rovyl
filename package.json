@@ -1,0 +1,52 @@
+{
+  "name": "zenith-radial-menu",
+  "private": true,
+  "version": "1.0.0",
+  "main": "backend/electron-main.js",
+  "author": "Seu Nome",
+  "description": "Menu Radial Zenith",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "electron": "wait-on tcp:5173 && cross-env NODE_ENV=development node scripts/launch-electron.js",
+    "start": "concurrently -k \"npm run dev\" \"npm run electron\"",
+    "dist": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "active-win": "^8.2.1",
+    "framer-motion": "^10.16.4",
+    "loudness": "^0.4.2",
+    "lucide-react": "^0.292.0",
+    "node-global-key-listener": "^0.3.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.37",
+    "@types/react-dom": "^18.2.15",
+    "@vitejs/plugin-react": "^4.2.0",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^28.3.3",
+    "electron-builder": "^24.9.1",
+    "typescript": "^5.2.2",
+    "vite": "^5.0.0",
+    "wait-on": "^7.1.0"
+  },
+  "build": {
+    "appId": "com.seu.zenith",
+    "productName": "Zenith OS",
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "resources/bin/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "public/icon.ico"
+    }
+  }
+}
