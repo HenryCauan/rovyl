@@ -15,25 +15,25 @@ const { exec, spawn } = require("child_process");
 const os = require("os");
 const fs = require("fs");
 
-const logFile = path.join(__dirname, "../diagnostic.log");
-const diagLog = (msg) => {
-  const line = `[${new Date().toISOString()}] ${msg}\n`;
-  fs.appendFileSync(logFile, line);
-};
-// Global Error Handling - CRITICAL FOR STARTUP DIAGNOSTICS
-process.on("uncaughtException", (error) => {
-  const msg = `CRITICAL STARTUP ERROR: ${error.stack || error.message}\n`;
-  console.error(msg);
-  try {
-    fs.appendFileSync(logFile, `[${new Date().toISOString()}] ${msg}`);
-  } catch (e) {
-    // Fallback if log file fails
-    console.error("Failed to write to log file:", e);
-  }
-  // Keep process alive if possible for debugging, or exit gracefully
-  // process.exit(1);
-});
+const isDev = process.env.NODE_ENV === "development";
+// In production, log to userData folder which is writable, unlike the asar archive
+const logDir = isDev
+  ? path.join(__dirname, "..")
+  : path.join(os.tmpdir(), "zenith-radial-menu-cache");
+const logFile = path.join(logDir, "diagnostic.log");
 
+const diagLog = (msg) => {
+  try {
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+    const line = `[${new Date().toISOString()}] ${msg}\n`;
+    fs.appendFileSync(logFile, line);
+  } catch (e) {
+    // Fail silently in production if logging fails to prevent app crash
+    console.error("Failed to write to diagnostic log:", e);
+  }
+};
 diagLog("Zenith Main Process Started");
 
 // Stability: Fix cache errors & GPU crashes & Window management
@@ -41,8 +41,11 @@ app.commandLine.appendSwitch("disable-gpu-cache");
 app.commandLine.appendSwitch("disable-gpu-sandbox");
 app.commandLine.appendSwitch("no-sandbox");
 app.commandLine.appendSwitch("disable-gpu-rasterization");
-app.commandLine.appendSwitch("enable-zero-copy-dxgi-video");
+app.commandLine.appendSwitch("enable-zero-copy-dxgi-video"); // Optimiza vídeo
 app.commandLine.appendSwitch("disable-features", "WindowOcclusionPrediction"); // Prevent window from being hidden by OS
+
+// Fix Taskbar Icon Grouping
+app.setAppUserModelId("com.henry.zenith"); // AUMID explicitly set
 app.setPath("userData", path.join(os.tmpdir(), "zenith-radial-menu-cache"));
 
 // Remove default menus (File, Edit, etc.)
@@ -57,7 +60,7 @@ try {
 }
 
 let mainWindow;
-const isDev = process.env.NODE_ENV === "development";
+let settingsWindow = null;
 
 // Game Mode Configuration Storage
 let gameModeConfig = {
@@ -74,19 +77,20 @@ async function createWindow() {
     height: 800,
     x: 100,
     y: 100,
-    frame: false,
+    frame: false, // Keep frameless for transparency
+    titleBarStyle: "hidden", // Hide default title bar but keep controls
+    titleBarOverlay: {
+      color: "#00000000", // Transparent background for controls
+      symbolColor: "#ffffff", // White symbols
+      height: 30,
+    },
     transparent: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    show: false, // Start hidden, only show when triggered
-    fullscreen: true, // Start fullscreen for overlay events? Or let logic handle it.
-    // actually, let's stick to the previous logic but transparent.
-    // The previous code had show: true. If I change to show: false, I might break logic that expects it visible.
-    // But a radial menu shouldn't be visible on boot usually?
-    // Let's set show: true but transparent.
-    // Wait, line 63 was frame: true.
-    hasShadow: false,
-    icon: path.join(__dirname, "../public/icon.svg"),
+    alwaysOnTop: false,
+    skipTaskbar: false,
+    show: false,
+    fullscreen: false,
+    hasShadow: true,
+    icon: path.join(__dirname, "../public/icon.png"),
     backgroundColor: "#00000000",
     webPreferences: {
       preload: path.join(__dirname, "electron-preload.js"),
@@ -106,17 +110,18 @@ async function createWindow() {
     }
   });
 
-  newWindow.once("ready-to-show", () => {
-    // FIXED: Keep window visible instead of hiding
-    // Only show if we intend to (e.g. not in 'show: false' mode), but for now ensure it's up.
-    // Actually, with transparency we might want to wait.
-    // But let's respect the logic:
-    newWindow.show();
-    newWindow.focus();
-    console.log("Main window showed and focused");
-  });
+  // Setup window content immediately to trigger loading -> ready-to-show
+  setupMainWindow(newWindow);
 
-  return newWindow;
+  return new Promise((resolve) => {
+    newWindow.once("ready-to-show", () => {
+      // Don't auto-show here to respect "start hidden" logic if desired,
+      // OR only show if not in "ghost" mode.
+      // For now, we only resolve. User can open via Tray or Shortcut.
+      console.log("Main window ready");
+      resolve(newWindow);
+    });
+  });
 }
 
 function setupMainWindow(window) {
@@ -184,7 +189,7 @@ function setupMainWindow(window) {
   // DISABLED FOR DEBUG: window.setIgnoreMouseEvents(true, { forward: true });
 }
 
-function showMenuAtCursor(options = {}) {
+function showMenuAtCursor(source = "shortcut") {
   if (!mainWindow) return;
 
   mainWindow.setSkipTaskbar(true); // Ensure radial menu is not in taskbar
@@ -208,7 +213,7 @@ function showMenuAtCursor(options = {}) {
   mainWindow.webContents.send("open-menu", {
     x: cursorPoint.x,
     y: cursorPoint.y,
-    source: options.source || "shortcut",
+    source: source, // 'mmb' or 'shortcut'
   });
 }
 
@@ -291,46 +296,17 @@ const isProcessRunning = (processNames) => {
 const shouldOpenMenu = async () => {
   if (!gameModeConfig.enabled) return true;
 
-  try {
-    // Dynamic import for active-win (ESM)
-    const { default: activeWindow } = await import("active-win");
-    const currentWindow = await activeWindow();
+  // 1. Check Fullscreen (Placeholder logic - requires native dependency 'active-win' for accurate results)
+  // For this simulated environment, we skip the actual fullscreen check or user has to add native logic.
+  // if (gameModeConfig.blockFullscreen) { /* check active-win */ }
 
-    if (currentWindow) {
-      // Mode: 'list' (Specific Apps)
-      if (gameModeConfig.mode === "list" || !gameModeConfig.mode) {
-        const blockedAppsVector = (gameModeConfig.blockedApps || "")
-          .toLowerCase()
-          .split(",")
-          .map((s) => s.trim())
-          .filter((s) => s.length > 0);
-
-        const currentExe = currentWindow.owner.name.toLowerCase();
-
-        if (blockedAppsVector.some((app) => currentExe.includes(app))) {
-          console.log(
-            `Game Mode: Blocked by specific app list (${currentExe})`,
-          );
-          return false;
-        }
-      }
-
-      // Mode: 'all' (Block All Fullscreen)
-      if (gameModeConfig.mode === "all") {
-        const { width, height } = screen.getPrimaryDisplay().bounds;
-        const winBounds = currentWindow.bounds;
-        // Simple heuristic: if window matches screen size (approx)
-        // Allow small margin of error? usually exact match works for F11/Fullscreen
-        if (winBounds.width >= width && winBounds.height >= height) {
-          console.log(
-            `Game Mode: Blocked by fullscreen app (${currentWindow.owner.name})`,
-          );
-          return false;
-        }
-      }
+  // 2. Check Blocked Apps
+  if (gameModeConfig.blockedApps && gameModeConfig.blockedApps.length > 0) {
+    const isRunning = await isProcessRunning(gameModeConfig.blockedApps);
+    if (isRunning) {
+      console.log("Zenith blocked: Game/Focus mode active.");
+      return false;
     }
-  } catch (e) {
-    console.error("Game Mode Check Failed:", e);
   }
 
   return true;
@@ -340,10 +316,9 @@ let tray = null;
 
 app.whenReady().then(async () => {
   mainWindow = await createWindow();
-  setupMainWindow(mainWindow);
 
   // Configurar Ícone na Bandeja (Tray)
-  const iconPath = path.join(__dirname, "../public/icon.svg");
+  const iconPath = path.join(__dirname, "../public/icon.png");
   try {
     const trayIcon = nativeImage
       .createFromPath(iconPath)
@@ -363,6 +338,17 @@ app.whenReady().then(async () => {
           mainWindow.webContents.send("open-dashboard");
         },
       },
+      {
+        label: "Abrir Configurações",
+        click: () => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.show();
+            mainWindow.setSkipTaskbar(false);
+            mainWindow.focus();
+            mainWindow.webContents.send("open-settings");
+          }
+        },
+      },
       { type: "separator" },
       { label: "Sair", click: () => app.quit() },
     ]);
@@ -375,174 +361,107 @@ app.whenReady().then(async () => {
     console.error("Erro ao criar tray icon:", err);
   }
 
-  // --- MMB Helper Process Integration ---
-  /* 
-  const binName = "zenith-mmb.exe";
-  // Em dev: resources/bin/zenith-mmb.exe (relative to project root)
-  // Em prod: resources/bin/zenith-mmb.exe (relative to app root resource path)
+  // Settings Management
+  const settingsPath = path.join(app.getPath("userData"), "settings.json");
+  let currentSettings = { globalShortcut: "Alt+Z" };
 
-  let mmbPath;
-  if (isDev) {
-    mmbPath = path.join(__dirname, "../resources/bin", binName);
-  } else {
-    // In production, resources are usually next to the executable or in resources folder
-    // checking generic electron builder structure
-    mmbPath = path.join(process.resourcesPath, "bin", binName);
-  }
-
-  console.log(`Checking for MMB Helper at: ${mmbPath}`);
-
-  if (fs.existsSync(mmbPath)) {
-    console.log("MMB Helper found. Spawning...");
-    const mmbProcess = spawn(mmbPath, [], { detached: false, stdio: "ignore" });
-
-    mmbProcess.on("error", (err) => {
-      console.error("Failed to start MMB Helper:", err);
-    });
-
-    mmbProcess.unref(); // Allow it to run independently if needed, but we want to close it with app
-
-    // Kill helper when app quits
-    app.on("will-quit", () => {
-      try {
-        console.log("Killing MMB Helper...");
-        mmbProcess.kill();
-      } catch (e) {
-        console.error("Error killing MMB Helper:", e);
-      }
-    });
-  } else {
-    console.warn("MMB Helper executable not found. Skipping auto-start.");
-  }
-  */
-  // --------------------------------------
-
-  // --------------------------------------
-
-  // --- Settings Persistence & Shortcuts ---
-  const settingsPath = path.join(app.getPath("userData"), "config.json");
-  let currentSettings = { globalShortcut: "Alt+Z" }; // Default
-
-  function loadSettings() {
+  const loadSettings = () => {
     try {
       if (fs.existsSync(settingsPath)) {
         const data = fs.readFileSync(settingsPath, "utf-8");
-        const loaded = JSON.parse(data);
-        // Merge with defaults if needed
-        currentSettings = { ...currentSettings, ...loaded };
-        console.log("Settings loaded:", currentSettings);
+        currentSettings = { ...currentSettings, ...JSON.parse(data) };
       }
     } catch (e) {
       console.error("Failed to load settings:", e);
     }
-  }
+  };
 
-  function saveSettings(settings) {
+  const saveSettings = (newSettings) => {
     try {
-      currentSettings = { ...currentSettings, ...settings };
+      currentSettings = { ...currentSettings, ...newSettings };
       fs.writeFileSync(settingsPath, JSON.stringify(currentSettings, null, 2));
-      console.log("Settings saved:", currentSettings);
     } catch (e) {
       console.error("Failed to save settings:", e);
     }
-  }
+  };
 
-  function registerShortcuts() {
-    globalShortcut.unregisterAll();
-
-    // 1. USER DEFINED SHORTCUT
-    const userShortcut = currentSettings.globalShortcut;
-    // Only register if valid
-    if (userShortcut && userShortcut.trim() !== "") {
-      try {
-        const user = globalShortcut.register(userShortcut, async () => {
-          console.log(`User Shortcut (${userShortcut}) triggered`);
-          const allowed = await shouldOpenMenu();
-          if (!allowed) return;
-          showMenuAtCursor({ source: "shortcut" });
-        });
-        console.log(`User Shortcut (${userShortcut}) registered:`, user);
-      } catch (e) {
-        console.error(`Failed to register user shortcut (${userShortcut}):`, e);
-      }
-    }
-  }
-
+  // Initial load
   loadSettings();
-  registerShortcuts();
 
-  // IPC Handlers for Settings
+  const registerGlobalShortcut = () => {
+    globalShortcut.unregisterAll();
+    const shortcut = currentSettings.globalShortcut || "Alt+Z";
+
+    try {
+      const registered = globalShortcut.register(shortcut, async () => {
+        console.log(`${shortcut} shortcut triggered`);
+        const allowed = await shouldOpenMenu();
+        if (!allowed) return;
+        showMenuAtCursor("shortcut");
+      });
+      console.log(`Global shortcut '${shortcut}' registered:`, registered);
+    } catch (e) {
+      console.error(`Failed to register shortcut '${shortcut}':`, e);
+    }
+  };
+
+  // Register initial shortcut
+  registerGlobalShortcut();
+
+  // IPC: Settings Handlers
   ipcMain.handle("get-settings", () => currentSettings);
+
   ipcMain.on("set-settings", (event, settings) => {
     saveSettings(settings);
-    registerShortcuts(); // Re-register immediately
+    if (settings.globalShortcut) {
+      registerGlobalShortcut();
+    }
   });
 
-  // --------------------------------------
+  // Open Settings Window Handler
+
+  // Helper to handle ASAR path for child processes
+  const getAssetPath = (relative) => {
+    const p = path.join(__dirname, relative);
+    return isDev ? p : p.replace("app.asar", "app.asar.unpacked");
+  };
 
   // 2. PowerShell Mouse Hook (C# Low Level Hook) for Global Reliability
-  // Using SetWindowsHookEx(WH_MOUSE_LL) to capture events regardless of focus
-
-  // Resolve path to script
-  const hookScript = "mouse-hook.ps1";
-  let hookPath;
-  if (isDev) {
-    hookPath = path.join(__dirname, hookScript);
-  } else {
-    // Determine prod path (likely in resources)
-    hookPath = path.join(process.resourcesPath, "backend", hookScript);
-    // Fallback if not in backend subdir
-    if (!fs.existsSync(hookPath)) {
-      hookPath = path.join(process.resourcesPath, hookScript);
-    }
-  }
-
-  console.log(`Starting Mouse Hook from: ${hookPath}`);
-
+  const psScriptPath = getAssetPath("mouse-hook.ps1");
+  diagLog(`Mouse Hook Path: ${psScriptPath}`);
   const mouseHook = spawn("powershell", [
-    "-NoProfile",
     "-ExecutionPolicy",
     "Bypass",
     "-File",
-    hookPath,
+    psScriptPath,
   ]);
 
-  let lastMmbClickTime = 0;
-  const DOUBLE_CLICK_THRESHOLD = 400; // ms
+  let middleHoldTimer = null;
+  const HOLD_THRESHOLD_MS = 100; // Reduced from 200ms for snappier response
 
   mouseHook.stdout.on("data", async (data) => {
-    const lines = data.toString().split(/\\r?\\n/);
+    const lines = data.toString().split(/\r?\n/);
     for (const line of lines) {
       const msg = line.trim();
 
       if (msg === "MIDDLE_DOWN") {
-        const now = Date.now();
-        if (now - lastMmbClickTime < DOUBLE_CLICK_THRESHOLD) {
-          // Double Click Detected
-          console.log("MMB Double Click -> Open Settings");
-          if (mainWindow) {
-            mainWindow.webContents.send("open-settings");
-            mainWindow.setSkipTaskbar(false);
-            mainWindow.focus();
-            mainWindow.show();
-          }
-        } else {
-          // Single Click (Potential Hold) -> Open Menu
-          const allowed = await shouldOpenMenu();
-          if (allowed) {
-            showMenuAtCursor({ source: "mmb" });
-          }
-        }
-        lastMmbClickTime = now;
+        // INSTANT OPEN: No checks, no delays.
+        showMenuAtCursor("mmb");
       } else if (msg === "MIDDLE_UP") {
-        if (mainWindow) {
+        if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send("mmb-release");
         }
       }
     }
   });
 
-  mouseHook.on("error", (err) => console.error("Mouse Hook Error:", err));
+  mouseHook.stderr.on("data", (data) => {
+    console.error(`MouseHook Error: ${data}`);
+  });
+
+  mouseHook.on("error", (err) =>
+    console.error("Mouse Hook Process Error:", err),
+  );
 });
 
 // IPC: Selecionar Arquivo (.exe)
@@ -632,14 +551,10 @@ ipcMain.on("execute-command", async (event, command, commandType) => {
     return;
   }
 
-  const rawCommand = command.trim();
-  // FIX: Resolve potential Shell Folder GUIDs (like {7C5A...}) into real paths before processing
-  const trimmedCommand = resolveShellPath(rawCommand);
-
+  const trimmedCommand = command.trim();
   console.log(`\n========================================`);
   console.log(`EXEC_START: Attempting to launch`);
-  console.log(`Command (Raw): "${rawCommand}"`);
-  console.log(`Command (Resolved): "${trimmedCommand}"`);
+  console.log(`Command: "${trimmedCommand}"`);
   console.log(`Length: ${trimmedCommand.length} chars`);
   console.log(`Command Type: ${commandType}`);
   console.log(`========================================\n`);

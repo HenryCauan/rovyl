@@ -45,7 +45,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
     };
 
     return (
-        <div className={`fixed inset-0 w-screen h-screen z-0 grid place-items-center p-8 select-none ${className || ''}`}>
+        <div className={`fixed inset-0 w-screen h-screen z-0 grid place-items-center p-8 select-none border-4 border-white/5 ${className || ''}`}>
 
             {/* BACKGROUND LAYERS */}
             <div className="absolute inset-0 z-[-1] pointer-events-none">
@@ -64,20 +64,20 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                 initial={{ scale: 0.9, opacity: 0, y: 30 }}
                 animate={{ scale: 1, opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, type: "spring", stiffness: 100 }}
-                className="relative z-10 w-[90%] max-w-lg bg-[#0A0A0A]/60 border border-white/10 rounded-xl shadow-[0_0_120px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col items-center text-center pointer-events-auto"
+                className="relative z-10 w-full sm:w-[90%] max-w-lg min-w-[300px] sm:min-w-[400px] max-h-[90vh] overflow-y-auto custom-scrollbar bg-[#0A0A0A]/80 backdrop-blur-xl border border-white/20 rounded-xl shadow-[0_0_120px_rgba(0,0,0,0.5)] flex flex-col items-center text-center pointer-events-auto"
             >
                 {/* Top Glow */}
                 <div className="absolute top-0 w-full h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
 
 
-                <div className="p-10 pb-8 flex flex-col items-center w-full">
+                <div className="p-6 sm:p-10 pb-8 flex flex-col items-center w-full">
                     {/* Logo */}
-                    <div className="w-20 h-20 bg-black rounded-2xl flex items-center justify-center mb-6 shadow-2xl overflow-hidden border border-white/10">
-                        <ZenithLogo size={80} />
+                    <div className="w-16 h-16 sm:w-20 sm:h-20 bg-black rounded-2xl flex items-center justify-center mb-6 shadow-2xl overflow-hidden border border-white/10">
+                        <ZenithLogo size={70} />
                     </div>
 
                     {/* Title */}
-                    <h1 className="text-4xl font-light tracking-[0.25em] text-white mb-2 pl-2">ZENITH</h1>
+                    <h1 className="text-3xl sm:text-4xl font-light tracking-[0.25em] text-white mb-2 pl-2">ZENITH</h1>
 
                     {/* Version Badge */}
                     <div className="flex items-center gap-2 bg-white/5 border border-white/5 rounded-full px-3 py-1 mb-6">
@@ -90,19 +90,27 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                 </div>
 
                 {/* Instructions Grid (HUD) */}
-                <div className="w-full bg-[#050505]/50 flex divide-x divide-white/5 border-t border-white/5">
-                    <div className="flex-1 p-6 flex flex-col items-center gap-3 group cursor-help transition-colors hover:bg-white/5">
+                <div className="w-full bg-[#050505]/50 grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-white/5 border-t border-white/5 overflow-hidden">
+                    <div className="p-4 sm:p-6 flex flex-col items-center gap-3 group cursor-help transition-colors hover:bg-white/5">
                         <div className="w-8 h-10 border border-white/20 rounded-t-lg rounded-b-sm relative flex justify-center pt-1.5 transition-colors group-hover:border-white/50">
                             <div className="w-1 h-3 bg-white/40 rounded-full" />
                         </div>
                         <span className="text-[9px] text-white/30 tracking-[0.2em] font-medium group-hover:text-white/60">LAUNCH</span>
                     </div>
-                    <div className="flex-1 p-6 flex flex-col items-center gap-3 group cursor-help transition-colors hover:bg-white/5">
+                    <div className="p-4 sm:p-6 flex flex-col items-center gap-3 group cursor-help transition-colors hover:bg-white/5">
                         <div className="w-8 h-10 border border-white/20 rounded-t-lg rounded-b-sm relative flex justify-center pt-1.5 transition-colors group-hover:border-white/50">
                             <div className="w-1 h-3 bg-white/40 rounded-full" />
                             <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 text-[7px] font-bold border border-white/20 px-1 rounded bg-black text-white/80">2x</div>
                         </div>
                         <span className="text-[9px] text-white/30 tracking-[0.2em] font-medium group-hover:text-white/60">CONFIG</span>
+                    </div>
+                    <div className="p-4 sm:p-6 flex flex-col items-center gap-3 group cursor-help transition-colors hover:bg-white/5">
+                        <div className="h-10 flex items-center justify-center gap-1">
+                            {[1, 2, 3].map(i => (
+                                <div key={i} className="w-6 h-6 rounded border border-white/20 flex items-center justify-center text-[10px] text-white/50 font-mono bg-white/5">{i}</div>
+                            ))}
+                        </div>
+                        <span className="text-[9px] text-white/30 tracking-[0.2em] font-medium group-hover:text-white/60">WORKSPACES</span>
                     </div>
                 </div>
             </motion.div>
@@ -112,9 +120,9 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                 initial={{ y: 50, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ delay: 0.3, duration: 0.5 }}
-                className="fixed bottom-12 pointer-events-auto"
+                className="fixed bottom-12 pointer-events-auto min-w-fit z-20"
             >
-                <div className="flex items-center gap-3 p-2 bg-[#0A0A0A]/60 border border-white/10 rounded-2xl shadow-2xl">
+                <div className="flex items-center gap-3 p-2 bg-[#0A0A0A]/60 border border-white/10 rounded-2xl shadow-2xl flex-wrap justify-center min-w-fit">
 
                     {/* Profile / Auth Button */}
                     <DockButton

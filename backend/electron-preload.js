@@ -5,11 +5,21 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.send("execute-command", command, commandType),
   hideWindow: () => ipcRenderer.send("hide-window"),
   showWindow: () => ipcRenderer.send("show-window"),
-  onOpenMenu: (callback) =>
-    ipcRenderer.on("open-menu", (event, data) => callback(data)),
-  onOpenDashboard: (callback) =>
-    ipcRenderer.on("open-dashboard", (event) => callback()),
-  onMouseUp: (callback) => ipcRenderer.on("mouse-up", (event) => callback()),
+  onOpenMenu: (callback) => {
+    const listener = (event, data) => callback(data);
+    ipcRenderer.on("open-menu", listener);
+    return () => ipcRenderer.removeListener("open-menu", listener);
+  },
+  onOpenDashboard: (callback) => {
+    const listener = (event) => callback();
+    ipcRenderer.on("open-dashboard", listener);
+    return () => ipcRenderer.removeListener("open-dashboard", listener);
+  },
+  onMouseUp: (callback) => {
+    const listener = (event) => callback();
+    ipcRenderer.on("mouse-up", listener);
+    return () => ipcRenderer.removeListener("mouse-up", listener);
+  },
   onMmbRelease: (callback) => {
     const listener = (event) => callback();
     ipcRenderer.on("mmb-release", listener);
@@ -22,16 +32,26 @@ contextBridge.exposeInMainWorld("electron", {
   },
   setWindowSize: (mode) => ipcRenderer.send("set-window-size", mode),
   setGameMode: (config) => ipcRenderer.send("set-game-mode", config),
+  setLoginItemSettings: (settings) =>
+    ipcRenderer.send("set-login-item-settings", settings),
   getFileIcon: (path) => ipcRenderer.invoke("get-file-icon", path),
-  onWindowState: (callback) =>
-    ipcRenderer.on("window-state", (event, state) => callback(state)),
+  onWindowState: (callback) => {
+    const listener = (event, state) => callback(state);
+    ipcRenderer.on("window-state", listener);
+    return () => ipcRenderer.removeListener("window-state", listener);
+  },
   minimizeWindow: () => ipcRenderer.send("minimize-window"),
   toggleMaximize: () => ipcRenderer.send("toggle-maximize"),
   quitApp: () => ipcRenderer.send("quit-app"),
   selectFile: () => ipcRenderer.invoke("select-file"),
+  selectImage: () => ipcRenderer.invoke("select-image"),
   getInstalledApps: () => ipcRenderer.invoke("get-installed-apps"),
-  onExecutionError: (callback) =>
-    ipcRenderer.on("execution-error", (event, errorMsg) => callback(errorMsg)),
+  onExecutionError: (callback) => {
+    const listener = (event, errorMsg) => callback(errorMsg);
+    ipcRenderer.on("execution-error", listener);
+    return () => ipcRenderer.removeListener("execution-error", listener);
+  },
+  relaunchApp: () => ipcRenderer.send("relaunch-app"),
   // System Controls
   getVolume: () => ipcRenderer.invoke("get-volume"),
   setVolume: (level) => ipcRenderer.send("set-volume", level),
@@ -42,6 +62,7 @@ contextBridge.exposeInMainWorld("electron", {
   // Settings
   getSettings: () => ipcRenderer.invoke("get-settings"),
   setSettings: (settings) => ipcRenderer.send("set-settings", settings),
+  openSettingsWindow: () => ipcRenderer.send("open-settings-window"),
 });
 
 // Intercept console messages from the renderer process and send them to the main process

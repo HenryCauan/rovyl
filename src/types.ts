@@ -68,6 +68,14 @@ export interface GameModeConfig {
   blockedApps: string;
 }
 
+export interface Workspace {
+  id: string;
+  name: string;
+  apps: AppItem[];
+  hotkey: number; // 1-9
+  enabled: boolean;
+}
+
 export interface UIConfig {
   accentColor: string;
   menuRadius: number;
@@ -82,9 +90,16 @@ export interface UIConfig {
   centerButton: CenterButtonConfig;
   showLabels: boolean;
   showClock: boolean;
+  showDate: boolean; // New
+  showBattery: boolean; // New
+  showWeather: boolean; // New
+  weatherLocation?: string; // New: CEP or city name for weather
   clockPosition: "top-left" | "top-right" | "bottom-left" | "bottom-right";
   gameMode: GameModeConfig;
   globalShortcut: string; // New: Global keyboard shortcut (e.g. 'Alt+Space')
+  workspaces: Workspace[]; // New: Workspace configurations
+  activeWorkspaceIndex: number; // New: Currently active workspace (0-indexed)
+  openAtLogin?: boolean; // New: Start app at login
 }
 
 export interface RadialState {
@@ -103,9 +118,9 @@ export interface ElectronAPI {
       y: number;
       source?: "mmb" | "shortcut";
     }) => void,
-  ) => void;
-  onOpenDashboard: (callback: () => void) => void;
-  onMouseUp: (callback: () => void) => void;
+  ) => () => void;
+  onOpenDashboard: (callback: () => void) => () => void;
+  onMouseUp: (callback: () => void) => () => void;
   onMmbRelease: (callback: () => void) => () => void;
   onOpenSettings: (callback: () => void) => () => void;
   setWindowSize: (mode: "small" | "fullscreen" | "windowed") => void;
@@ -114,10 +129,14 @@ export interface ElectronAPI {
   minimizeWindow: () => void;
   toggleMaximize: () => void;
   quitApp: () => void;
-  onWindowState: (callback: (state: "maximized" | "windowed") => void) => void;
+  onWindowState: (
+    callback: (state: "maximized" | "windowed") => void,
+  ) => () => void;
   selectFile: () => Promise<string | null>;
+  selectImage: () => Promise<string | null>;
   getInstalledApps: () => Promise<any[]>;
-  onExecutionError: (callback: (errorMsg: string) => void) => void;
+  onExecutionError: (callback: (errorMsg: string) => void) => () => void;
+  relaunchApp: () => void;
   // System Controls
   getVolume: () => Promise<number>;
   setVolume: (level: number) => void;
@@ -127,6 +146,8 @@ export interface ElectronAPI {
   toggleWifi: (enabled: boolean) => Promise<boolean>;
   getSettings: () => Promise<any>;
   setSettings: (settings: any) => void;
+  setLoginItemSettings: (settings: { openAtLogin: boolean }) => void;
+  openSettingsWindow: () => void;
 }
 
 declare global {

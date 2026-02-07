@@ -1,11 +1,21 @@
-const { app, BrowserWindow } = require("electron");
-const path = require("path");
-const fs = require("fs");
+const os = require("os");
 
-const logFile = path.join(__dirname, "../diagnostic.log");
+const isDev = process.env.NODE_ENV === "development";
+const logDir = isDev
+  ? path.join(__dirname, "..")
+  : path.join(os.tmpdir(), "zenith-radial-menu-cache");
+const logFile = path.join(logDir, "diagnostic.log");
+
 const diagLog = (msg) => {
-  const line = `[${new Date().toISOString()}] ${msg}\n`;
-  fs.appendFileSync(logFile, line);
+  try {
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+    const line = `[${new Date().toISOString()}] ${msg}\n`;
+    fs.appendFileSync(logFile, line);
+  } catch (e) {
+    console.error("Failed to write to diagnostic log:", e);
+  }
 };
 
 diagLog("Zenith Main Process Started - MINIMAL TEST");

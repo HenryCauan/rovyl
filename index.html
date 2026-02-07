@@ -9,24 +9,119 @@
     <title>Zenith Radial Menu</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
       rel="stylesheet"
     />
     <link rel="icon" type="image/png" href="/icon.png" />
     <style>
+      /* ============================================
+         DESIGN SYSTEM - 2026 Neo-Minimalist
+         ============================================ */
+
+      :root {
+        /* Colors - Neo-Minimalist B&W Palette */
+        --color-pure-black: #000000;
+        --color-deep-black: #0a0a0a;
+        --color-surface-black: #0d0d0d;
+        --color-elevated-black: #141414;
+        --color-card-black: #1a1a1a;
+        --color-pure-white: #ffffff;
+        --color-off-white: #f5f5f5;
+
+        /* Opacity Layers */
+        --opacity-subtle: 0.03;
+        --opacity-light: 0.06;
+        --opacity-medium: 0.1;
+        --opacity-strong: 0.15;
+        --opacity-intense: 0.2;
+
+        /* Typography Scale */
+        --font-display: "Space Grotesk", sans-serif;
+        --font-ui: "Inter", sans-serif;
+
+        --text-xs: 0.75rem; /* 12px */
+        --text-sm: 0.875rem; /* 14px */
+        --text-base: 1rem; /* 16px */
+        --text-lg: 1.125rem; /* 18px */
+        --text-xl: 1.25rem; /* 20px */
+        --text-2xl: 1.5rem; /* 24px */
+        --text-3xl: 1.875rem; /* 30px */
+        --text-4xl: 2.25rem; /* 36px */
+        --text-5xl: 3rem; /* 48px */
+
+        /* Font Weights */
+        --weight-thin: 100;
+        --weight-extralight: 200;
+        --weight-light: 300;
+        --weight-normal: 400;
+        --weight-medium: 500;
+        --weight-semibold: 600;
+        --weight-bold: 700;
+        --weight-extrabold: 800;
+        --weight-black: 900;
+
+        /* Spacing Scale */
+        --space-1: 0.25rem; /* 4px */
+        --space-2: 0.5rem; /* 8px */
+        --space-3: 0.75rem; /* 12px */
+        --space-4: 1rem; /* 16px */
+        --space-5: 1.25rem; /* 20px */
+        --space-6: 1.5rem; /* 24px */
+        --space-8: 2rem; /* 32px */
+        --space-10: 2.5rem; /* 40px */
+        --space-12: 3rem; /* 48px */
+        --space-16: 4rem; /* 64px */
+
+        /* Shadow System - Layered for Depth */
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+        --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.2);
+        --shadow-lg:
+          0 8px 16px rgba(0, 0, 0, 0.5), 0 4px 8px rgba(0, 0, 0, 0.3);
+        --shadow-xl:
+          0 16px 32px rgba(0, 0, 0, 0.6), 0 8px 16px rgba(0, 0, 0, 0.4);
+        --shadow-2xl:
+          0 24px 48px rgba(0, 0, 0, 0.7), 0 12px 24px rgba(0, 0, 0, 0.5);
+
+        /* Border Radius */
+        --radius-sm: 0.5rem; /* 8px */
+        --radius-md: 0.75rem; /* 12px */
+        --radius-lg: 1rem; /* 16px */
+        --radius-xl: 1.5rem; /* 24px */
+        --radius-2xl: 2rem; /* 32px */
+
+        /* Transitions - Cinematic Easing */
+        --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+        --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+        --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+        --transition-cinematic: 500ms cubic-bezier(0.4, 0, 0.2, 1);
+        --transition-smooth: 400ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+
+        /* Z-Index Scale */
+        --z-base: 1;
+        --z-dropdown: 10;
+        --z-sticky: 20;
+        --z-modal: 100;
+        --z-overlay: 200;
+        --z-toast: 300;
+      }
+
       body {
-        font-family: "Inter", sans-serif;
-        background-color: transparent; /* Alterado para transparente */
-        color: #ffffff;
+        font-family: var(--font-ui);
+        background-color: transparent;
+        color: var(--color-pure-white);
         overflow: hidden;
         user-select: none;
         margin: 0;
         padding: 0;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
       }
+
       #root {
         width: 100vw;
         height: 100vh;
       }
+
       /* Hide default context menu for better app feel */
       .no-context {
         -webkit-touch-callout: none;
@@ -37,97 +132,161 @@
         user-select: none;
       }
 
-      /* Custom Range Slider Styles */
+      /* ============================================
+         CUSTOM RANGE SLIDER - Enhanced
+         ============================================ */
+
       input[type="range"] {
         -webkit-appearance: none;
         appearance: none;
         width: 100%;
         background: transparent;
         outline: none;
+        cursor: pointer;
       }
 
-      /* Track (Linha) */
+      /* Track */
       input[type="range"]::-webkit-slider-runnable-track {
         width: 100%;
         height: 4px;
         cursor: pointer;
-        background: rgba(255, 255, 255, 0.1);
-        border-radius: 2px;
-        transition: background 0.2s;
+        background: rgba(255, 255, 255, var(--opacity-medium));
+        border-radius: var(--radius-sm);
+        transition: background var(--transition-base);
       }
 
       input[type="range"]:hover::-webkit-slider-runnable-track {
-        background: rgba(255, 255, 255, 0.15);
+        background: rgba(255, 255, 255, var(--opacity-strong));
       }
 
-      /* Thumb (Bolinha) */
+      /* Thumb - Enhanced with smoother animations */
       input[type="range"]::-webkit-slider-thumb {
         -webkit-appearance: none;
         height: 20px;
         width: 20px;
         border-radius: 50%;
-        background: #ffffff;
-        /* Adiciona uma borda da cor do fundo do modal para "recortar" e suavizar a borda */
-        border: 4px solid #141414;
+        background: var(--color-pure-white);
+        border: 4px solid var(--color-elevated-black);
         cursor: pointer;
-        /* Centralização: (height track - height thumb) / 2 = (4 - 20) / 2 = -8 */
         margin-top: -8px;
         box-shadow:
           0 0 0 1px rgba(255, 255, 255, 0.1),
-          0 2px 4px rgba(0, 0, 0, 0.5);
+          0 2px 8px rgba(0, 0, 0, 0.6),
+          0 4px 16px rgba(0, 0, 0, 0.4);
         transition:
-          transform 0.1s ease,
-          background-color 0.2s;
+          transform var(--transition-fast) ease,
+          background-color var(--transition-base),
+          box-shadow var(--transition-base);
       }
 
       input[type="range"]:hover::-webkit-slider-thumb {
-        transform: scale(1.1);
-        background: #ffffff;
-        border-color: #1a1a1a;
+        transform: scale(1.15);
+        background: var(--color-pure-white);
+        border-color: var(--color-card-black);
+        box-shadow:
+          0 0 0 2px rgba(255, 255, 255, 0.15),
+          0 4px 12px rgba(0, 0, 0, 0.7),
+          0 8px 24px rgba(0, 0, 0, 0.5);
       }
 
       input[type="range"]:active::-webkit-slider-thumb {
         transform: scale(0.95);
-        background: #e0e0e0;
+        background: var(--color-off-white);
+        box-shadow:
+          0 0 0 1px rgba(255, 255, 255, 0.1),
+          0 1px 4px rgba(0, 0, 0, 0.5);
       }
 
-      /* Firefox styles (just in case) */
+      /* Firefox Range Slider */
       input[type="range"]::-moz-range-track {
         width: 100%;
         height: 4px;
         cursor: pointer;
-        background: rgba(255, 255, 255, 0.1);
-        border-radius: 2px;
+        background: rgba(255, 255, 255, var(--opacity-medium));
+        border-radius: var(--radius-sm);
+        transition: background var(--transition-base);
       }
+
+      input[type="range"]:hover::-moz-range-track {
+        background: rgba(255, 255, 255, var(--opacity-strong));
+      }
+
       input[type="range"]::-moz-range-thumb {
         height: 20px;
         width: 20px;
-        border: 4px solid #141414;
+        border: 4px solid var(--color-elevated-black);
         border-radius: 50%;
-        background: #ffffff;
+        background: var(--color-pure-white);
         cursor: pointer;
         box-shadow:
           0 0 0 1px rgba(255, 255, 255, 0.1),
-          0 2px 4px rgba(0, 0, 0, 0.5);
+          0 2px 8px rgba(0, 0, 0, 0.6),
+          0 4px 16px rgba(0, 0, 0, 0.4);
+        transition:
+          transform var(--transition-fast) ease,
+          background-color var(--transition-base);
       }
-      /* Custom Scrollbar Styles */
+
+      input[type="range"]:hover::-moz-range-thumb {
+        transform: scale(1.15);
+        background: var(--color-pure-white);
+        border-color: var(--color-card-black);
+      }
+
+      input[type="range"]:active::-moz-range-thumb {
+        transform: scale(0.95);
+        background: var(--color-off-white);
+      }
+
+      /* ============================================
+         CUSTOM SCROLLBAR - Enhanced
+         ============================================ */
+
       .custom-scrollbar::-webkit-scrollbar {
         width: 8px;
         height: 8px;
       }
+
       .custom-scrollbar::-webkit-scrollbar-track {
-        background: rgba(255, 255, 255, 0.05);
-        border-radius: 4px;
+        background: rgba(255, 255, 255, var(--opacity-subtle));
+        border-radius: var(--radius-sm);
       }
+
       .custom-scrollbar::-webkit-scrollbar-thumb {
-        background: rgba(255, 255, 255, 0.15);
-        border-radius: 4px;
+        background: rgba(255, 255, 255, var(--opacity-strong));
+        border-radius: var(--radius-sm);
         border: 2px solid transparent;
         background-clip: content-box;
+        transition: background var(--transition-base);
       }
+
       .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-        background: rgba(255, 255, 255, 0.25);
+        background: rgba(255, 255, 255, var(--opacity-intense));
         background-clip: content-box;
+      }
+
+      /* ============================================
+         UTILITY CLASSES
+         ============================================ */
+
+      .text-balance {
+        text-wrap: balance;
+      }
+
+      .tracking-tight {
+        letter-spacing: -0.025em;
+      }
+
+      .tracking-tighter {
+        letter-spacing: -0.05em;
+      }
+
+      .tracking-wide {
+        letter-spacing: 0.025em;
+      }
+
+      .tracking-wider {
+        letter-spacing: 0.05em;
       }
     </style>
   </head>

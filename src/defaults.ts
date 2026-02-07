@@ -1,4 +1,4 @@
-import { AppItem, UIConfig, WidgetDefinition } from "./types";
+import { AppItem, UIConfig, WidgetDefinition, Workspace } from "./types";
 
 export const DEFAULT_UI_CONFIG: UIConfig = {
   accentColor: "#FFFFFF",
@@ -19,6 +19,9 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   },
   showLabels: true,
   showClock: true,
+  showDate: true,
+  showBattery: false,
+  showWeather: false,
   clockPosition: "top-right",
   gameMode: {
     enabled: false,
@@ -27,6 +30,8 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
     blockedApps: "csgo.exe, valorant.exe, dota2.exe, overwatch.exe",
   },
   globalShortcut: "",
+  workspaces: [], // Will be populated with DEFAULT_WORKSPACES
+  activeWorkspaceIndex: 0,
 };
 
 export const AVAILABLE_WIDGETS: WidgetDefinition[] = [
@@ -156,5 +161,104 @@ export const DEFAULT_APPS: AppItem[] = [
     iconSource: "lucide",
     command: "",
     description: "Calculator",
+  },
+];
+
+// Default Workspaces
+export const DEFAULT_WORKSPACES: Workspace[] = [
+  {
+    id: "workspace-1",
+    name: "Main",
+    hotkey: 1,
+    enabled: true,
+    apps: DEFAULT_APPS, // Use existing default apps
+  },
+  {
+    id: "workspace-2",
+    name: "Work",
+    hotkey: 2,
+    enabled: true,
+    apps: [
+      {
+        id: "work-1",
+        type: "app",
+        label: "Email",
+        iconName: "Mail",
+        iconSource: "lucide",
+        command: "",
+        description: "Email Client",
+      },
+      {
+        id: "work-2",
+        type: "app",
+        label: "Calendar",
+        iconName: "Calendar",
+        iconSource: "lucide",
+        command: "",
+        description: "Calendar App",
+      },
+      {
+        id: "work-3",
+        type: "app",
+        label: "Teams",
+        iconName: "Users",
+        iconSource: "lucide",
+        command: "",
+        description: "Microsoft Teams",
+      },
+      {
+        id: "work-4",
+        type: "app",
+        label: "Documents",
+        iconName: "FileText",
+        iconSource: "lucide",
+        command: "",
+        description: "Office Suite",
+      },
+    ],
+  },
+  {
+    id: "workspace-3",
+    name: "Gaming",
+    hotkey: 3,
+    enabled: true,
+    apps: [
+      {
+        id: "gaming-1",
+        type: "app",
+        label: "Steam",
+        iconName: "Gamepad2",
+        iconSource: "lucide",
+        command: "",
+        description: "Steam Client",
+      },
+      {
+        id: "gaming-2",
+        type: "app",
+        label: "Discord",
+        iconName: "MessageSquare",
+        iconSource: "lucide",
+        command: "",
+        description: "Discord",
+      },
+      {
+        id: "gaming-3",
+        type: "app",
+        label: "Twitch",
+        iconName: "Tv",
+        iconSource: "lucide",
+        command: "",
+        description: "Twitch",
+      },
+      {
+        id: "gaming-4",
+        type: "app",
+        label: "OBS",
+        iconName: "Video",
+        iconSource: "lucide",
+        command: "",
+        description: "OBS Studio",
+      },
+    ],
   },
 ];

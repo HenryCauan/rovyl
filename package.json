@@ -38,15 +38,31 @@
     "productName": "Zenith OS",
     "files": [
       "dist/**/*",
-      "electron/**/*",
+      "backend/**/*",
+      "resources/bin/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "backend/*.ps1",
       "resources/bin/**/*"
     ],
     "directories": {
-      "output": "release"
+      "output": "build-out"
     },
     "win": {
-      "target": "nsis",
-      "icon": "public/icon.ico"
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "public/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "guid": "5e135f2a-7b3b-4e12-8c14-998822334455",
+      "artifactName": "${productName} Setup ${version}.${ext}"
     }
   }
 }

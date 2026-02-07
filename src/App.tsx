@@ -8,7 +8,7 @@ import { AlarmWidget } from './components/AlarmWidget';
 import { StopwatchWidget } from './components/StopwatchWidget';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { Coordinates, AppItem, UIConfig, Note, Alarm, UserProfile } from './types';
-import { DEFAULT_APPS, DEFAULT_UI_CONFIG } from './defaults';
+import { DEFAULT_APPS, DEFAULT_UI_CONFIG, DEFAULT_WORKSPACES } from './defaults';
 import { BellRing, MousePointer2, Settings, Minus, X, Maximize, Square } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -28,6 +28,9 @@ export default function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSystemCenterOpen, setIsSystemCenterOpen] = useState(false);
+
+  // Standalone Settings Window Mode - REMOVED
+  // const isSettingsWindow = window.location.hash === '#settings' || window.location.search.includes('window=settings');
 
   // Widget States
   const [isNotesOpen, setIsNotesOpen] = useState(false);
@@ -67,9 +70,13 @@ export default function App() {
       ...DEFAULT_UI_CONFIG,
       ...loaded,
       centerButton: loaded.centerButton || DEFAULT_UI_CONFIG.centerButton,
-      gameMode: { ...DEFAULT_UI_CONFIG.gameMode, ...(loaded.gameMode || {}) }
+      gameMode: { ...DEFAULT_UI_CONFIG.gameMode, ...(loaded.gameMode || {}) },
+      workspaces: loaded.workspaces && loaded.workspaces.length > 0 ? loaded.workspaces : DEFAULT_WORKSPACES,
+      activeWorkspaceIndex: loaded.activeWorkspaceIndex ?? 0
     };
   });
+  const configRef = useRef(config);
+  useEffect(() => { configRef.current = config; }, [config]);
 
   const [notes, setNotes] = useState<Note[]>(() => {
     const saved = localStorage.getItem('zenith_notes');
@@ -155,47 +162,49 @@ export default function App() {
   const lastMiddleClickTime = useRef<number>(0);
   const isHolding = useRef(false);
 
+
+
   useEffect(() => {
     if (window.electron) {
       setIsDesktopMode(true);
-      window.electron.onOpenMenu((data: { x: number, y: number, source?: 'mmb' | 'shortcut' }) => {
-        // Always open menu if requested, enforcing overlay mode
-        // if (isDashboardOpen) setIsDashboardOpen(false); // Optional: explicitly close state, but the render logic handles it
-        // Actually, let's close the dashboard state effectively so when we return it doesn't pop back up unless intended?
-        // User asked to "minimize" it. If we just open menu, the render condition `isDashboardOpen && !isMenuOpen` hides it.
-        // So just removing the block is enough.
-        if (!isSettingsOpen) {
-          openMenu(data.x, data.y, data.source);
-        }
-      });
-      window.electron.onOpenDashboard(() => {
-        setIsDashboardOpen(true);
-      });
-      if (window.electron.onOpenSettings) {
-        window.electron.onOpenSettings(() => {
-          handleOpenSettings();
-        });
-      }
-      window.electron.onWindowState((state) => {
-        setWindowState(state);
-      });
-      window.electron.onMouseUp(() => {
-        window.dispatchEvent(new MouseEvent('mouseup', { button: 1 }));
-      });
-      // Listen for execution errors and show feedback to user
-      window.electron.onExecutionError((errorMsg: string) => {
-        console.error('Execution error received:', errorMsg);
-        setLastLaunched({
-          id: 'error',
-          label: 'Erro de Execução',
-          command: '',
-          iconName: 'AlertTriangle',
-          description: errorMsg
-        });
-        setTimeout(() => setLastLaunched(null), 5000);
-      });
-      if (config.gameMode) window.electron.setGameMode(config.gameMode);
+      if (configRef.current.gameMode) window.electron.setGameMode(configRef.current.gameMode);
     }
+
+    const cleanupMenu = window.electron?.onOpenMenu((data: { x: number, y: number, source?: 'mmb' | 'shortcut' }) => {
+      // Close settings if open, then open menu
+      if (isSettingsOpen) {
+        setIsSettingsOpen(false);
+      }
+      openMenu(data.x, data.y, data.source);
+    });
+
+    const cleanupDashboard = window.electron?.onOpenDashboard(() => {
+      setIsDashboardOpen(true);
+    });
+
+    const cleanupSettings = window.electron?.onOpenSettings(() => {
+      handleOpenSettings();
+    });
+
+    const cleanupWindowState = window.electron?.onWindowState((state) => {
+      setWindowState(state);
+    });
+
+    const cleanupMouseUp = window.electron?.onMouseUp(() => {
+      window.dispatchEvent(new MouseEvent('mouseup', { button: 1 }));
+    });
+
+    const cleanupExecutionError = window.electron?.onExecutionError((errorMsg: string) => {
+      console.error('Execution error received:', errorMsg);
+      setLastLaunched({
+        id: 'error',
+        label: 'Erro de Execução',
+        command: '',
+        iconName: 'AlertTriangle',
+        description: errorMsg
+      });
+      setTimeout(() => setLastLaunched(null), 5000);
+    });
 
     // FIRST RUN CHECK
     const hasRunBefore = localStorage.getItem('zenith_first_run_complete');
@@ -204,7 +213,16 @@ export default function App() {
       if (window.electron) window.electron.setWindowSize('windowed');
       localStorage.setItem('zenith_first_run_complete', 'true');
     }
-  }, []);
+
+    return () => {
+      cleanupMenu?.();
+      cleanupDashboard?.();
+      cleanupSettings?.();
+      cleanupWindowState?.();
+      cleanupMouseUp?.();
+      cleanupExecutionError?.();
+    };
+  }, [isSettingsOpen, isDashboardOpen]);
 
   // Window State Management (Interactable vs Passive)
   // TRACK WINDOW STATE TO PREVENT REDUNDANT IPC CALLS (Reduces Lag/Flicker)
@@ -217,6 +235,8 @@ export default function App() {
       const targetMode: 'fullscreen' | 'windowed' | 'small' = (isMenuOpen || isSystemCenterOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || !!ringingAlarm)
         ? 'fullscreen'
         : (isDashboardOpen || isSettingsOpen) ? 'windowed' : 'small';
+
+      console.log(`[Sync] Interactive: ${isAnyInteractive}, Mode: ${targetMode}, Menu: ${isMenuOpen}, Dash: ${isDashboardOpen}`);
 
       // 1. Only update window SIZE if mode actually changed
       if (lastWindowState.current !== targetMode) {
@@ -240,10 +260,15 @@ export default function App() {
     // IMPACT: Force fullscreen immediately to avoid "inside app" feel
     if (window.electron && isDesktopMode) {
       window.electron.setWindowSize('fullscreen');
-      setMenuPosition({ x, y });
+      if (configRef.current.fixedPosition) {
+        // Center of the physical screen (More reliable than innerWidth during resize)
+        setMenuPosition({ x: window.screen.width / 2, y: window.screen.height / 2 });
+      } else {
+        setMenuPosition({ x, y });
+      }
     } else {
       // In simulator mode, we use relative center or absolute cursor
-      if (config.fixedPosition) {
+      if (configRef.current.fixedPosition) {
         setMenuPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
       } else {
         setMenuPosition({ x, y });
@@ -256,14 +281,34 @@ export default function App() {
     setIsDashboardOpen(false); // Force close dashboard to prevent state conflict and ensure overlay mode
   };
 
+  // Workspace Switching Handler
+  const handleWorkspaceSwitch = (workspaceIndex: number) => {
+    if (workspaceIndex >= 0 && workspaceIndex < config.workspaces.length) {
+      const workspace = config.workspaces[workspaceIndex];
+      if (workspace.enabled) {
+        setConfig(prev => ({
+          ...prev,
+          activeWorkspaceIndex: workspaceIndex
+        }));
+        console.log(`Switched to workspace ${workspaceIndex + 1}: ${workspace.name}`);
+      }
+    }
+  };
+
   // Centralized function to open settings and handle dashboard logic
   const handleOpenSettings = () => {
-    // Close other things including dashboard
+    // Integrated Mode: Just open the local modal
     if (isMenuOpen) setIsMenuOpen(false);
-    if (isDashboardOpen) setIsDashboardOpen(false);
-
-    // Open Settings
     setIsSettingsOpen(true);
+    // Ensure window size is updated to show the modal if we are in 'small' mode
+    if (isDesktopMode && window.electron) {
+      window.electron.setWindowSize('windowed');
+      window.electron.showWindow();
+    }
+    // Also pause the dashboard if it's open, or keep it?
+    // User wants it to feel like "part of dashboard", so maybe we don't close dashboard explicitly,
+    // BUT SettingsModal traditionally overlays everything.
+    // For now, let's keep dashboard state as is, but SettingsModal usually implies a modal on top.
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -404,123 +449,120 @@ export default function App() {
       className={`
         fixed inset-0 w-full h-full overflow-hidden cursor-default select-none group
         ${isDesktopMode ? 'bg-transparent' : 'bg-[#0D0D0D]'}
+        ${isDesktopMode && !isAnyModalOpen ? 'pointer-events-none' : ''}
       `}
       onMouseDown={handleMouseDown}
       onDoubleClick={handleDoubleClick}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {/* GLOBAL TITLE BAR (Native Software Controls) */}
-      {(isDashboardOpen || isSettingsOpen || isSystemCenterOpen) && !isMenuOpen && !isNotesOpen && !isAlarmWidgetOpen && !isStopwatchOpen && (
-        <div
-          className="fixed top-0 left-0 w-full h-10 flex items-center justify-between px-4 z-[1000] bg-[#0A0A0A] border-b border-white/5 select-none"
-          style={{ WebkitAppRegion: 'drag' } as any}
-        >
-          {/* Logo / Title (Draggable Base) */}
-          <div className="flex items-center gap-3">
-            <div className="w-5 h-5 bg-gradient-to-br from-white/20 to-transparent border border-white/10 rounded-sm flex items-center justify-center">
-              <div className="w-2.5 h-0.5 bg-white/40 rounded-full rotate-45 absolute" />
-              <div className="w-2.5 h-0.5 bg-white/40 rounded-full -rotate-45 absolute" />
+
+
+
+
+      {/* Visibility Wrapper for the whole app content */}
+      <div className={`relative w-full h-full transition-opacity duration-300 border-2 border-white/10 ${isAnyModalOpen ? 'opacity-100' : 'opacity-0'}`}>
+        {/* CUSTOM TITLE BAR OVERLAY (for drag region + app name) */}
+        {(isDashboardOpen || isSettingsOpen) && !isMenuOpen && (
+          <div
+            className="fixed top-0 left-0 right-0 h-[30px] z-[999] flex items-center px-3 pt-1 pointer-events-none"
+            style={{ WebkitAppRegion: 'drag' } as any}
+          >
+            <div className="flex items-center gap-2 pointer-events-none">
+              <div className="w-3 h-3 bg-gradient-to-br from-white/20 to-transparent border border-white/10 rounded-sm flex items-center justify-center relative">
+                <div className="w-1.5 h-[2px] bg-white/40 rounded-full rotate-45 absolute" />
+                <div className="w-1.5 h-[2px] bg-white/40 rounded-full -rotate-45 absolute" />
+              </div>
+              <span className="text-[9px] text-white/30 font-mono tracking-[0.3em] uppercase select-none">Zenith</span>
             </div>
-            <span className="text-[10px] text-white/50 font-mono tracking-[0.4em] uppercase pt-0.5">Zenith <span className="text-white/20">OS</span></span>
           </div>
-
-          {/* Window Controls (No Drag) */}
-          <div className="flex items-center h-full" style={{ WebkitAppRegion: 'no-drag' } as any}>
-            <button
-              onClick={() => window.electron?.minimizeWindow()}
-              className="h-full px-4 hover:bg-white/5 transition-colors text-white/20 hover:text-white flex items-center justify-center"
-              title="Minimize"
-            >
-              <Minus size={14} />
-            </button>
-            <button
-              onClick={() => window.electron?.toggleMaximize()}
-              className="h-full px-4 hover:bg-white/5 transition-colors text-white/20 hover:text-white flex items-center justify-center"
-              title={windowState === 'maximized' ? "Restore" : "Maximize"}
-            >
-              {windowState === 'maximized' ? <Square size={12} /> : <Maximize size={12} />}
-            </button>
-            <button
-              onClick={() => window.electron?.quitApp()}
-              className="h-full px-4 hover:bg-red-500/80 transition-all text-white/20 hover:text-white flex items-center justify-center group"
-              title="Close Zenith"
-            >
-              <X size={14} className="group-hover:scale-110 transition-transform" />
-            </button>
-          </div>
-        </div>
-      )}
-      {/* BACKGROUND (Simulator Only OR First Run Dashboard) */}
-      {/* DELETED: Removed redundant background to allow RadialMenu to handle it exclusively */}
-
-      {/* WELCOME SCREEN / DASHBOARD */}
-      <AnimatePresence>
-        {isDashboardOpen && !isMenuOpen && !isSystemCenterOpen && !isNotesOpen && !isAlarmWidgetOpen && !isStopwatchOpen && !ringingAlarm && (
-          <motion.div
-            key="welcome"
-            exit={{ opacity: 0, scale: 0.95, filter: 'blur(10px)' }}
-            transition={{ duration: 0.5 }}
-            className={`absolute inset-0 z-10 ${isMenuOpen ? 'hidden' : ''}`} // Double safety: CSS hide
-            id="dashboard-container"
-          >
-            <WelcomeScreen
-              onOpenSettings={handleOpenSettings}
-              onClose={() => setIsDashboardOpen(false)}
-              config={config}
-              user={user}
-              onLogin={handleLogin}
-            />
-          </motion.div>
         )}
-      </AnimatePresence>
 
-      {/* ALARM OVERLAY */}
-      <AnimatePresence>
-        {ringingAlarm && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/90 backdrop-blur-xl"
-          >
-            <motion.div animate={{ scale: [1, 1.1, 1], rotate: [0, -2, 2, 0] }} transition={{ repeat: Infinity, duration: 0.5 }} className="mb-8">
-              <BellRing size={80} className="text-red-500" />
+        {/* GLOBAL TITLE BAR (Native Software Controls) */}
+
+
+        {/* BACKGROUND (Simulator Only OR First Run Dashboard) */}
+        {/* DELETED: Removed redundant background to allow RadialMenu to handle it exclusively */}
+
+        {/* WELCOME SCREEN / DASHBOARD */}
+        <AnimatePresence>
+          {isDashboardOpen && !isMenuOpen && !isSystemCenterOpen && !isNotesOpen && !isAlarmWidgetOpen && !isStopwatchOpen && !ringingAlarm && (
+            <motion.div
+              key="welcome"
+              exit={{ opacity: 0, scale: 0.95, filter: 'blur(10px)' }}
+              transition={{ duration: 0.5 }}
+              className={`absolute inset-0 z-10 ${isMenuOpen ? 'hidden' : ''}`} // Double safety: CSS hide
+              id="dashboard-container"
+            >
+              <WelcomeScreen
+                onOpenSettings={handleOpenSettings}
+                onClose={() => setIsDashboardOpen(false)}
+                config={config}
+                user={user}
+                onLogin={handleLogin}
+              />
             </motion.div>
-            <h1 className="text-8xl font-thin text-white mb-4 tracking-tighter tabular-nums">{ringingAlarm.time}</h1>
-            <h2 className="text-2xl font-light text-white/70 mb-12 uppercase tracking-widest">{ringingAlarm.label}</h2>
-            <button onClick={() => setRingingAlarm(null)} className="px-12 py-4 bg-white text-black text-lg font-bold rounded-full hover:scale-105 transition-transform">DISMISS</button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>
 
-      <RadialMenu isOpen={isMenuOpen} position={menuPosition} onClose={handleMenuClose} apps={apps} config={config} triggerSource={triggerSource} />
+        {/* ALARM OVERLAY */}
+        <AnimatePresence>
+          {ringingAlarm && (
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/90 backdrop-blur-xl"
+            >
+              <motion.div animate={{ scale: [1, 1.1, 1], rotate: [0, -2, 2, 0] }} transition={{ repeat: Infinity, duration: 0.5 }} className="mb-8">
+                <BellRing size={80} className="text-red-500" />
+              </motion.div>
+              <h1 className="text-8xl font-thin text-white mb-4 tracking-tighter tabular-nums">{ringingAlarm.time}</h1>
+              <h2 className="text-2xl font-light text-white/70 mb-12 uppercase tracking-widest">{ringingAlarm.label}</h2>
+              <button onClick={() => setRingingAlarm(null)} className="px-12 py-4 bg-white text-black text-lg font-bold rounded-full hover:scale-105 transition-transform">DISMISS</button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-      {isSystemCenterOpen && <SystemCenter position={menuPosition} onClose={() => { setIsSystemCenterOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} />}
-      <NotesWidget isOpen={isNotesOpen} onClose={() => { setIsNotesOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} notes={notes} setNotes={setNotes} />
-      <AlarmWidget isOpen={isAlarmWidgetOpen} onClose={() => { setIsAlarmWidgetOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} alarms={alarms} setAlarms={setAlarms} />
-      <StopwatchWidget isOpen={isStopwatchOpen} onClose={() => { setIsStopwatchOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} />
+        <RadialMenu
+          isOpen={isMenuOpen}
+          position={menuPosition}
+          onClose={handleMenuClose}
+          apps={config.workspaces[config.activeWorkspaceIndex]?.apps || apps}
+          config={config}
+          triggerSource={triggerSource}
+          onWorkspaceSwitch={handleWorkspaceSwitch}
+          currentWorkspace={config.workspaces[config.activeWorkspaceIndex]}
+        />
 
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => {
-          setIsSettingsOpen(false);
-          if (isDesktopMode && !isMenuOpen) window.electron?.hideWindow();
-        }}
-        apps={apps} setApps={setApps} config={config} setConfig={setConfig} onReset={() => { setApps(DEFAULT_APPS); setConfig(DEFAULT_UI_CONFIG); }}
-        onOpenDashboard={() => {
-          setIsSettingsOpen(false);
-          setIsDashboardOpen(true);
-        }}
-        user={user}
-      />
+        {isSystemCenterOpen && <SystemCenter position={menuPosition} onClose={() => { setIsSystemCenterOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} />}
+        <NotesWidget isOpen={isNotesOpen} onClose={() => { setIsNotesOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} notes={notes} setNotes={setNotes} />
+        <AlarmWidget isOpen={isAlarmWidgetOpen} onClose={() => { setIsAlarmWidgetOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} alarms={alarms} setAlarms={setAlarms} />
+        <StopwatchWidget isOpen={isStopwatchOpen} onClose={() => { setIsStopwatchOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} />
 
-      <Toast app={lastLaunched} />
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => {
+            setIsSettingsOpen(false);
+            // Only hide window if Dashboard is NOT open (and menu is not open)
+            if (isDesktopMode && !isMenuOpen && !isDashboardOpen) window.electron?.hideWindow();
+          }}
+          apps={apps} setApps={setApps} config={config} setConfig={setConfig} onReset={() => { setApps(DEFAULT_APPS); setConfig(DEFAULT_UI_CONFIG); }}
+          onOpenDashboard={() => {
+            setIsSettingsOpen(false);
+            setIsDashboardOpen(true);
+          }}
+          user={user}
+        />
 
-      <style>{`
-        .group:active { cursor: ${isAnyModalOpen ? 'default' : 'crosshair'}; }
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 10px; }
-        ${isMenuOpen ? '#dashboard-container { display: none !important; }' : ''}
-      `}</style>
-    </div >
+        <Toast app={lastLaunched} />
+
+        <style>{`
+          .group:active { cursor: ${isAnyModalOpen ? 'default' : 'crosshair'}; }
+          .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+          .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); }
+          .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 10px; }
+          ${isMenuOpen ? '#dashboard-container { display: none !important; }' : ''}
+        `}</style>
+      </div>
+
+    </div>
   );
 }

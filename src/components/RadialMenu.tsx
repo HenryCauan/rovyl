@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Coordinates, AppItem, UIConfig } from '../types';
+import { Coordinates, AppItem, UIConfig, Workspace } from '../types';
 import { getIcon } from '../iconMap';
 import { Settings2, CornerUpLeft } from 'lucide-react';
 
@@ -11,9 +11,11 @@ interface RadialMenuProps {
   apps: AppItem[];
   config: UIConfig;
   triggerSource?: 'mmb' | 'shortcut';
+  onWorkspaceSwitch?: (workspaceIndex: number) => void;
+  currentWorkspace?: Workspace;
 }
 
-export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClose, apps, config, triggerSource = 'shortcut' }) => {
+export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClose, apps, config, triggerSource = 'shortcut', onWorkspaceSwitch, currentWorkspace }) => {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [isCenterActive, setIsCenterActive] = useState(false);
   const [hasMoved, setHasMoved] = useState(false);
@@ -29,19 +31,24 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
   const minGap = config.appSpacing || 0;
   const numberOfApps = currentLevelApps.length;
 
-  let actualMenuRadius = config.menuRadius;
+  // Memoize menu radius calculation for performance
+  const actualMenuRadius = React.useMemo(() => {
+    let radius = config.menuRadius;
 
-  if (numberOfApps > 1) {
-    const effectiveIconDiameter = iconSizePx + minGap;
-    const anglePerSliceRad = (360 / numberOfApps) * (Math.PI / 180);
-    const sinHalfAngle = Math.sin(anglePerSliceRad / 2);
-    if (sinHalfAngle > 0) {
-      const requiredRadiusForSpacing = (effectiveIconDiameter / 2) / sinHalfAngle;
-      actualMenuRadius = Math.max(config.menuRadius, requiredRadiusForSpacing);
-    } else {
-      actualMenuRadius = config.menuRadius + effectiveIconDiameter;
+    if (numberOfApps > 1) {
+      const effectiveIconDiameter = iconSizePx + minGap;
+      const anglePerSliceRad = (360 / numberOfApps) * (Math.PI / 180);
+      const sinHalfAngle = Math.sin(anglePerSliceRad / 2);
+      if (sinHalfAngle > 0) {
+        const requiredRadiusForSpacing = (effectiveIconDiameter / 2) / sinHalfAngle;
+        radius = Math.max(config.menuRadius, requiredRadiusForSpacing);
+      } else {
+        radius = config.menuRadius + effectiveIconDiameter;
+      }
     }
-  }
+
+    return radius;
+  }, [config.menuRadius, numberOfApps, iconSizePx, minGap]);
 
   // Sync props to internal state when menu opens or props change
   useEffect(() => {
@@ -74,14 +81,25 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
       // but standard behavior is usually reset. Let's reset for consistency.
       setFolderStack([]);
       setCurrentLevelApps(apps);
+
+      // CRITICAL: Focus window to ensure keyboard events are captured
+      // This is especially important when menu is opened via MMB
+      window.focus();
+      document.body.focus();
     }
   }, [isOpen]);
 
-  // Interaction Logic
+  // Interaction Logic with Performance Optimization
   useEffect(() => {
     if (!isOpen || currentLevelApps.length === 0) return;
 
-    const handleMouseMove = (e: MouseEvent) => {
+    let rafId: number | null = null;
+    let lastMouseEvent: MouseEvent | null = null;
+
+    const processMouseMove = () => {
+      if (!lastMouseEvent) return;
+
+      const e = lastMouseEvent;
       const deltaX = e.clientX - position.x;
       const deltaY = e.clientY - position.y;
       const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
@@ -94,6 +112,7 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
       if (distance < config.activationThreshold) {
         setActiveIndex(null);
         if (hasMoved) setIsCenterActive(true);
+        rafId = null;
         return;
       }
 
@@ -109,6 +128,17 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
       // Ensure index is valid
       if (index >= 0 && index < currentLevelApps.length) {
         setActiveIndex(index);
+      }
+
+      rafId = null;
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      lastMouseEvent = e;
+
+      // Throttle using requestAnimationFrame
+      if (rafId === null) {
+        rafId = requestAnimationFrame(processMouseMove);
       }
     };
 
@@ -168,9 +198,22 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      console.log('🎹 RadialMenu keydown:', e.key, 'isOpen:', isOpen, 'triggerSource:', triggerSource);
+
       if (e.key === 'Escape') {
         e.preventDefault();
         onClose(null);
+        return;
+      }
+
+      // Workspace Switching (1-9)
+      if (onWorkspaceSwitch) {
+        const num = parseInt(e.key);
+        if (num >= 1 && num <= 9) {
+          console.log('🔄 Switching to workspace:', num - 1);
+          e.preventDefault();
+          onWorkspaceSwitch(num - 1); // Convert to 0-indexed
+        }
       }
     };
 
@@ -183,6 +226,9 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
     window.addEventListener('contextmenu', handleContextMenu);
 
     return () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('mousedown', handleMouseDown);
@@ -236,8 +282,54 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
     };
   }, [isOpen, triggerSource, activeIndex, isCenterActive, folderStack, currentLevelApps, onClose, apps]);
 
-  const getClockStyles = () => {
-    const base = "fixed text-white pointer-events-none flex flex-col z-50 p-8";
+  const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
+  const [weather, setWeather] = useState<{ temp: number; condition: string } | null>(null);
+
+  // Battery & Weather Logic
+  useEffect(() => {
+    if (!isOpen) return;
+
+    // Battery
+    if (config.showBattery && 'getBattery' in navigator) {
+      // @ts-ignore
+      navigator.getBattery().then(battery => {
+        setBatteryLevel(Math.round(battery.level * 100));
+        // @ts-ignore
+        battery.addEventListener('levelchange', () => setBatteryLevel(Math.round(battery.level * 100)));
+      });
+    }
+
+    // Real Weather Logic (wttr.in)
+    if (config.showWeather) {
+      const fetchWeather = async () => {
+        try {
+          const loc = config.weatherLocation || '';
+          // Using wttr.in with JSON format. 
+          // loc can be "Sao Paulo" or a CEP (like 01310100)
+          const response = await fetch(`https://wttr.in/${encodeURIComponent(loc)}?format=j1`);
+          if (!response.ok) throw new Error('Weather fetch failed');
+
+          const data = await response.json();
+          const current = data.current_condition[0];
+          setWeather({
+            temp: parseInt(current.temp_C),
+            condition: current.weatherDesc[0].value
+          });
+        } catch (err) {
+          console.error("Failed to fetch weather:", err);
+          // Fallback if fetch fails but keep it silent or show old data
+          if (!weather) setWeather({ temp: 0, condition: '---' });
+        }
+      };
+
+      fetchWeather();
+      // Update weather every 30 minutes while menu is open? 
+      // Actually, since menu is open only for short bursts, fetching on open is enough.
+    }
+  }, [isOpen, config.showBattery, config.showWeather, config.weatherLocation]);
+
+  const getHUDStyles = () => {
+    const base = "fixed text-white pointer-events-none flex flex-col z-50 p-8 gap-4";
     const safePosition = ['top-left', 'top-right', 'bottom-left', 'bottom-right'].includes(config.clockPosition)
       ? config.clockPosition
       : 'top-right';
@@ -264,23 +356,78 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
               background: config.menuBackgroundStyle === 'fullscreen'
                 ? `radial-gradient(circle at center, rgba(0, 0, 0, ${config.backdropOpacity * 0.5}) 0%, rgba(0, 0, 0, ${config.backdropOpacity * 0.95}) 100%)`
                 : `radial-gradient(circle at ${position.x}px ${position.y}px, rgba(0, 0, 0, ${config.backdropOpacity + 0.2}) 0%, rgba(0, 0, 0, ${config.backdropOpacity * 0.6}) ${config.menuRadius * 1.5}px, rgba(0, 0, 0, 0) 100%)`,
-              backdropFilter: config.backdropBlur > 0 ? `blur(${config.backdropBlur}px)` : 'none'
+              backdropFilter: config.backdropBlur > 0 ? `blur(${config.backdropBlur}px)` : 'none',
+              willChange: 'opacity'
             }}
           />
 
-          {/* Clock */}
-          {config.showClock && (
+          {/* HUD Elements */}
+          {(config.showClock || config.showDate || config.showBattery || config.showWeather) && (
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className={getClockStyles()}
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              className={getHUDStyles()}
             >
-              <div className="text-4xl font-[300] tracking-tight tabular-nums leading-none drop-shadow-md">
-                {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
-              </div>
-              <div className="text-xs font-medium tracking-[0.2em] text-white/60 uppercase mt-1 drop-shadow-sm">
-                {currentTime.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
+              {/* Clock & Date */}
+              {(config.showClock || config.showDate) && (
+                <div className="flex flex-col">
+                  {config.showClock && (
+                    <div className="text-5xl font-[350] tracking-tight tabular-nums leading-none drop-shadow-2xl" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
+                      {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
+                    </div>
+                  )}
+                  {config.showDate && (
+                    <div className="text-sm font-bold tracking-[0.2em] text-white/60 uppercase mt-1 drop-shadow-md">
+                      {currentTime.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Status Info (Battery/Weather) */}
+              {(config.showBattery || config.showWeather) && (
+                <div className="flex items-center gap-6 text-white/80">
+                  {config.showBattery && batteryLevel !== null && (
+                    <div className="flex items-center gap-2">
+                      <div className="relative w-6 h-3 border border-white/40 rounded-sm p-0.5">
+                        <div
+                          className="h-full bg-white rounded-[1px] transition-all duration-500"
+                          style={{ width: `${batteryLevel}%`, backgroundColor: batteryLevel < 20 ? '#ef4444' : 'white' }}
+                        />
+                      </div>
+                      <span className="text-xs font-bold font-mono">{batteryLevel}%</span>
+                    </div>
+                  )}
+                  {config.showWeather && weather && (
+                    <div className="flex items-center gap-2">
+                      {/* Simple Weather Icon placeholder */}
+                      <div className="text-lg">☁️</div>
+                      <div className="flex flex-col leading-none">
+                        <span className="text-sm font-bold">{weather.temp}°</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {/* Workspace Indicator */}
+          {currentWorkspace && (
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="fixed top-8 left-8 z-50 pointer-events-none"
+            >
+              <div className="flex items-center gap-2 px-4 py-2 bg-black/40 backdrop-blur-md border border-white/10 rounded-full">
+                <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-xs font-bold text-white">
+                  {currentWorkspace.hotkey}
+                </div>
+                <div className="text-sm font-medium text-white/80 tracking-wide">
+                  {currentWorkspace.name.toUpperCase()}
+                </div>
               </div>
             </motion.div>
           )}
@@ -296,7 +443,8 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
               left: Math.round(position.x),
               top: Math.round(position.y),
               width: 0,
-              height: 0
+              height: 0,
+              willChange: 'transform, opacity'
             }}
             className="fixed z-50 pointer-events-none"
           >
@@ -438,7 +586,7 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                     exit={{ scale: 0, opacity: 0 }}
                     transition={{ type: 'spring', stiffness: 300, damping: 25 }}
                     className="absolute top-0 left-0 pointer-events-auto cursor-pointer"
-                    style={{ zIndex: 100 }}
+                    style={{ zIndex: 100, willChange: 'transform, opacity' }}
                     onMouseDown={(e) => e.stopPropagation()}
                     onMouseUp={(e) => e.stopPropagation()}
                     onClick={(e) => {
