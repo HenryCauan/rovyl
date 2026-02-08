@@ -45,7 +45,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
     };
 
     return (
-        <div className={`fixed inset-0 w-screen h-screen z-0 grid place-items-center p-8 select-none border-4 border-white/5 ${className || ''}`}>
+        <div className={`fixed inset-0 w-full h-full z-0 grid place-items-center p-8 select-none overflow-hidden rounded-xl ${className || ''}`}>
 
             {/* BACKGROUND LAYERS */}
             <div className="absolute inset-0 z-[-1] pointer-events-none">

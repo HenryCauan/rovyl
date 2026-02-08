@@ -79,11 +79,7 @@ async function createWindow() {
     y: 100,
     frame: false, // Keep frameless for transparency
     titleBarStyle: "hidden", // Hide default title bar but keep controls
-    titleBarOverlay: {
-      color: "#00000000", // Transparent background for controls
-      symbolColor: "#ffffff", // White symbols
-      height: 30,
-    },
+    titleBarOverlay: false,
     transparent: true,
     alwaysOnTop: false,
     skipTaskbar: false,
@@ -190,30 +186,41 @@ function setupMainWindow(window) {
 }
 
 function showMenuAtCursor(source = "shortcut") {
-  if (!mainWindow) return;
+  // Authoritative Show Sequence
+  if (mainWindow.isMinimized()) mainWindow.restore();
 
-  mainWindow.setSkipTaskbar(true); // Ensure radial menu is not in taskbar
-
-  // Optimistic show: make it visible immediately before heavy updates
   mainWindow.setOpacity(1);
   mainWindow.setIgnoreMouseEvents(false);
-  if (!mainWindow.isVisible()) mainWindow.show();
+  mainWindow.setSkipTaskbar(true);
+  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
+
+  // Show the window first
+  mainWindow.show();
+
+  // Add a short delay to the focus command to ensure the window is ready.
+  // This helps prevent a race condition where focus is requested before the
+  // window is fully visible, which is the likely cause of the keyboard
+  // input issue on the second MMB activation.
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.focus();
+      mainWindow.webContents.focus();
+    }
+  }, 50);
 
   // Force overlay mode if not already
   if (!mainWindow.isFullScreen()) {
     updateWindowSize("fullscreen");
-  } else {
-    // Just ensure it's on top and focused if already fullscreen
-    // This avoids the 'grey flicker' of a full window reset
-    mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
-    mainWindow.focus();
   }
 
   const cursorPoint = screen.getCursorScreenPoint();
+
+  // Send open-menu immediately
   mainWindow.webContents.send("open-menu", {
     x: cursorPoint.x,
     y: cursorPoint.y,
-    source: source, // 'mmb' or 'shortcut'
+    source: source,
   });
 }
 
@@ -439,15 +446,20 @@ app.whenReady().then(async () => {
   let middleHoldTimer = null;
   const HOLD_THRESHOLD_MS = 100; // Reduced from 200ms for snappier response
 
+  let isMenuCurrentlyOpen = false;
+
   mouseHook.stdout.on("data", async (data) => {
     const lines = data.toString().split(/\r?\n/);
     for (const line of lines) {
       const msg = line.trim();
 
       if (msg === "MIDDLE_DOWN") {
-        // INSTANT OPEN: No checks, no delays.
-        showMenuAtCursor("mmb");
+        if (!isMenuCurrentlyOpen) {
+          isMenuCurrentlyOpen = true;
+          showMenuAtCursor("mmb");
+        }
       } else if (msg === "MIDDLE_UP") {
+        isMenuCurrentlyOpen = false;
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send("mmb-release");
         }
@@ -506,8 +518,11 @@ const resolveShellPath = (cmd) => {
 
   let resolved = cmd;
   for (const [guid, p] of Object.entries(guidMap)) {
-    if (resolved.includes(guid)) {
-      resolved = resolved.replace(guid, p);
+    // Escape and create a case-insensitive global regex for the GUID
+    const escapedGuid = guid.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(escapedGuid, "gi");
+    if (regex.test(resolved)) {
+      resolved = resolved.replace(regex, p);
     }
   }
 
@@ -552,9 +567,16 @@ ipcMain.on("execute-command", async (event, command, commandType) => {
   }
 
   const trimmedCommand = command.trim();
+
+  // CRITICAL: Resolve GUIDs to real paths FIRST, before any detection logic
+  const resolvedCommand = resolveShellPath(trimmedCommand);
+
   console.log(`\n========================================`);
   console.log(`EXEC_START: Attempting to launch`);
   console.log(`Command: "${trimmedCommand}"`);
+  if (resolvedCommand !== trimmedCommand) {
+    console.log(`Resolved to: "${resolvedCommand}"`);
+  }
   console.log(`Length: ${trimmedCommand.length} chars`);
   console.log(`Command Type: ${commandType}`);
   console.log(`========================================\n`);
@@ -644,7 +666,7 @@ ipcMain.on("execute-command", async (event, command, commandType) => {
   try {
     if (commandType === "url") {
       console.log("  → Detected: Explicit URL (from commandType)");
-      await tryExecution("shell.openExternal", trimmedCommand);
+      await tryExecution("shell.openExternal", resolvedCommand);
       console.log(
         `\n✓✓✓ EXEC_SUCCESS: Launched URL with 'shell.openExternal' ✓✓✓\n`,
       );
@@ -658,17 +680,17 @@ ipcMain.on("execute-command", async (event, command, commandType) => {
     // Steam uses GUIDs like {7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\Steam\Steam.exe
     // WhatsApp uses AUMIDs like 5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App
     const isShellApp =
-      trimmedCommand.startsWith("{ ") ||
-      trimmedCommand.includes("!") ||
-      (trimmedCommand.includes(".") &&
-        !trimmedCommand.match(/\.(exe|lnk|bat|cmd)$/i) &&
-        !trimmedCommand.includes("\\") &&
-        !trimmedCommand.includes("/"));
+      resolvedCommand.startsWith("{") ||
+      resolvedCommand.includes("!") ||
+      (resolvedCommand.includes(".") &&
+        !resolvedCommand.match(/\.(exe|lnk|bat|cmd)$/i) &&
+        !resolvedCommand.includes("\\") &&
+        !resolvedCommand.includes("/"));
 
     // File path detection (.exe, .lnk, etc)
     const isExplicitFile =
-      trimmedCommand.includes("\\") || trimmedCommand.includes("/");
-    const isExe = trimmedCommand.toLowerCase().endsWith(".exe");
+      resolvedCommand.includes("\\") || resolvedCommand.includes("/");
+    const isExe = resolvedCommand.toLowerCase().endsWith(".exe");
 
     if (isShellApp) {
       console.log("  → Detected: Shell App (GUID or AUMID)");
@@ -681,19 +703,19 @@ ipcMain.on("execute-command", async (event, command, commandType) => {
     }
     // URL detection
     else if (
-      trimmedCommand.match(/^https?:\/\//i) ||
-      trimmedCommand.match(/^(steam|discord|spotify):/i)
+      resolvedCommand.match(/^https?:\/\//i) ||
+      resolvedCommand.match(/^(steam|discord|spotify):/i)
     ) {
       console.log("  → Detected: URL/Protocol");
       methodsToTry = ["shell.openExternal", "exec_start"];
     }
     // Commands starting with "start " (Windows shell commands)
-    else if (trimmedCommand.toLowerCase().startsWith("start ")) {
+    else if (resolvedCommand.toLowerCase().startsWith("start ")) {
       console.log("  → Detected: Windows 'start' command");
       methodsToTry = ["exec_direct", "exec_start"];
     }
     // Executable file detection
-    else if (trimmedCommand.match(/\.(exe|lnk|bat|cmd)$/i) || isExplicitFile) {
+    else if (resolvedCommand.match(/\.(exe|lnk|bat|cmd)$/i) || isExplicitFile) {
       console.log("  → Detected: Executable file");
       methodsToTry = ["shell.openPath", "exec_start", "exec_direct"];
     }
@@ -713,7 +735,7 @@ ipcMain.on("execute-command", async (event, command, commandType) => {
     let lastError = null;
     for (const method of methodsToTry) {
       try {
-        await tryExecution(method, trimmedCommand);
+        await tryExecution(method, resolvedCommand);
         console.log(`\n✓✓✓ EXEC_SUCCESS: Launched with '${method}' ✓✓✓\n`);
         return; // Success! Exit early
       } catch (err) {
@@ -723,7 +745,7 @@ ipcMain.on("execute-command", async (event, command, commandType) => {
     }
 
     // If we get here, all methods failed
-    const finalError = `Falha ao executar "${trimmedCommand.substring(0, 50)}${trimmedCommand.length > 50 ? "..." : ""}". Erro: ${lastError?.message || "Desconhecido"}`;
+    const finalError = `Falha ao executar "${resolvedCommand.substring(0, 50)}${resolvedCommand.length > 50 ? "..." : ""}". Erro: ${lastError?.message || "Desconhecido"}`;
     console.error(`\n✗✗✗ EXEC_ABORT: ${finalError} ✗✗✗\n`);
     if (mainWindow) {
       mainWindow.webContents.send("execution-error", finalError);

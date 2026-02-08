@@ -36,6 +36,77 @@ interface SettingsModalProps {
 
 type SettingsTab = 'apps' | 'zenith_apps' | 'workspaces' | 'interface' | 'visuals' | 'widgets' | 'gamemode';
 
+const NavButton = ({
+    tab,
+    label,
+    icon: Icon,
+    index,
+    isSidebarExpanded,
+    activeTab,
+    setActiveTab
+}: {
+    tab: SettingsTab,
+    label: string,
+    icon: any,
+    index?: number,
+    isSidebarExpanded: boolean,
+    activeTab: SettingsTab,
+    setActiveTab: (tab: SettingsTab) => void
+}) => (
+    <motion.button
+        onClick={() => setActiveTab(tab)}
+        className={`relative w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 overflow-hidden group ${activeTab === tab
+            ? 'bg-white/10 text-white shadow-inner'
+            : 'text-white/60 hover:text-white hover:bg-white/5'
+            }`}
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.3, delay: (index || 0) * 0.05 }}
+        whileHover={{ scale: 1.02, x: 2 }}
+        whileTap={{ scale: 0.98 }}
+    >
+        {/* Active indicator line */}
+        {activeTab === tab && (
+            <motion.div
+                className="absolute left-0 top-0 bottom-0 w-0.5 bg-white rounded-r-full"
+                layoutId="activeIndicator"
+                transition={{ duration: 0.2 }}
+            />
+        )}
+        <div
+            className="shrink-0"
+        >
+            <Icon size={18} strokeWidth={activeTab === tab ? 2 : 1.5} />
+        </div>
+
+        <AnimatePresence>
+            {isSidebarExpanded && (
+                <motion.span
+                    className={`relative z-10 whitespace-nowrap ${activeTab === tab ? 'font-semibold' : 'font-medium'}`}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -10 }}
+                    transition={{ duration: 0.2 }}
+                >
+                    {label}
+                </motion.span>
+            )}
+        </AnimatePresence>
+
+        {/* Hover glow effect */}
+        {activeTab !== tab && (
+            <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/[0.02] to-white/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+        )}
+
+        {/* Tooltip for collapsed state */}
+        {!isSidebarExpanded && (
+            <div className="absolute left-[70px] px-3 py-1.5 bg-[#141414] border border-white/10 rounded-lg text-xs font-bold text-white opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-[200] shadow-2xl">
+                {label}
+            </div>
+        )}
+    </motion.button>
+);
+
 export const SettingsModal: React.FC<SettingsModalProps> = ({
     isOpen, onClose, apps, setApps, config, setConfig, onReset, onOpenDashboard, user
 }) => {
@@ -538,63 +609,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         handleAppUpdates(updatedApp);
     };
 
-    const NavButton = ({ tab, label, icon: Icon, index, isSidebarExpanded }: { tab: SettingsTab, label: string, icon: any, index?: number, isSidebarExpanded: boolean }) => (
-        <motion.button
-            onClick={() => setActiveTab(tab)}
-            className={`relative w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-semibold transition-all duration-300 overflow-hidden group ${activeTab === tab
-                ? 'bg-white text-black shadow-lg'
-                : 'text-white/60 hover:text-white hover:bg-white/[0.08]'
-                }`}
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.3, delay: (index || 0) * 0.05 }}
-            whileHover={{ scale: activeTab === tab ? 1 : 1.02, x: activeTab === tab ? 0 : 2 }}
-            whileTap={{ scale: 0.98 }}
-        >
-            {/* Active indicator line */}
-            {activeTab === tab && (
-                <motion.div
-                    className="absolute left-0 top-0 bottom-0 w-1 bg-black rounded-r-full"
-                    layoutId="activeIndicator"
-                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                />
-            )}
-            <motion.div
-                className="shrink-0"
-                animate={{ rotate: activeTab === tab ? 0 : 0 }}
-                whileHover={{ rotate: activeTab === tab ? 0 : 5, scale: 1.1 }}
-                transition={{ duration: 0.2 }}
-            >
-                <Icon size={19} strokeWidth={activeTab === tab ? 2.5 : 2} />
-            </motion.div>
 
-            <AnimatePresence>
-                {isSidebarExpanded && (
-                    <motion.span
-                        className={`relative z-10 whitespace-nowrap ${activeTab === tab ? 'font-bold' : 'font-medium'}`}
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: -10 }}
-                        transition={{ duration: 0.2 }}
-                    >
-                        {label}
-                    </motion.span>
-                )}
-            </AnimatePresence>
-
-            {/* Hover glow effect */}
-            {activeTab !== tab && (
-                <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/[0.02] to-white/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            )}
-
-            {/* Tooltip for collapsed state */}
-            {!isSidebarExpanded && (
-                <div className="absolute left-[70px] px-3 py-1.5 bg-[#141414] border border-white/10 rounded-lg text-xs font-bold text-white opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-[200] shadow-2xl">
-                    {label}
-                </div>
-            )}
-        </motion.button>
-    );
 
     if (!isOpen) return null;
 
@@ -681,26 +696,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                     >
                                         <Lock size={16} />
                                     </button>
-                                    <button
-                                        onClick={onClose}
-                                        className="p-2 hover:bg-white/10 rounded-lg text-white/40 hover:text-white transition-all duration-200"
-                                    >
-                                        <X size={18} strokeWidth={2.5} />
-                                    </button>
                                 </motion.div>
                             )}
                         </motion.div>
 
                         {/* Nav Buttons */}
-                        <NavButton tab="workspaces" label="Apps & Workspaces" icon={LayoutGrid} index={0} isSidebarExpanded={isSidebarPinned || isHoveringSidebar} />
-                        <NavButton tab="zenith_apps" label="Zenith Widgets" icon={AppWindow} index={1} isSidebarExpanded={isSidebarPinned || isHoveringSidebar} />
+                        <NavButton tab="workspaces" label="Apps & Workspaces" icon={LayoutGrid} index={0} isSidebarExpanded={isSidebarPinned || isHoveringSidebar} activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <NavButton tab="zenith_apps" label="Zenith Widgets" icon={AppWindow} index={1} isSidebarExpanded={isSidebarPinned || isHoveringSidebar} activeTab={activeTab} setActiveTab={setActiveTab} />
 
                         <div className="h-px bg-gradient-to-r from-transparent via-white/[0.12] to-transparent my-5 mx-2" />
 
-                        <NavButton tab="interface" label="Interface" icon={Settings2} index={3} isSidebarExpanded={isSidebarPinned || isHoveringSidebar} />
-                        <NavButton tab="visuals" label="Visuals" icon={Palette} index={4} isSidebarExpanded={isSidebarPinned || isHoveringSidebar} />
-                        <NavButton tab="widgets" label="HUD Elements" icon={Clock} index={5} isSidebarExpanded={isSidebarPinned || isHoveringSidebar} />
-                        <NavButton tab="gamemode" label="Game Mode" icon={Gamepad2} index={6} isSidebarExpanded={isSidebarPinned || isHoveringSidebar} />
+                        <NavButton tab="interface" label="Interface" icon={Settings2} index={3} isSidebarExpanded={isSidebarPinned || isHoveringSidebar} activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <NavButton tab="visuals" label="Visuals" icon={Palette} index={4} isSidebarExpanded={isSidebarPinned || isHoveringSidebar} activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <NavButton tab="widgets" label="HUD Elements" icon={Clock} index={5} isSidebarExpanded={isSidebarPinned || isHoveringSidebar} activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <NavButton tab="gamemode" label="Game Mode" icon={Gamepad2} index={6} isSidebarExpanded={isSidebarPinned || isHoveringSidebar} activeTab={activeTab} setActiveTab={setActiveTab} />
 
                         <div className="mt-auto pt-6 border-t border-white/[0.08] space-y-2.5">
                             <motion.button
@@ -758,6 +767,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                     {/* Content */}
                     <div className="flex-1 bg-[#0D0D0D] overflow-hidden flex flex-col relative">
+                        {/* Global Close Button */}
+                        <motion.button
+                            onClick={onClose}
+                            className="absolute top-6 right-8 z-[110] p-2 bg-white/[0.03] hover:bg-white/10 border border-white/5 rounded-xl text-white/40 hover:text-white transition-all duration-300 group shadow-lg"
+                            whileHover={{ scale: 1.05, rotate: 90 }}
+                            whileTap={{ scale: 0.95 }}
+                        >
+                            <X size={18} strokeWidth={2.5} className="transition-transform" />
+                        </motion.button>
 
 
                         {activeTab === 'zenith_apps' && (
@@ -806,17 +824,46 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                             <p className="text-xs text-white/40 font-medium leading-relaxed max-w-2xl">{widget.description}</p>
                                                         </div>
                                                     </div>
-                                                    <motion.button
-                                                        onClick={() => toggleWidget(widget.command, widget)}
-                                                        className={`relative z-10 px-6 py-3 rounded-xl text-xs font-bold transition-all duration-300 uppercase tracking-widest shrink-0 ${isAdded
-                                                            ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20'
-                                                            : 'bg-white text-black hover:bg-gray-100 shadow-xl border border-white/10'
-                                                            }`}
-                                                        whileHover={{ scale: 1.05 }}
-                                                        whileTap={{ scale: 0.95 }}
-                                                    >
-                                                        {isAdded ? 'Remove from Menu' : 'Add to Menu'}
-                                                    </motion.button>
+                                                    <div className="flex flex-col gap-3 shrink-0 min-w-[140px]">
+                                                        <div className="text-xs font-bold text-white/40 uppercase tracking-wider mb-1 text-right">Visible In:</div>
+                                                        <div className="flex flex-wrap gap-2 justify-end">
+                                                            {config.workspaces.map((ws, wsIndex) => {
+                                                                const isAdded = ws.apps.some(a => a.command === widget.command);
+                                                                return (
+                                                                    <button
+                                                                        key={ws.id}
+                                                                        onClick={() => {
+                                                                            const newWorkspaces = [...config.workspaces];
+                                                                            if (isAdded) {
+                                                                                // Remove
+                                                                                newWorkspaces[wsIndex].apps = newWorkspaces[wsIndex].apps.filter(a => a.command !== widget.command);
+                                                                            } else {
+                                                                                // Add
+                                                                                const newWidgetApp: AppItem = {
+                                                                                    id: crypto.randomUUID(),
+                                                                                    type: 'app',
+                                                                                    label: widget.defaultLabel,
+                                                                                    iconName: widget.iconName,
+                                                                                    iconSource: 'lucide',
+                                                                                    command: widget.command,
+                                                                                    description: widget.description
+                                                                                };
+                                                                                newWorkspaces[wsIndex].apps.push(newWidgetApp);
+                                                                            }
+                                                                            setConfig({ ...config, workspaces: newWorkspaces });
+                                                                        }}
+                                                                        className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold transition-all border ${isAdded
+                                                                            ? 'bg-white text-black border-white shadow-lg scale-110'
+                                                                            : 'bg-white/5 text-white/30 border-white/10 hover:bg-white/10 hover:text-white'
+                                                                            }`}
+                                                                        title={`Toggle for ${ws.name}`}
+                                                                    >
+                                                                        {ws.hotkey}
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
                                                 </motion.div>
                                             )
                                         })}

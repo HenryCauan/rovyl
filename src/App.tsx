@@ -6,8 +6,10 @@ import { SystemCenter } from './components/SystemCenter';
 import { NotesWidget } from './components/NotesWidget';
 import { AlarmWidget } from './components/AlarmWidget';
 import { StopwatchWidget } from './components/StopwatchWidget';
+import { PomodoroWidget } from './components/PomodoroWidget';
 import { WelcomeScreen } from './components/WelcomeScreen';
-import { Coordinates, AppItem, UIConfig, Note, Alarm, UserProfile } from './types';
+import { usePomodoro } from './hooks/usePomodoro';
+import { Coordinates, AppItem, UIConfig, Note, Alarm, UserProfile, Workspace } from './types';
 import { DEFAULT_APPS, DEFAULT_UI_CONFIG, DEFAULT_WORKSPACES } from './defaults';
 import { BellRing, MousePointer2, Settings, Minus, X, Maximize, Square } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -36,6 +38,9 @@ export default function App() {
   const [isNotesOpen, setIsNotesOpen] = useState(false);
   const [isAlarmWidgetOpen, setIsAlarmWidgetOpen] = useState(false);
   const [isStopwatchOpen, setIsStopwatchOpen] = useState(false);
+  const [isPomodoroOpen, setIsPomodoroOpen] = useState(false);
+
+  const pomodoro = usePomodoro();
 
   // Dashboard/Welcome Screen State
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
@@ -66,12 +71,31 @@ export default function App() {
   const [config, setConfig] = useState<UIConfig>(() => {
     const saved = localStorage.getItem('zenith_config');
     const loaded = saved ? JSON.parse(saved) : DEFAULT_UI_CONFIG;
+
+    // AUTO-MIGRATION: If user has the old "Work/Gaming" workspaces, or missing commandType in Streaming, force update
+    let finalWorkspaces = loaded.workspaces && loaded.workspaces.length > 0 ? loaded.workspaces : DEFAULT_WORKSPACES;
+
+    const isOldDefault = loaded.workspaces &&
+      loaded.workspaces.length === 3 &&
+      loaded.workspaces[1]?.name === 'Work';
+
+    const isMissingCommandType = loaded.workspaces &&
+      loaded.workspaces.some((ws: Workspace) =>
+        ws.name === 'Streaming' &&
+        ws.apps.some(app => app.command.startsWith('http') && !app.commandType)
+      );
+
+    if (isOldDefault || isMissingCommandType || !loaded.workspaces || loaded.workspaces.length === 0) {
+      console.log('Zenith: Migrating to new default workspaces (URL fix)...');
+      finalWorkspaces = DEFAULT_WORKSPACES;
+    }
+
     return {
       ...DEFAULT_UI_CONFIG,
       ...loaded,
       centerButton: loaded.centerButton || DEFAULT_UI_CONFIG.centerButton,
       gameMode: { ...DEFAULT_UI_CONFIG.gameMode, ...(loaded.gameMode || {}) },
-      workspaces: loaded.workspaces && loaded.workspaces.length > 0 ? loaded.workspaces : DEFAULT_WORKSPACES,
+      workspaces: finalWorkspaces,
       activeWorkspaceIndex: loaded.activeWorkspaceIndex ?? 0
     };
   });
@@ -231,8 +255,8 @@ export default function App() {
 
   useEffect(() => {
     if (window.electron && isDesktopMode) {
-      const isAnyInteractive = isMenuOpen || isSettingsOpen || isSystemCenterOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || !!ringingAlarm || isDashboardOpen;
-      const targetMode: 'fullscreen' | 'windowed' | 'small' = (isMenuOpen || isSystemCenterOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || !!ringingAlarm)
+      const isAnyInteractive = isMenuOpen || isSettingsOpen || isSystemCenterOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || !!ringingAlarm || isDashboardOpen;
+      const targetMode: 'fullscreen' | 'windowed' | 'small' = (isMenuOpen || isSystemCenterOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || !!ringingAlarm)
         ? 'fullscreen'
         : (isDashboardOpen || isSettingsOpen) ? 'windowed' : 'small';
 
@@ -254,9 +278,12 @@ export default function App() {
         lastVisibility.current = isAnyInteractive;
       }
     }
-  }, [isMenuOpen, isSettingsOpen, isSystemCenterOpen, isNotesOpen, isAlarmWidgetOpen, isStopwatchOpen, ringingAlarm, isDashboardOpen, isDesktopMode]);
+  }, [isMenuOpen, isSettingsOpen, isSystemCenterOpen, isNotesOpen, isAlarmWidgetOpen, isStopwatchOpen, isPomodoroOpen, ringingAlarm, isDashboardOpen, isDesktopMode]);
 
   const openMenu = (x: number, y: number, source: 'mmb' | 'shortcut' = 'shortcut') => {
+    console.log(`[App.tsx] openMenu called. Source: ${source}`);
+    console.log(`[App.tsx] Current config activeWorkspaceIndex: ${config.activeWorkspaceIndex}`);
+    console.log(`[App.tsx] Config workspaces length: ${config.workspaces?.length}`);
     // IMPACT: Force fullscreen immediately to avoid "inside app" feel
     if (window.electron && isDesktopMode) {
       window.electron.setWindowSize('fullscreen');
@@ -323,7 +350,7 @@ export default function App() {
     // Allow double click anywhere on the background to open settings
     // Check if other modals are open (SystemCenter, Notes)
     // Note: We allow this even if Dashboard is open, to escape it.
-    if (!isMenuOpen && !isSettingsOpen && !isSystemCenterOpen && !isNotesOpen) {
+    if (!isMenuOpen && !isSettingsOpen && !isSystemCenterOpen && !isNotesOpen && !isPomodoroOpen) {
       handleOpenSettings();
     }
   };
@@ -355,6 +382,7 @@ export default function App() {
     if (command === 'internal:notes') { if (isDesktopMode) window.electron?.setWindowSize('fullscreen'); setIsNotesOpen(true); return; }
     if (command === 'internal:alarm') { if (isDesktopMode) window.electron?.setWindowSize('fullscreen'); setIsAlarmWidgetOpen(true); return; }
     if (command === 'internal:stopwatch') { if (isDesktopMode) window.electron?.setWindowSize('fullscreen'); setIsStopwatchOpen(true); return; }
+    if (command === 'internal:pomodoro') { if (isDesktopMode) window.electron?.setWindowSize('fullscreen'); setIsPomodoroOpen(true); return; }
     if (command === 'system-center') { if (isDesktopMode) window.electron?.setWindowSize('fullscreen'); setIsSystemCenterOpen(true); return; }
 
     if (itemForToast) {
@@ -369,7 +397,7 @@ export default function App() {
       console.log("Calling electron.executeCommand...");
       window.electron.executeCommand(command, commandType);
       setTimeout(() => {
-        if (!isSettingsOpen && !isSystemCenterOpen && !isNotesOpen) {
+        if (!isSettingsOpen && !isSystemCenterOpen && !isNotesOpen && !isPomodoroOpen) {
           window.electron?.setWindowSize('small');
           window.electron?.hideWindow();
         }
@@ -382,7 +410,7 @@ export default function App() {
     setIsMenuOpen(false);
     isHolding.current = false; // This was tied to Space hold, but kept for now if other logic relies on it.
 
-    if (!selectedId && isDesktopMode && !isSettingsOpen && !isSystemCenterOpen && !isNotesOpen && !ringingAlarm && !isDashboardOpen) {
+    if (!selectedId && isDesktopMode && !isSettingsOpen && !isSystemCenterOpen && !isNotesOpen && !isPomodoroOpen && !ringingAlarm && !isDashboardOpen) {
       window.electron?.setWindowSize('small');
       window.electron?.hideWindow();
       return;
@@ -395,9 +423,11 @@ export default function App() {
 
     if (selectedId === '__CENTER__') {
       const centerConfig = config.centerButton;
+      const currentWorkspaceApps = config.workspaces[config.activeWorkspaceIndex]?.apps || apps;
+
       if (centerConfig.type === 'system') { if (isDesktopMode) window.electron?.setWindowSize('fullscreen'); setIsSystemCenterOpen(true); return; }
       else if (centerConfig.type === 'app' || centerConfig.type === 'widget') {
-        const targetApp = findAppRecursive(apps, centerConfig.target);
+        const targetApp = findAppRecursive(currentWorkspaceApps, centerConfig.target);
         const command = targetApp ? targetApp.command : centerConfig.target;
         console.log("Center action, target command:", command);
         executeAction(command, targetApp?.commandType || 'app', targetApp);
@@ -410,13 +440,14 @@ export default function App() {
     }
 
     if (selectedId) {
-      const app = findAppRecursive(apps, selectedId);
-      console.log("Selected app found:", app);
+      const currentWorkspaceApps = config.workspaces[config.activeWorkspaceIndex]?.apps || apps;
+      const app = findAppRecursive(currentWorkspaceApps, selectedId);
+      console.log("Selected app found in active workspace:", app);
       if (app) {
         console.log("Attempting to execute app command:", app.command);
         executeAction(app.command, app.commandType || 'app', app);
       } else {
-        console.warn("Could not find app with ID:", selectedId);
+        console.warn("Could not find app with ID in active workspace:", selectedId);
       }
     }
   };
@@ -442,7 +473,7 @@ export default function App() {
   };
 
   // Check if any modal is open
-  const isAnyModalOpen = isSettingsOpen || isSystemCenterOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || ringingAlarm || isMenuOpen || isDashboardOpen;
+  const isAnyModalOpen = isSettingsOpen || isSystemCenterOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || ringingAlarm || isMenuOpen || isDashboardOpen;
 
   return (
     <div
@@ -460,19 +491,40 @@ export default function App() {
 
 
       {/* Visibility Wrapper for the whole app content */}
-      <div className={`relative w-full h-full transition-opacity duration-300 border-2 border-white/10 ${isAnyModalOpen ? 'opacity-100' : 'opacity-0'}`}>
+      <div className={`relative w-full h-full transition-opacity duration-300 border-2 border-white/10 rounded-xl overflow-hidden ${isAnyModalOpen ? 'opacity-100' : 'opacity-0'}`}>
         {/* CUSTOM TITLE BAR OVERLAY (for drag region + app name) */}
         {(isDashboardOpen || isSettingsOpen) && !isMenuOpen && (
           <div
-            className="fixed top-0 left-0 right-0 h-[30px] z-[999] flex items-center px-3 pt-1 pointer-events-none"
+            className="fixed top-0 left-0 right-0 h-[36px] z-[999] flex items-center justify-between px-3 pt-1"
             style={{ WebkitAppRegion: 'drag' } as any}
           >
             <div className="flex items-center gap-2 pointer-events-none">
               <div className="w-3 h-3 bg-gradient-to-br from-white/20 to-transparent border border-white/10 rounded-sm flex items-center justify-center relative">
-                <div className="w-1.5 h-[2px] bg-white/40 rounded-full rotate-45 absolute" />
-                <div className="w-1.5 h-[2px] bg-white/40 rounded-full -rotate-45 absolute" />
+                <img src="/icon.png" alt="Zenith Icon" className="w-3 h-3" />
               </div>
               <span className="text-[9px] text-white/30 font-mono tracking-[0.3em] uppercase select-none">Zenith</span>
+            </div>
+
+            {/* Custom Window Controls */}
+            <div className="flex items-center space-x-1 pointer-events-auto" style={{ WebkitAppRegion: 'no-drag' } as any}>
+              <button
+                className="w-8 h-6 flex items-center justify-center text-white/50 hover:bg-white/10 rounded-md transition-colors"
+                onClick={() => window.electron?.minimizeWindow()}
+              >
+                <Minus size={14} strokeWidth={2} />
+              </button>
+              <button
+                className="w-8 h-6 flex items-center justify-center text-white/50 hover:bg-white/10 rounded-md transition-colors"
+                onClick={() => window.electron?.toggleMaximize()}
+              >
+                {windowState === 'maximized' ? <Square size={14} strokeWidth={2} /> : <Maximize size={14} strokeWidth={2} />}
+              </button>
+              <button
+                className="w-8 h-6 flex items-center justify-center text-white/50 hover:bg-red-500/80 rounded-md transition-colors"
+                onClick={() => window.electron?.quitApp()}
+              >
+                <X size={14} strokeWidth={2} />
+              </button>
             </div>
           </div>
         )}
@@ -485,7 +537,7 @@ export default function App() {
 
         {/* WELCOME SCREEN / DASHBOARD */}
         <AnimatePresence>
-          {isDashboardOpen && !isMenuOpen && !isSystemCenterOpen && !isNotesOpen && !isAlarmWidgetOpen && !isStopwatchOpen && !ringingAlarm && (
+          {isDashboardOpen && !isMenuOpen && !isSystemCenterOpen && !isNotesOpen && !isAlarmWidgetOpen && !isStopwatchOpen && !isPomodoroOpen && !ringingAlarm && (
             <motion.div
               key="welcome"
               exit={{ opacity: 0, scale: 0.95, filter: 'blur(10px)' }}
@@ -536,6 +588,7 @@ export default function App() {
         <NotesWidget isOpen={isNotesOpen} onClose={() => { setIsNotesOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} notes={notes} setNotes={setNotes} />
         <AlarmWidget isOpen={isAlarmWidgetOpen} onClose={() => { setIsAlarmWidgetOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} alarms={alarms} setAlarms={setAlarms} />
         <StopwatchWidget isOpen={isStopwatchOpen} onClose={() => { setIsStopwatchOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} />
+        <PomodoroWidget isOpen={isPomodoroOpen} onClose={() => { setIsPomodoroOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} {...pomodoro} />
 
         <SettingsModal
           isOpen={isSettingsOpen}

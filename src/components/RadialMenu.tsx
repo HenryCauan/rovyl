@@ -19,7 +19,13 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [isCenterActive, setIsCenterActive] = useState(false);
   const [hasMoved, setHasMoved] = useState(false);
+  const isCenterActiveRef = useRef(isCenterActive);
+  const openingTimeRef = useRef<number>(0);
   const [currentTime, setCurrentTime] = useState(new Date());
+
+  useEffect(() => {
+    isCenterActiveRef.current = isCenterActive;
+  }, [isCenterActive]);
 
   // Folder Navigation State
   const [currentLevelApps, setCurrentLevelApps] = useState<AppItem[]>(apps);
@@ -74,13 +80,12 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
   // Reset state when menu opens
   useEffect(() => {
     if (isOpen) {
-      setActiveIndex(null);
-      setIsCenterActive(false);
+      openingTimeRef.current = Date.now();
       setHasMoved(false);
-      // We do NOT reset folderStack here to allow "remembering" position if desired, 
-      // but standard behavior is usually reset. Let's reset for consistency.
+      setIsCenterActive(false);
       setFolderStack([]);
       setCurrentLevelApps(apps);
+      setActiveIndex(null);
 
       // CRITICAL: Focus window to ensure keyboard events are captured
       // This is especially important when menu is opened via MMB
@@ -197,9 +202,31 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
       }
     };
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      console.log('🎹 RadialMenu keydown:', e.key, 'isOpen:', isOpen, 'triggerSource:', triggerSource);
+    const handleContextMenu = (e: MouseEvent) => e.preventDefault();
 
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('mousedown', handleMouseDown);
+    // Keydown listener moved to specialized stable useEffect
+    window.addEventListener('contextmenu', handleContextMenu);
+
+    return () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('contextmenu', handleContextMenu);
+    };
+  }, [isOpen, position, activeIndex, onClose, currentLevelApps, config, isCenterActive, hasMoved, folderStack, apps]);
+
+  // STABLE KEYBOARD LISTENER (Decoupled from interaction states to avoid missing events)
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      console.log(`[RadialMenu.tsx] KeyDown detected: ${e.key}, Ctrl: ${e.ctrlKey}, Alt: ${e.altKey}, Shift: ${e.shiftKey}`);
       if (e.key === 'Escape') {
         e.preventDefault();
         onClose(null);
@@ -210,34 +237,17 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
       if (onWorkspaceSwitch) {
         const num = parseInt(e.key);
         if (num >= 1 && num <= 9) {
-          console.log('🔄 Switching to workspace:', num - 1);
+          console.log('🔄 Stable Listener Switching to workspace:', num - 1, 'Current config.activeWorkspaceIndex:', config.activeWorkspaceIndex);
           e.preventDefault();
           onWorkspaceSwitch(num - 1); // Convert to 0-indexed
         }
       }
     };
 
-    const handleContextMenu = (e: MouseEvent) => e.preventDefault();
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    window.addEventListener('mousedown', handleMouseDown);
     window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('contextmenu', handleContextMenu);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onWorkspaceSwitch, onClose]);
 
-    return () => {
-      if (rafId !== null) {
-        cancelAnimationFrame(rafId);
-      }
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-      window.removeEventListener('mousedown', handleMouseDown);
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('contextmenu', handleContextMenu);
-    };
-  }, [isOpen, position, activeIndex, onClose, currentLevelApps, config, isCenterActive, hasMoved, folderStack, apps]);
-
-  // MMB Release Logic (Hold to Open -> Release to Execute)
   // MMB Release Logic (Hold to Open -> Release to Execute)
   useEffect(() => {
     if (!isOpen || triggerSource !== 'mmb' || !window.electron?.onMmbRelease) return;
@@ -245,34 +255,46 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
     const handleMmbRelease = () => {
       console.log("MMB Release detected. Active Index:", activeIndex);
 
-      if (isCenterActive) {
-        if (folderStack.length > 0) {
-          const newStack = [...folderStack];
-          newStack.pop();
-          setFolderStack(newStack);
-          if (newStack.length === 0) setCurrentLevelApps(apps);
-          else setCurrentLevelApps(newStack[newStack.length - 1].apps);
-          setHasMoved(false);
-          setIsCenterActive(false);
-        } else {
-          onClose('__CENTER__');
-        }
-        return;
-      }
+      const elapsed = Date.now() - openingTimeRef.current;
+      const GRACE_PERIOD_MS = 250; // Ensure menu stays open for at least 250ms to prevent flickers
 
-      const selectedItem = activeIndex !== null ? currentLevelApps[activeIndex] : null;
-
-      if (selectedItem) {
-        if (selectedItem.type === 'folder' && selectedItem.children) {
-          setFolderStack([...folderStack, { label: selectedItem.label, apps: selectedItem.children }]);
-          setCurrentLevelApps(selectedItem.children);
-          setHasMoved(false);
-          setActiveIndex(null);
-        } else {
-          onClose(selectedItem.id);
+      const executeClose = () => {
+        if (isCenterActive) {
+          if (folderStack.length > 0) {
+            const newStack = [...folderStack];
+            newStack.pop();
+            setFolderStack(newStack);
+            if (newStack.length === 0) setCurrentLevelApps(apps);
+            else setCurrentLevelApps(newStack[newStack.length - 1].apps);
+            setHasMoved(false);
+            setIsCenterActive(false);
+          } else {
+            onClose('__CENTER__');
+          }
+          return;
         }
+
+        const selectedItem = activeIndex !== null ? currentLevelApps[activeIndex] : null;
+
+        if (selectedItem) {
+          if (selectedItem.type === 'folder' && selectedItem.children) {
+            setFolderStack([...folderStack, { label: selectedItem.label, apps: selectedItem.children }]);
+            setCurrentLevelApps(selectedItem.children);
+            setHasMoved(false);
+            setActiveIndex(null);
+          } else {
+            onClose(selectedItem.id);
+          }
+        } else {
+          onClose(null);
+        }
+      };
+
+      if (elapsed < GRACE_PERIOD_MS) {
+        console.log(`MMB release too quick (${elapsed}ms), applying grace period...`);
+        setTimeout(executeClose, GRACE_PERIOD_MS - elapsed);
       } else {
-        onClose(null);
+        executeClose();
       }
     };
 

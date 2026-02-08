@@ -48,6 +48,32 @@ export interface Alarm {
   days?: number[];
 }
 
+export type PomodoroMode = "work" | "shortBreak" | "longBreak";
+
+export interface PomodoroConfig {
+  workDuration: number; // minutes
+  shortBreakDuration: number; // minutes
+  longBreakDuration: number; // minutes
+  autoStart: boolean;
+  longBreakInterval: number; // pomodoros before long break
+}
+
+export interface PomodoroTask {
+  id: string;
+  title: string;
+  completed: boolean;
+  estimatedPomodoros: number;
+  completedPomodoros: number;
+}
+
+export interface PomodoroState {
+  isActive: boolean;
+  mode: PomodoroMode;
+  timeLeft: number; // seconds
+  cyclesCompleted: number;
+  totalPomodorosCompleted: number; // Daily stats
+}
+
 export interface CenterButtonConfig {
   type: "system" | "app" | "widget" | "command" | "none";
   target: string;
