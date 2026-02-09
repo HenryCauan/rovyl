@@ -238,20 +238,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         try {
             const filePath = await window.electron.selectFile();
             if (filePath && editingApp) {
-                // Determine icon automatically if picking an EXE
                 const bestIcon = getBestLucideIcon(filePath.split(/[\\/]/).pop() || 'App', filePath);
 
-                const updatedApp = {
-                    ...editingApp.app,
+                // 1. Set basic command and initial Lucide icon
+                handleAppUpdates({
                     command: filePath,
-                    iconName: bestIcon
-                };
+                    iconName: bestIcon,
+                    iconSource: 'lucide' // Explicitly start with Lucide
+                });
 
-                // Update state
-                handleAppUpdates(updatedApp);
-
-                // Attempt to extract icon
-                await extractIconFromPath(filePath);
+                // 2. Attempt to extract native icon
+                const nativeIconData = await extractIconFromPath(filePath);
+                if (nativeIconData) {
+                    // 3. If native icon found, update app with native icon data
+                    handleAppUpdates(nativeIconData);
+                }
             }
         } catch (e) {
             console.error("Pick Command Error:", e);
@@ -293,8 +294,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     };
 
     // Unified Update Helper
-    const handleAppUpdates = (updatedApp: AppItem) => {
+    const handleAppUpdates = (newAppData: Partial<AppItem>) => {
         if (!editingApp) return;
+
+        // Retrieve the current app item being edited
+        let currentApp: AppItem;
+        if (editingApp.workspaceIndex !== undefined) {
+            currentApp = config.workspaces[editingApp.workspaceIndex].apps[editingApp.index];
+        } else {
+            // Need to get the app from the nested structure
+            const currentLevelApps = getCurrentLevel(apps, folderPath);
+            currentApp = currentLevelApps[editingApp.index];
+        }
+
+        // Merge the new data with the current app data
+        const updatedApp: AppItem = {
+            ...currentApp,
+            ...newAppData
+        };
 
         if (editingApp.workspaceIndex !== undefined) {
             const newWorkspaces = [...config.workspaces];
@@ -302,7 +319,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             setConfig({ ...config, workspaces: newWorkspaces });
         } else {
             if (folderPath.length > 0) {
-                // Deep update
                 setApps(prev => updateAppTree(prev, folderPath, (list) => {
                     const newList = [...list];
                     newList[editingApp.index] = updatedApp;
@@ -322,49 +338,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     // Removed Reader logic for now in favor of IPC picker
 
 
-    const extractIconFromPath = async (command: string) => {
-        if (!editingApp || !window.electron || !window.electron.getFileIcon) return;
-        if (!command || command.length < 3) return;
+    const extractIconFromPath = async (command: string): Promise<Partial<AppItem> | null> => {
+        if (!window.electron || !window.electron.getFileIcon) return null;
+        if (!command || command.length < 3) return null;
         try {
             const cleanCommand = command.replace(/['"]/g, '');
             const iconDataUrl = await window.electron.getFileIcon(cleanCommand);
             if (iconDataUrl) {
-                if (editingApp.workspaceIndex !== undefined) {
-                    const newWorkspaces = [...config.workspaces];
-                    newWorkspaces[editingApp.workspaceIndex].apps[editingApp.index] = {
-                        ...newWorkspaces[editingApp.workspaceIndex].apps[editingApp.index],
-                        customIconUrl: iconDataUrl,
-                        iconSource: 'native'
-                    };
-                    setConfig({ ...config, workspaces: newWorkspaces });
-                } else {
-                    setApps(currentApps => updateAppTree(currentApps, folderPath, (list) => {
-                        const newList = [...list];
-                        newList[editingApp.index] = { ...newList[editingApp.index], customIconUrl: iconDataUrl, iconSource: 'native' };
-                        return newList;
-                    }));
-                }
-                setEditingApp(prev => prev ? { ...prev, app: { ...prev.app, customIconUrl: iconDataUrl, iconSource: 'native' } } : null);
+                return { customIconUrl: iconDataUrl, iconSource: 'native' };
             } else {
-                if (editingApp.workspaceIndex !== undefined) {
-                    const newWorkspaces = [...config.workspaces];
-                    newWorkspaces[editingApp.workspaceIndex].apps[editingApp.index] = {
-                        ...newWorkspaces[editingApp.workspaceIndex].apps[editingApp.index],
-                        iconSource: 'lucide'
-                    };
-                    setConfig({ ...config, workspaces: newWorkspaces });
-                } else {
-                    setApps(currentApps => updateAppTree(currentApps, folderPath, (list) => {
-                        const newList = [...list];
-                        newList[editingApp.index] = { ...newList[editingApp.index], iconSource: 'lucide' };
-                        return newList;
-                    }));
-                }
-                setEditingApp(prev => prev ? { ...prev, app: { ...prev.app, iconSource: 'lucide' } } : null);
                 console.log("No native icon found for:", cleanCommand);
+                return null; // Return null if no native icon, frontend will keep lucide
             }
         } catch (e) {
             console.error("Error extracting icon:", e);
+            return null;
         }
     };
 
@@ -393,39 +381,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         if (!editingApp) return;
 
+        // 1. Set basic command, label, and initial Lucide icon
+        handleAppUpdates({
+            command: appData.path,
+            label: appData.name,
+            iconName: bestIcon,
+            iconSource: 'lucide' // Explicitly start with Lucide
+        });
 
-
-        if (editingApp.workspaceIndex !== undefined) {
-            const newWorkspaces = [...config.workspaces];
-            newWorkspaces[editingApp.workspaceIndex].apps[editingApp.index] = {
-                ...newWorkspaces[editingApp.workspaceIndex].apps[editingApp.index],
-                command: appData.path,
-                label: appData.name,
-                iconName: bestIcon
-            };
-            setConfig({ ...config, workspaces: newWorkspaces });
-        } else {
-            setApps(currentApps => updateAppTree(currentApps, folderPath, (list) => {
-                const newList = [...list];
-                newList[editingApp.index] = {
-                    ...newList[editingApp.index],
-                    command: appData.path,
-                    label: appData.name,
-                    iconName: bestIcon // Pick a good default Lucide icon
-                };
-                return newList;
-            }));
+        // 2. Attempt to extract native icon
+        const nativeIconData = await extractIconFromPath(appData.path);
+        if (nativeIconData) {
+            // 3. If native icon found, update app with native icon data
+            handleAppUpdates(nativeIconData);
         }
-        await extractIconFromPath(appData.path);
-        setEditingApp(prev => prev ? {
-            ...prev,
-            app: {
-                ...prev.app,
-                command: appData.path,
-                label: appData.name,
-                iconName: bestIcon
-            }
-        } : null);
     };
 
     const handleAddApp = (type: 'app' | 'folder') => {
@@ -620,9 +589,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 onClose={() => setShowAppSelector(false)}
                 onAppSelect={handleAppSelect}
             />
-            <div className="fixed inset-0 z-[100] grid place-items-center overflow-hidden">
+            <div className="absolute inset-0 z-[100] flex items-center justify-center">
                 <motion.div
-                    className="absolute inset-0 bg-black/60 backdrop-blur-[20px]"
+                    className="absolute inset-0 bg-black/60 backdrop-blur-[20px] rounded-xl"
                     onClick={onClose}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -738,7 +707,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 )}
                             </motion.button>
                             <motion.button
-                                onClick={onReset}
+                                onClick={() => {
+                                    if (confirm("Are you sure you want to reset all settings and restart the app?")) {
+                                        window.electron?.resetConfig();
+                                    }
+                                }}
                                 className={`w-full flex items-center gap-3 px-4 py-3.5 text-sm font-semibold text-red-400/80 hover:text-red-300 hover:bg-red-500/15 rounded-xl transition-all duration-200 overflow-hidden relative group`}
                                 whileHover={{ scale: 1.02, x: 2 }}
                                 whileTap={{ scale: 0.98 }}

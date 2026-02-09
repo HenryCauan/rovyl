@@ -158,6 +158,7 @@ export interface ElectronAPI {
   onWindowState: (
     callback: (state: "maximized" | "windowed") => void,
   ) => () => void;
+  onSwitchWorkspace: (callback: (index: number) => void) => () => void;
   selectFile: () => Promise<string | null>;
   selectImage: () => Promise<string | null>;
   getInstalledApps: () => Promise<any[]>;

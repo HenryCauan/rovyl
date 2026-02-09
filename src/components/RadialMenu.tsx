@@ -460,7 +460,7 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.15 } }}
-            transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+            transition={{ type: 'spring', damping: 28, stiffness: 400, mass: 0.8 }}
             style={{
               left: Math.round(position.x),
               top: Math.round(position.y),
@@ -606,7 +606,7 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                       y: pos.y
                     }}
                     exit={{ scale: 0, opacity: 0 }}
-                    transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+                    transition={{ type: 'spring', stiffness: 500, damping: 30, mass: 0.8 }}
                     className="absolute top-0 left-0 pointer-events-auto cursor-pointer"
                     style={{ zIndex: 100, willChange: 'transform, opacity' }}
                     onMouseDown={(e) => e.stopPropagation()}

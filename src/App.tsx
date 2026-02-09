@@ -230,6 +230,10 @@ export default function App() {
       setTimeout(() => setLastLaunched(null), 5000);
     });
 
+    const cleanupSwitchWorkspace = window.electron?.onSwitchWorkspace((index: number) => {
+      handleWorkspaceSwitch(index);
+    });
+
     // FIRST RUN CHECK
     const hasRunBefore = localStorage.getItem('zenith_first_run_complete');
     if (!hasRunBefore) {
@@ -245,6 +249,7 @@ export default function App() {
       cleanupWindowState?.();
       cleanupMouseUp?.();
       cleanupExecutionError?.();
+      cleanupSwitchWorkspace?.();
     };
   }, [isSettingsOpen, isDashboardOpen]);
 
@@ -370,7 +375,7 @@ export default function App() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     }
-  }, [isMenuOpen, isDesktopMode, isSettingsOpen, isDashboardOpen]);
+  }, []);
 
   const executeAction = (command: string, commandType: "app" | "url", itemForToast?: AppItem) => {
     console.log("🚀 Zenith executing:", command, "Type:", commandType, itemForToast);

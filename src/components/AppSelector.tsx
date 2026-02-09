@@ -87,16 +87,35 @@ export const AppSelector: React.FC<AppSelectorProps> = ({ isOpen, onClose, onApp
         }
     };
 
-    // Filter apps based on search - Optimized for large lists
+    // Filter apps based on search
     const filteredApps = useMemo(() => {
         const term = searchTerm.toLowerCase();
-        if (!term) return apps.slice(0, 150); // Limit initial view for performance
+        let results = apps;
 
-        return apps.filter(app =>
-            app.Name.toLowerCase().includes(term) ||
-            app.DisplayName.toLowerCase().includes(term)
-        ).slice(0, 150);
+        if (term) {
+            results = apps.filter(app =>
+                app.Name.toLowerCase().includes(term) ||
+                app.DisplayName.toLowerCase().includes(term)
+            );
+        }
+        return results;
     }, [apps, searchTerm]);
+
+    // Pagination / Virtualization Lite
+    const [visibleCount, setVisibleCount] = useState(30);
+    const visibleApps = useMemo(() => filteredApps.slice(0, visibleCount), [filteredApps, visibleCount]);
+
+    const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+        const { scrollTop, clientHeight, scrollHeight } = e.currentTarget;
+        if (scrollHeight - scrollTop - clientHeight < 200) {
+            setVisibleCount(prev => Math.min(prev + 30, filteredApps.length));
+        }
+    };
+
+    // Reset pagination when search changes
+    useEffect(() => {
+        setVisibleCount(30);
+    }, [searchTerm]);
 
     const handleAppSelect = (app: WindowsApp, index: number) => {
         setSelectedAppIndex(index);
@@ -104,20 +123,35 @@ export const AppSelector: React.FC<AppSelectorProps> = ({ isOpen, onClose, onApp
             name: app.DisplayName,
             path: app.Path
         });
+        // Clear cursor style locally just in case
+        document.body.style.cursor = 'default';
         onClose();
     };
+
+    // Fix Cursor Issue on Close
+    useEffect(() => {
+        if (!isOpen) {
+            // Force cursor reset when closed
+            document.body.style.cursor = 'default';
+            // Blur any active inputs
+            if (document.activeElement instanceof HTMLElement) {
+                document.activeElement.blur();
+            }
+        }
+    }, [isOpen]);
+
 
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-[200] grid place-items-center overflow-hidden">
+        <div className="fixed inset-0 z-[200] grid place-items-center overflow-hidden cursor-default">
             <div className="absolute inset-0 bg-black/70 backdrop-blur-md" onClick={onClose} />
 
             <motion.div
                 initial={{ opacity: 0, scale: 0.95, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                className="relative z-[201] w-[90%] max-w-2xl h-[80vh] bg-[#0A0A0A] border border-white/10 rounded-2xl shadow-[0_0_120px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col"
+                className="relative z-[201] w-[90%] max-w-2xl h-[80vh] bg-[#0A0A0A] border border-white/10 rounded-2xl shadow-[0_0_120px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col cursor-default"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Header */}
@@ -155,7 +189,9 @@ export const AppSelector: React.FC<AppSelectorProps> = ({ isOpen, onClose, onApp
                 </div>
 
                 {/* Apps List */}
-                <div className="flex-1 overflow-hidden min-h-0">
+                <div
+                    className="flex-1 overflow-hidden min-h-0"
+                >
                     {loading ? (
                         <div className="h-full flex items-center justify-center">
                             <div className="text-center">
@@ -163,7 +199,7 @@ export const AppSelector: React.FC<AppSelectorProps> = ({ isOpen, onClose, onApp
                                 <p className="text-white/40 text-sm">Scanning installed applications...</p>
                             </div>
                         </div>
-                    ) : filteredApps.length === 0 ? (
+                    ) : visibleApps.length === 0 ? (
                         <div className="h-full flex items-center justify-center">
                             <div className="text-center">
                                 <Package size={48} className="text-white/20 mx-auto mb-3" />
@@ -173,8 +209,11 @@ export const AppSelector: React.FC<AppSelectorProps> = ({ isOpen, onClose, onApp
                             </div>
                         </div>
                     ) : (
-                        <div className="h-full overflow-y-auto custom-scrollbar p-2 space-y-1">
-                            {filteredApps.map((app, index) => (
+                        <div
+                            className="h-full overflow-y-auto custom-scrollbar p-2 space-y-1"
+                            onScroll={handleScroll}
+                        >
+                            {visibleApps.map((app, index) => (
                                 <motion.button
                                     key={`${app.Path}-${index}`}
                                     initial={{ opacity: 0, x: -10 }}
@@ -182,7 +221,7 @@ export const AppSelector: React.FC<AppSelectorProps> = ({ isOpen, onClose, onApp
                                     transition={{ delay: Math.min(index * 0.01, 0.5) }}
                                     onClick={() => handleAppSelect(app, index)}
                                     className={`
-                                        w-full p-3 rounded-lg flex items-center gap-3 transition-all duration-200 text-left group
+                                        w-full p-3 rounded-lg flex items-center gap-3 transition-all duration-200 text-left group cursor-pointer
                                         ${selectedAppIndex === index
                                             ? 'bg-white text-black'
                                             : 'bg-white/5 text-white hover:bg-white/10'
@@ -206,7 +245,7 @@ export const AppSelector: React.FC<AppSelectorProps> = ({ isOpen, onClose, onApp
                                     `} />
                                 </motion.button>
                             ))}
-                            {/* Loading state for more apps could go here if paginated */}
+                            {/* Loading / Spacing indicator */}
                             <div className="h-10 shrink-0" />
                         </div>
                     )}
@@ -215,7 +254,7 @@ export const AppSelector: React.FC<AppSelectorProps> = ({ isOpen, onClose, onApp
                 {/* Footer */}
                 <div className="h-12 border-t border-white/5 flex items-center justify-between px-6 bg-[#141414] shrink-0">
                     <div className="text-xs text-white/40">
-                        Showing {filteredApps.length} of {apps.length} applications
+                        Showing {visibleApps.length} of {filteredApps.length} applications
                     </div>
                     <button
                         onClick={onClose}

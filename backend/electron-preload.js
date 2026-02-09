@@ -40,6 +40,11 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.on("window-state", listener);
     return () => ipcRenderer.removeListener("window-state", listener);
   },
+  onSwitchWorkspace: (callback) => {
+    const listener = (event, index) => callback(index);
+    ipcRenderer.on("switch-workspace", listener);
+    return () => ipcRenderer.removeListener("switch-workspace", listener);
+  },
   minimizeWindow: () => ipcRenderer.send("minimize-window"),
   toggleMaximize: () => ipcRenderer.send("toggle-maximize"),
   quitApp: () => ipcRenderer.send("quit-app"),

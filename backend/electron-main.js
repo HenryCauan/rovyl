@@ -185,29 +185,74 @@ function setupMainWindow(window) {
   // DISABLED FOR DEBUG: window.setIgnoreMouseEvents(true, { forward: true });
 }
 
+// WORKSPACE SHORTCUT MANAGEMENT
+function registerWorkspaceShortcuts() {
+  const shortcutKeys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
+
+  shortcutKeys.forEach((key) => {
+    // Register specific number key
+    globalShortcut.register(key, () => {
+      // Send workspace switch event (index 0-8 for keys 1-9)
+      const index = key === "0" ? 9 : parseInt(key) - 1;
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        console.log(
+          `[GlobalShortcut] Key ${key} pressed -> Switching to workspace ${index}`,
+        );
+        mainWindow.webContents.send("switch-workspace", index);
+      }
+    });
+  });
+  console.log("[Shortcuts] Registered workspace keys 1-9,0");
+}
+
+function unregisterWorkspaceShortcuts() {
+  const shortcutKeys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
+  shortcutKeys.forEach((key) => {
+    if (globalShortcut.isRegistered(key)) {
+      globalShortcut.unregister(key);
+    }
+  });
+  console.log("[Shortcuts] Unregistered workspace keys");
+}
+
 function showMenuAtCursor(source = "shortcut") {
   // Authoritative Show Sequence
   if (mainWindow.isMinimized()) mainWindow.restore();
 
+  // ONLY call show if the window is actually hidden to the OS.
+  // Otherwise, we just toggle opacity for instant appearance.
+  if (!mainWindow.isVisible()) {
+    mainWindow.show();
+  }
+
+  // 1. Instant Visibility (Opacity)
   mainWindow.setOpacity(1);
-  mainWindow.setIgnoreMouseEvents(false);
+
+  // 2. Window State - Toggle AlwaysOnTop to force OS attention
   mainWindow.setSkipTaskbar(true);
+  mainWindow.setAlwaysOnTop(false);
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
 
-  // Show the window first
-  mainWindow.show();
+  // 3. CRITICAL: Input Capture
+  mainWindow.setIgnoreMouseEvents(false);
 
-  // Add a short delay to the focus command to ensure the window is ready.
-  // This helps prevent a race condition where focus is requested before the
-  // window is fully visible, which is the likely cause of the keyboard
-  // input issue on the second MMB activation.
+  // 4. Force Focus
+  // We need to be aggressive here.
+  mainWindow.focus();
+  mainWindow.webContents.focus();
+
+  // 5. Safety Refresh for Input (Race condition fix)
   setTimeout(() => {
     if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setIgnoreMouseEvents(false);
       mainWindow.focus();
       mainWindow.webContents.focus();
     }
-  }, 50);
+  }, 20); // Slightly increased to 20ms to catch window manager lag
+
+  // 6. GLOBAL SHORTCUTS: Register keys to intercept input (Bypass Focus Issues)
+  registerWorkspaceShortcuts();
 
   // Force overlay mode if not already
   if (!mainWindow.isFullScreen()) {
@@ -323,6 +368,11 @@ let tray = null;
 
 app.whenReady().then(async () => {
   mainWindow = await createWindow();
+
+  // Safety: Unregister shortcuts if window loses focus
+  mainWindow.on("blur", () => {
+    unregisterWorkspaceShortcuts();
+  });
 
   // Configurar Ícone na Bandeja (Tray)
   const iconPath = path.join(__dirname, "../public/icon.png");
@@ -628,7 +678,7 @@ ipcMain.on("execute-command", async (event, command, commandType) => {
           // Use 'start shell:AppsFolder\ID' which is the Windows native way to launch
           // both AUMIDs and Shell Namespace items (GUIDs).
           // We wrap the path in quotes to handle spaces correctly.
-          const shellPath = `shell:AppsFolder\${cmd}`;
+          const shellPath = `shell:AppsFolder\\${cmd}`;
           execCmd = `start "" "${shellPath}"`;
           console.log(`  → [${method}] Running: ${execCmd}`);
           exec(execCmd, (err, stdout, stderr) => {
@@ -765,15 +815,18 @@ ipcMain.on("hide-window", () => {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return; // Do nothing if the window is not available
   }
-  mainWindow.setIgnoreMouseEvents(true, { forward: true });
-  // Ensure the window is not in the taskbar when hidden/transparent
-  mainWindow.setSkipTaskbar(true);
-  // Instead of actual hiding (which removes from composition and takes time to restore),
-  // we just make it fully transparent. This makes "showing" it later instant.
-  // mainWindow.hide();
-  mainWindow.setOpacity(0);
 
-  // Optional: Blur to release focus back to previous app immediately
+  // Unregister shortcuts immediately
+  unregisterWorkspaceShortcuts();
+
+  // INSTANT HIDE: Opacity 0 + Pass-through
+  mainWindow.setOpacity(0);
+  mainWindow.setIgnoreMouseEvents(true, { forward: true });
+
+  // Do NOT call hide() - keeps it in compositor for instant re-show
+  // mainWindow.hide();
+
+  // Blur to return focus to previous app
   mainWindow.blur();
 });
 
@@ -808,52 +861,128 @@ ipcMain.on("toggle-maximize", () => {
 });
 
 ipcMain.on("quit-app", () => {
+  globalShortcut.unregisterAll();
   app.quit();
 });
 
+ipcMain.on("reset-config", () => {
+  try {
+    const configPath = path.join(app.getPath("userData"), "config.json");
+    if (fs.existsSync(configPath)) {
+      fs.unlinkSync(configPath);
+    }
+    app.relaunch();
+    app.exit(0);
+  } catch (err) {
+    console.error("Failed to reset config:", err);
+  }
+});
+
 // IPC: Get File Icon
+const iconCache = new Map();
+
 ipcMain.handle("get-file-icon", async (event, filePath) => {
   try {
     if (!filePath || typeof filePath !== "string") return null;
 
-    // Special case for Explorer
-    if (filePath === "Microsoft.Windows.Explorer") {
-      const explorerPath = path.join(
+    // Check Cache
+    if (iconCache.has(filePath)) {
+      return iconCache.get(filePath);
+    }
+
+    // 1. Resolve shell paths (GUIDs, env vars)
+    let resolvedPath = resolveShellPath(filePath);
+    resolvedPath = resolvedPath.replace(/['"]/g, "");
+
+    // Special Handling for Common Apps that might be passed as IDs
+    if (
+      filePath === "Microsoft.Windows.Explorer" ||
+      filePath === "File Explorer"
+    ) {
+      resolvedPath = path.join(
         process.env["SystemRoot"] || "C:\\Windows",
         "explorer.exe",
       );
-      const icon = await app.getFileIcon(explorerPath, { size: "large" });
-      return icon.toDataURL();
+    } else if (
+      filePath === "Microsoft.MicrosoftEdge" ||
+      filePath === "MSEdge"
+    ) {
+      // Edge is tricky, let's try the standard installation path first
+      const edgePath = path.join(
+        process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)",
+        "Microsoft\\Edge\\Application\\msedge.exe",
+      );
+      if (fs.existsSync(edgePath)) {
+        resolvedPath = edgePath;
+      } else {
+        // Fallback to the UWP-style AUMID if checking file fails
+        resolvedPath = "Microsoft.MicrosoftEdge_8wekyb3d8bbwe!MicrosoftEdge";
+      }
     }
 
-    // Resolve shell IDs and environment variables
-    let resolvedPath = resolveShellPath(filePath);
+    // 2. PowerShell Extraction Strategy (Robust default)
+    // We use our custom script which handles both Files and UWP AUMIDs
+    const psScript = path.join(__dirname, "extract-icon.ps1");
 
-    // Clean-up: Remove quotes if and only if it's a path
-    resolvedPath = resolvedPath.replace(/['"]/g, "");
+    // Construct command safely
+    const command = `powershell -NoProfile -ExecutionPolicy Bypass -File "${psScript}" -Target "${resolvedPath}"`;
 
-    // For UWP/AUMIDs (containing !), getFileIcon won't work directly.
-    // However, some AUMIDs correspond to folders.
-    // If it doesn't look like a real path, we return null or a generic icon.
-    if (!resolvedPath.includes("\\ ") && !resolvedPath.includes("/")) {
-      // It's a simple alias or a non-path AUMID
-      return null;
+    // Wrap exec in a promise to await the result
+    const iconData = await new Promise((resolve) => {
+      exec(command, { maxBuffer: 1024 * 1024 * 2 }, (error, stdout, stderr) => {
+        if (error) {
+          // If PowerShell fails, we'll try Electron's native fallback below
+          // console.error("PS Icon Extraction Error:", error);
+          resolve(null);
+        } else {
+          const result = stdout.trim();
+          if (result.startsWith("data:image")) {
+            resolve(result);
+          } else {
+            resolve(null);
+          }
+        }
+      });
+    });
+
+    if (iconData) {
+      iconCache.set(filePath, iconData); // Cache the result
+      return iconData;
     }
 
-    const icon = await app.getFileIcon(resolvedPath, { size: "large" });
-    return icon.toDataURL(); // Returns base64 image string
+    // 3. Fallback: Electron Native (Only works for paths, not AUMIDs)
+    // If resolvedPath looks like a file path, try Electron
+    if (resolvedPath.includes("\\") || resolvedPath.includes("/")) {
+      try {
+        const icon = await app.getFileIcon(resolvedPath, { size: "large" });
+        const dataUrl = icon.toDataURL();
+        iconCache.set(filePath, dataUrl); // Cache fallback too
+        return dataUrl;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    return null;
   } catch (error) {
-    // Silently fail for icons to avoid console spam in selector
+    console.error("Critical error in get-file-icon:", error);
     return null;
   }
 });
 
-ipcMain.handle("get-installed-apps", async () => {
+let installedAppsCache = null;
+
+ipcMain.handle("get-installed-apps", async (event, forceRefresh = false) => {
+  if (installedAppsCache && !forceRefresh) {
+    return installedAppsCache;
+  }
+
   return new Promise((resolve) => {
     const { exec } = require("child_process");
 
     // Get-StartApps is much faster and reliable on Win 10/11
     // It returns both Win32 (as paths) and UWP (as AUMIDs)
+    // We optimized the query to only select necessary fields
     const psScript = `
       $ErrorActionPreference = 'SilentlyContinue';
       try {
@@ -893,6 +1022,7 @@ ipcMain.handle("get-installed-apps", async () => {
           (a) => a && a.Path && a.Name,
         );
         // Scanner found ${appList.length} valid apps
+        installedAppsCache = appList; // Cache the result
         resolve(appList);
       } catch (e) {
         console.error("Parse error:", e);
