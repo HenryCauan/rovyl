@@ -175,6 +175,7 @@ export interface ElectronAPI {
   setSettings: (settings: any) => void;
   setLoginItemSettings: (settings: { openAtLogin: boolean }) => void;
   openSettingsWindow: () => void;
+  resetConfig: () => void;
 }
 
 declare global {

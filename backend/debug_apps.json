@@ -1,0 +1,14 @@
+[
+  {
+    "Name": "Discord",
+    "AppID": "com.squirrel.Discord.Discord"
+  },
+  {
+    "Name": "Steam",
+    "AppID": "{7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\\Steam\\Steam.exe"
+  },
+  {
+    "Name": "Steam Support Center",
+    "AppID": "http://support.steampowered.com/"
+  }
+]

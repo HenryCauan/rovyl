@@ -68,6 +68,7 @@ contextBridge.exposeInMainWorld("electron", {
   getSettings: () => ipcRenderer.invoke("get-settings"),
   setSettings: (settings) => ipcRenderer.send("set-settings", settings),
   openSettingsWindow: () => ipcRenderer.send("open-settings-window"),
+  resetConfig: () => ipcRenderer.send("reset-config"),
 });
 
 // Intercept console messages from the renderer process and send them to the main process

@@ -6,16 +6,17 @@ import { AVAILABLE_WIDGETS } from '../defaults';
 import { AppSelector } from './AppSelector';
 import {
     X, Save, RotateCcw, Monitor, LayoutGrid, Palette,
-    Plus, Trash2, Clock, Keyboard, AlertTriangle, RotateCw,
+    Plus, Trash2, Clock, Keyboard, AlertTriangle, RotateCw, AlarmClock,
     Gamepad2, AppWindow, Settings2, Folder, ChevronRight, CornerUpLeft,
     Image as ImageIcon, Upload, Search, FileType,
     Lock, LayoutDashboard, Box, Command, Ban, ChevronDown, Play, CheckCircle2,
     HelpCircle, User, MessageSquare, CreditCard, Globe, Eye, Zap,
-    Hash, Download, ExternalLink, Moon, Sun, ArrowRight,
+    Hash, Download, ExternalLink, Moon, Sun, ArrowRight, TimerReset,
     FolderPlus, FileText, Edit3, Image, Calendar, Battery, CloudRain,
     Layout, Compass, Laptop, Smartphone, Bell
 } from 'lucide-react';
 import { ZenithLogo } from './ZenithLogo';
+import { IconPicker } from './IconPicker';
 
 // --- Sub-Components for the new Master-Detail Layout ---
 
@@ -113,42 +114,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     // --- LOAD & SAVE SETTINGS (Backend Sync) ---
     useEffect(() => {
         // Load initial settings from backend if available
-        if (window.electron && window.electron.getSettings) {
-            // We need to extend the electron API in types.d.ts ideally, but for now we assume it exists or rely on generic IPC
-            // Actually, window.electron.getSettings doesn't exist in the types yet. 
-            // Logic: The parent component (App.tsx) likely loads initial config. 
-            // BUT, for the specific BACKEND settings (like globalShortcut), we might need to fetch them here OR the parent should have passed them.
-            // Passed 'config' already has 'globalShortcut'.
-            // So we just need to ENABLE SAVING when 'config' changes.
-        }
     }, []);
 
-    // Save settings when config changes (Debounced ideally, or just on close/change)
-    // Actually, let's look at where 'config' comes from. It's passed as prop.
-    // The parent 'App.tsx' owns the 'config' state. We should modify App.tsx to save settings to backend?
-    // OR we do it here if we want immediate side-effect.
-    // Let's do a simple effect here that sends 'set-settings' to backend whenever key config fields change.
+    // Save settings when config changes
     useEffect(() => {
         if (window.electron && config.globalShortcut) {
-            // Need to expose a specific method or use generic ipc
-            // Since we modified backend to listen to 'set-settings', we need to make sure frontend can send it.
-            // Let's check src/types.ts for exposed API. There is no 'setSettings'.
-            // I should update App.tsx or use a direct ipcRenderer if exposed?
-            // Wait, window.electron IS the bridge.
-            // I need to add 'saveSettings' to preload and types.
+            // Placeholder for future backend sync
         }
-    }, [config.globalShortcut]); // Only sync when shortcut changes for now? 
-    // Actually, let's handle this in App.tsx to centralization.
-    // But user asked to do it in "SettingsModal". 
-    // I will add the logic to App.tsx mostly, and here just UI updates 'config'. 
+    }, [config.globalShortcut]);
 
-    // WAIT, I missed updating preload.js! I need to update preload to expose setSettings.
-    // Let's assume I will update preload next.
-
-    // For now, let's keep the UI logic here.
+    // Helper for unique IDs
+    const generateId = () => {
+        try {
+            return crypto.randomUUID();
+        } catch (e) {
+            return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        }
+    };
 
     const [activeTab, setActiveTab] = useState<SettingsTab>('workspaces');
-    const [editingApp, setEditingApp] = useState<{ app: AppItem, index: number, workspaceIndex?: number } | null>(null);
+    const [editingApp, setEditingApp] = useState<{ app: AppItem, index: number, workspaceIndex?: number, path: number[] } | null>(null);
     const [iconSearchTerm, setIconSearchTerm] = useState('');
     const [folderPath, setFolderPath] = useState<number[]>([]);
     const [showAppSelector, setShowAppSelector] = useState(false);
@@ -218,6 +203,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         if (text.includes('chrome') || text.includes('browser')) return 'Globe';
         if (text.includes('terminal') || text.includes('cmd') || text.includes('powershell')) return 'Terminal';
         if (text.includes('steam') || text.includes('game')) return 'Gamepad2';
+        if (text.includes('discord')) return 'MessageSquare';
         if (text.includes('code') || text.includes('visual studio')) return 'Code';
         if (text.includes('explorer') || text.includes('folder')) return 'Folder';
         if (text.includes('setting') || text.includes('config')) return 'Settings2';
@@ -229,28 +215,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         return 'Layout'; // Default
     };
 
-
-
-    // --- File & Icon Picking via IPC ---
-    // Replaces the old handleFileUpload which was broken/hidden behind z-index
     const handlePickCommand = async () => {
         if (!window.electron?.selectFile) return;
         try {
             const filePath = await window.electron.selectFile();
             if (filePath && editingApp) {
                 const bestIcon = getBestLucideIcon(filePath.split(/[\\/]/).pop() || 'App', filePath);
-
-                // 1. Set basic command and initial Lucide icon
                 handleAppUpdates({
                     command: filePath,
                     iconName: bestIcon,
-                    iconSource: 'lucide' // Explicitly start with Lucide
+                    iconSource: 'lucide'
                 });
-
-                // 2. Attempt to extract native icon
                 const nativeIconData = await extractIconFromPath(filePath);
                 if (nativeIconData) {
-                    // 3. If native icon found, update app with native icon data
                     handleAppUpdates(nativeIconData);
                 }
             }
@@ -264,23 +241,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         try {
             const iconPath = await window.electron.selectImage();
             if (iconPath && editingApp) {
-                // Convert file path to local resource URL or just use path if Electron handles it
-                // For now assuming we get a path, and we might need to convert it to file:// or similar 
-                // OR checking if selectImage returns a DataURL. 
-                // Wait, dialog returns PATH. We need to load it. 
-                // Actually, let's just stick to the text path for now, but usually we need to read it.
-                // The previous logic used FileReader. 
-                // Let's assume we need to use 'native' source still.
-                // But we can't easily read local files in Renderer without nodeIntegration.
-                // Better approach: Let backend return DataURL for selectImage? 
-                // Or just set the path and let the <img> tag try to load it (might fail due to security).
-                // Let's use the 'extractIconFromPath' logic but for generic images? 
-                // Actually, let's keep it simple: Just set the path. If it fails, user can try another way.
-                // Re-reading implementation plan: I said "Add select-image IPC".
-
-                // Hack: If it's a local path, we might need 'file://' protocol
                 const formattedPath = iconPath.startsWith('http') ? iconPath : `file://${iconPath.replace(/\\/g, '/')}`;
-
                 const updatedApp = {
                     ...editingApp.app,
                     customIconUrl: formattedPath,
@@ -293,50 +254,47 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         }
     };
 
-    // Unified Update Helper
     const handleAppUpdates = (newAppData: Partial<AppItem>) => {
         if (!editingApp) return;
-
-        // Retrieve the current app item being edited
-        let currentApp: AppItem;
-        if (editingApp.workspaceIndex !== undefined) {
-            currentApp = config.workspaces[editingApp.workspaceIndex].apps[editingApp.index];
-        } else {
-            // Need to get the app from the nested structure
-            const currentLevelApps = getCurrentLevel(apps, folderPath);
-            currentApp = currentLevelApps[editingApp.index];
-        }
-
-        // Merge the new data with the current app data
-        const updatedApp: AppItem = {
-            ...currentApp,
-            ...newAppData
-        };
+        const targetPath = editingApp.path;
 
         if (editingApp.workspaceIndex !== undefined) {
-            const newWorkspaces = [...config.workspaces];
-            newWorkspaces[editingApp.workspaceIndex].apps[editingApp.index] = updatedApp;
-            setConfig({ ...config, workspaces: newWorkspaces });
+            const workspaceIndex = editingApp.workspaceIndex;
+
+            setConfig(prev => {
+                const newWorkspaces = [...prev.workspaces];
+                // Safe immutable update: copy the workspace object
+                newWorkspaces[workspaceIndex] = {
+                    ...newWorkspaces[workspaceIndex],
+                    apps: updateAppTree(
+                        newWorkspaces[workspaceIndex].apps,
+                        targetPath,
+                        (list) => {
+                            const newList = [...list];
+                            const currentApp = newList[editingApp.index];
+                            if (currentApp) {
+                                newList[editingApp.index] = { ...currentApp, ...newAppData };
+                            }
+                            return newList;
+                        }
+                    )
+                };
+                return { ...prev, workspaces: newWorkspaces };
+            });
         } else {
-            if (folderPath.length > 0) {
-                setApps(prev => updateAppTree(prev, folderPath, (list) => {
-                    const newList = [...list];
-                    newList[editingApp.index] = updatedApp;
-                    return newList;
-                }));
-            } else {
-                setApps(prev => {
-                    const newApps = [...prev];
-                    newApps[editingApp.index] = updatedApp;
-                    return newApps;
-                });
-            }
+            setApps(prev => updateAppTree(prev, targetPath, (list) => {
+                const newList = [...list];
+                const currentApp = newList[editingApp.index];
+                if (currentApp) {
+                    newList[editingApp.index] = { ...currentApp, ...newAppData };
+                }
+                return newList;
+            }));
         }
-        setEditingApp(prev => prev ? { ...prev, app: updatedApp } : null);
+
+        // Also update the local editing app state so the UI reflects changes immediately
+        setEditingApp(prev => prev ? { ...prev, app: { ...prev.app, ...newAppData } } : null);
     };
-
-    // Removed Reader logic for now in favor of IPC picker
-
 
     const extractIconFromPath = async (command: string): Promise<Partial<AppItem> | null> => {
         if (!window.electron || !window.electron.getFileIcon) return null;
@@ -344,12 +302,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         try {
             const cleanCommand = command.replace(/['"]/g, '');
             const iconDataUrl = await window.electron.getFileIcon(cleanCommand);
-            if (iconDataUrl) {
-                return { customIconUrl: iconDataUrl, iconSource: 'native' };
-            } else {
-                console.log("No native icon found for:", cleanCommand);
-                return null; // Return null if no native icon, frontend will keep lucide
-            }
+            if (iconDataUrl) return { customIconUrl: iconDataUrl, iconSource: 'native' };
+            return null;
         } catch (e) {
             console.error("Error extracting icon:", e);
             return null;
@@ -361,9 +315,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             alert(`Could not find a launch path for "${appData.name}".`);
             return;
         }
-
         const bestIcon = getBestLucideIcon(appData.name, appData.path);
-
         if (appSelectorMode === 'center') {
             setConfig(prev => ({
                 ...prev,
@@ -375,55 +327,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 }
             }));
             setShowAppSelector(false);
-            // Optionally save config here if we implemented sync
             return;
         }
-
         if (!editingApp) return;
-
-        // 1. Set basic command, label, and initial Lucide icon
-        handleAppUpdates({
-            command: appData.path,
-            label: appData.name,
-            iconName: bestIcon,
-            iconSource: 'lucide' // Explicitly start with Lucide
-        });
-
-        // 2. Attempt to extract native icon
+        handleAppUpdates({ command: appData.path, label: appData.name, iconName: bestIcon, iconSource: 'lucide' });
         const nativeIconData = await extractIconFromPath(appData.path);
-        if (nativeIconData) {
-            // 3. If native icon found, update app with native icon data
-            handleAppUpdates(nativeIconData);
-        }
+        if (nativeIconData) handleAppUpdates(nativeIconData);
     };
 
     const handleAddApp = (type: 'app' | 'folder') => {
-        // Free Plan Limits Removed as requested
         const newApp: AppItem = {
-            id: crypto.randomUUID(),
-            type: type,
-            label: type === 'folder' ? 'New Folder' : 'New App',
-            iconName: type === 'folder' ? 'Folder' : 'Layout',
-            iconSource: 'lucide',
-            command: '',
-            commandType: 'app', // Initialize with 'app' as default
-            description: type === 'folder' ? 'Folder Group' : 'Application',
+            id: generateId(), type: type, label: type === 'folder' ? 'New Folder' : 'New App',
+            iconName: type === 'folder' ? 'Folder' : 'Layout', iconSource: 'lucide', command: '',
+            commandType: 'app', description: type === 'folder' ? 'Folder Group' : 'Application',
             children: type === 'folder' ? [] : undefined
         };
-        const newIndex = currentApps.length;
-        // If we are inside a workspace loop logic (which we aren't yet fully), we might need to adjust.
-        // But for now, this updates 'apps' state which is the "default" or "root" apps.
-        // If we are editing a WORKSPACE's apps, we need a different handler or context.
-        // Let's assume this is for the currently viewed list (which we will wire to workspace apps).
-
-        // Actually, if we are in "Workspaces" tab, we need to know WHICH workspace we are adding to.
         if (selectedWorkspaceIndex !== null) {
-            addAppToWorkspace(selectedWorkspaceIndex, type);
+            addAppToWorkspace(selectedWorkspaceIndex, type, workspaceFolderPath);
         } else {
-            // Fallback to updating 'apps' if we are in main menu mode (though we are hiding that tab)
             setApps(prev => updateAppTree(prev, folderPath, (list) => [...list, newApp]));
         }
-        // setEditingApp is tricky if we are in workspace mode.
     };
 
     const goUpFolder = () => {
@@ -434,14 +357,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     };
 
     const toggleWidget = (widgetCommand: string, widgetDef: any) => {
-        // Premium check removed
         const exists = flatApps.find(a => a.command === widgetCommand);
         if (exists) {
-            // if (apps.length <= 2) { alert("Min 2 apps required in root."); return; } // Relax this check?
             setApps(prev => prev.filter(a => a.command !== widgetCommand));
         } else {
             const newWidgetApp: AppItem = {
-                id: crypto.randomUUID(), type: 'app', label: widgetDef.defaultLabel, iconName: widgetDef.iconName,
+                id: generateId(), type: 'app', label: widgetDef.defaultLabel, iconName: widgetDef.iconName,
                 iconSource: 'lucide', command: widgetDef.command, description: widgetDef.name
             };
             setApps(prev => [...prev, newWidgetApp]);
@@ -462,65 +383,34 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const handleCenterTargetChange = (targetId: string, type: 'app' | 'widget') => {
         if (type === 'app') {
             const app = flatApps.find(a => a.id === targetId);
-            if (app) {
-                setConfig(prev => ({ ...prev, centerButton: { ...prev.centerButton, target: app.id, label: app.label.toUpperCase().substring(0, 8), iconName: app.iconName } }));
-            }
+            if (app) setConfig(prev => ({ ...prev, centerButton: { ...prev.centerButton, target: app.id, label: app.label.toUpperCase().substring(0, 8), iconName: app.iconName } }));
         } else if (type === 'widget') {
             const widget = AVAILABLE_WIDGETS.find(w => w.id === targetId);
-            if (widget) {
-                setConfig(prev => ({ ...prev, centerButton: { ...prev.centerButton, target: widget.command, label: widget.defaultLabel.toUpperCase(), iconName: widget.iconName } }));
-            }
+            if (widget) setConfig(prev => ({ ...prev, centerButton: { ...prev.centerButton, target: widget.command, label: widget.defaultLabel.toUpperCase(), iconName: widget.iconName } }));
         }
     };
 
-    // Workspace Management Functions
     const createWorkspace = () => {
-        // Premium Limit Removed
         const nextHotkey = config.workspaces.length + 1;
         const newWorkspace = {
-            id: `workspace-${nextHotkey}`,
-            name: `Workspace ${nextHotkey}`,
-            hotkey: nextHotkey,
-            enabled: true,
-            apps: []
+            id: `workspace-${nextHotkey}`, name: `Workspace ${nextHotkey}`,
+            hotkey: nextHotkey, enabled: true, apps: []
         };
-
-        setConfig(prev => ({
-            ...prev,
-            workspaces: [...prev.workspaces, newWorkspace]
-        }));
+        setConfig(prev => ({ ...prev, workspaces: [...prev.workspaces, newWorkspace] }));
     };
 
     const deleteWorkspace = (index: number) => {
-        if (config.workspaces.length <= 1) {
-            alert("Cannot delete the last workspace");
-            return;
-        }
-
+        if (config.workspaces.length <= 1) { alert("Cannot delete the last workspace"); return; }
         const newWorkspaces = config.workspaces.filter((_, i) => i !== index);
-        // Renumber hotkeys sequentially
-        const renumbered = newWorkspaces.map((ws, i) => ({
-            ...ws,
-            hotkey: i + 1,
-            id: `workspace-${i + 1}`
-        }));
-
-        setConfig(prev => ({
-            ...prev,
-            workspaces: renumbered,
-            activeWorkspaceIndex: Math.min(prev.activeWorkspaceIndex, renumbered.length - 1)
-        }));
-
-        if (selectedWorkspaceIndex === index) {
-            setSelectedWorkspaceIndex(null);
-        } else if (selectedWorkspaceIndex !== null && selectedWorkspaceIndex > index) {
-            setSelectedWorkspaceIndex(selectedWorkspaceIndex - 1);
-        }
+        const renumbered = newWorkspaces.map((ws, i) => ({ ...ws, hotkey: i + 1, id: `workspace-${i + 1}` }));
+        setConfig(prev => ({ ...prev, workspaces: renumbered, activeWorkspaceIndex: Math.min(prev.activeWorkspaceIndex, renumbered.length - 1) }));
+        if (selectedWorkspaceIndex === index) { setSelectedWorkspaceIndex(null); }
+        else if (selectedWorkspaceIndex !== null && selectedWorkspaceIndex > index) { setSelectedWorkspaceIndex(selectedWorkspaceIndex - 1); }
     };
 
-    const addAppToWorkspace = (workspaceIndex: number, type: 'app' | 'folder') => {
+    const addAppToWorkspace = (workspaceIndex: number, type: 'app' | 'folder', path: number[]) => {
         const newApp: AppItem = {
-            id: crypto.randomUUID(),
+            id: generateId(),
             type: type,
             label: type === 'folder' ? 'New Folder' : 'New App',
             iconName: type === 'folder' ? 'Folder' : 'Layout',
@@ -532,43 +422,81 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         };
 
         const newWorkspaces = [...config.workspaces];
-        newWorkspaces[workspaceIndex] = {
-            ...newWorkspaces[workspaceIndex],
-            apps: [...newWorkspaces[workspaceIndex].apps, newApp]
-        };
+        const targetWorkspace = { ...newWorkspaces[workspaceIndex] };
 
+        targetWorkspace.apps = updateAppTree(
+            targetWorkspace.apps,
+            path,
+            (list) => [...list, newApp]
+        );
+
+        newWorkspaces[workspaceIndex] = targetWorkspace;
         setConfig({ ...config, workspaces: newWorkspaces });
+
+        // If it's an app, open editor immediately
+        if (type === 'app') {
+            const currentLevel = getCurrentLevel(targetWorkspace.apps, path);
+            const newIndex = currentLevel.length - 1;
+            setEditingApp({ app: newApp, index: newIndex, workspaceIndex, path });
+            setAppSelectorMode('edit');
+            setShowAppSelector(true);
+        } else {
+            // If it's a folder, enter it
+            const currentLevel = getCurrentLevel(targetWorkspace.apps, path);
+            const newIndex = currentLevel.length - 1;
+            setWorkspaceFolderPath([...path, newIndex]);
+        }
     };
 
-    const removeAppFromWorkspace = (workspaceIndex: number, appIndex: number) => {
+    const removeAppFromWorkspace = (workspaceIndex: number, appIndex: number, path: number[]) => {
         const newWorkspaces = [...config.workspaces];
-        newWorkspaces[workspaceIndex] = {
-            ...newWorkspaces[workspaceIndex],
-            apps: newWorkspaces[workspaceIndex].apps.filter((_, i) => i !== appIndex)
-        };
+        const targetWorkspace = { ...newWorkspaces[workspaceIndex] };
+
+        targetWorkspace.apps = updateAppTree(
+            targetWorkspace.apps,
+            path,
+            (list) => list.filter((_, i) => i !== appIndex)
+        );
+
+        newWorkspaces[workspaceIndex] = targetWorkspace;
         setConfig({ ...config, workspaces: newWorkspaces });
     };
 
-    const moveAppInWorkspace = (workspaceIndex: number, fromIndex: number, direction: 'up' | 'down') => {
-        const workspace = config.workspaces[workspaceIndex];
+    const moveAppInWorkspace = (workspaceIndex: number, fromIndex: number, direction: 'up' | 'down', path: number[]) => {
+        const newWorkspaces = [...config.workspaces];
+        const targetWorkspace = { ...newWorkspaces[workspaceIndex] };
         const toIndex = direction === 'up' ? fromIndex - 1 : fromIndex + 1;
 
-        if (toIndex < 0 || toIndex >= workspace.apps.length) return;
+        targetWorkspace.apps = updateAppTree(
+            targetWorkspace.apps,
+            path,
+            (list) => {
+                if (toIndex < 0 || toIndex >= list.length) return list;
+                const newList = [...list];
+                [newList[fromIndex], newList[toIndex]] = [newList[toIndex], newList[fromIndex]];
+                return newList;
+            }
+        );
 
-        const newApps = [...workspace.apps];
-        [newApps[fromIndex], newApps[toIndex]] = [newApps[toIndex], newApps[fromIndex]];
-
-        const newWorkspaces = [...config.workspaces];
-        newWorkspaces[workspaceIndex] = { ...workspace, apps: newApps };
+        newWorkspaces[workspaceIndex] = targetWorkspace;
         setConfig({ ...config, workspaces: newWorkspaces });
     };
 
-    const updateWorkspaceApp = (workspaceIndex: number, appIndex: number, updatedApp: AppItem) => {
+    const updateWorkspaceApp = (workspaceIndex: number, appIndex: number, updatedApp: AppItem, path: number[]) => {
         const newWorkspaces = [...config.workspaces];
-        newWorkspaces[workspaceIndex] = {
-            ...newWorkspaces[workspaceIndex],
-            apps: newWorkspaces[workspaceIndex].apps.map((app, i) => i === appIndex ? updatedApp : app)
-        };
+        const targetWorkspace = { ...newWorkspaces[workspaceIndex] };
+
+        targetWorkspace.apps = updateAppTree(
+            targetWorkspace.apps,
+            path,
+            (list) => {
+                const newList = [...list];
+                newList[appIndex] = updatedApp;
+                return newList;
+            }
+        );
+
+        newWorkspaces[workspaceIndex] = targetWorkspace;
         setConfig({ ...config, workspaces: newWorkspaces });
     };
 
@@ -708,8 +636,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             </motion.button>
                             <motion.button
                                 onClick={() => {
-                                    if (confirm("Are you sure you want to reset all settings and restart the app?")) {
-                                        window.electron?.resetConfig();
+                                    if (confirm("Você tem certeza que deseja resetar todas as configurações? O app será reiniciado.")) {
+                                        localStorage.clear();
+                                        if (window.electron && window.electron.resetConfig) {
+                                            window.electron.resetConfig();
+                                        } else {
+                                            window.location.reload();
+                                        }
                                     }
                                 }}
                                 className={`w-full flex items-center gap-3 px-4 py-3.5 text-sm font-semibold text-red-400/80 hover:text-red-300 hover:bg-red-500/15 rounded-xl transition-all duration-200 overflow-hidden relative group`}
@@ -786,11 +719,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                 >
                                                     <div className="flex items-center gap-6 relative z-10 flex-1">
                                                         <motion.div
-                                                            className="w-14 h-14 rounded-xl bg-black/60 border border-white/10 flex items-center justify-center text-white shadow-lg shrink-0"
-                                                            whileHover={{ scale: 1.05, rotate: 5 }}
+                                                            className="w-12 h-12 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-center text-white/70 shadow-sm shrink-0 group-hover:bg-white/[0.06] group-hover:text-white transition-colors"
+                                                            whileHover={{ scale: 1.05, rotate: 2 }}
                                                             transition={{ duration: 0.2 }}
                                                         >
-                                                            <Icon size={26} strokeWidth={2} />
+                                                            <Icon size={22} strokeWidth={1.5} />
                                                         </motion.div>
                                                         <div className="min-w-0 flex-1">
                                                             <h4 className="font-bold text-white text-base mb-1">{widget.name}</h4>
@@ -953,10 +886,66 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                             />
                                         </motion.div>
                                         <motion.div
+                                            className="space-y-4"
+                                            initial={{ opacity: 0, y: 10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            transition={{ duration: 0.3, delay: 0.33 }}
+                                        >
+                                            <div className="flex justify-between items-baseline">
+                                                <label className="text-sm font-bold text-white/70 uppercase tracking-wider">Background Opacity</label>
+                                                <motion.span
+                                                    className="text-2xl font-bold text-white tabular-nums"
+                                                    key={config.backdropOpacity}
+                                                    initial={{ scale: 1.2, opacity: 0 }}
+                                                    animate={{ scale: 1, opacity: 1 }}
+                                                    transition={{ duration: 0.2 }}
+                                                >
+                                                    {Math.round(config.backdropOpacity * 100)}<span className="text-base text-white/40 ml-1.5">%</span>
+                                                </motion.span>
+                                            </div>
+                                            <input
+                                                type="range"
+                                                min="0"
+                                                max="1"
+                                                step="0.05"
+                                                value={config.backdropOpacity}
+                                                onChange={e => setConfig({ ...config, backdropOpacity: Number(e.target.value) })}
+                                                className="w-full accent-white cursor-pointer"
+                                            />
+                                            <p className="text-xs text-white/30 px-1">Controls the darkness of the background behind the radial menu.</p>
+                                        </motion.div>
+                                        <motion.div
                                             className="space-y-4 pt-6 border-t border-white/[0.08]"
                                             initial={{ opacity: 0, y: 10 }}
                                             animate={{ opacity: 1, y: 0 }}
-                                            transition={{ duration: 0.3, delay: 0.35 }}
+                                            transition={{ duration: 0.3, delay: 0.36 }}
+                                        >
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <label className="text-sm font-medium text-white">Show Labels</label>
+                                                    <p className="text-xs text-white/40 mt-0.5">Display text labels below app icons in the radial menu</p>
+                                                </div>
+                                                <motion.button
+                                                    onClick={() => setConfig({ ...config, showLabels: !config.showLabels })}
+                                                    className={`relative w-14 h-8 rounded-full transition-all duration-300 ${config.showLabels ? 'bg-white' : 'bg-white/10'
+                                                        }`}
+                                                    whileHover={{ scale: 1.05 }}
+                                                    whileTap={{ scale: 0.95 }}
+                                                >
+                                                    <motion.div
+                                                        className={`absolute top-1 w-6 h-6 rounded-full shadow-md ${config.showLabels ? 'bg-black' : 'bg-white'
+                                                            }`}
+                                                        animate={{ x: config.showLabels ? 28 : 4 }}
+                                                        transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                                                    />
+                                                </motion.button>
+                                            </div>
+                                        </motion.div>
+                                        <motion.div
+                                            className="space-y-4 pt-6 border-t border-white/[0.08]"
+                                            initial={{ opacity: 0, y: 10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            transition={{ duration: 0.3, delay: 0.39 }}
                                         >
                                             <label className="text-sm font-bold text-white/70 uppercase tracking-wider">Accent Color</label>
                                             <div className="flex gap-5 items-center">
@@ -1082,44 +1071,48 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                 transition={{ duration: 0.3 }}
                                                 className="flex-1 flex flex-col"
                                             >
-                                                {/* Toolbar */}
-                                                <div className="flex items-center gap-4 mb-6 bg-white/[0.02] p-4 rounded-2xl border border-white/5">
-                                                    <div className="flex-1">
-                                                        <label className="text-xs font-bold text-white/30 uppercase tracking-wider block mb-1.5 ml-1">Workspace Name</label>
-                                                        <input
-                                                            type="text"
-                                                            value={config.workspaces[selectedWorkspaceIndex].name}
-                                                            onChange={e => {
-                                                                const nw = [...config.workspaces];
-                                                                nw[selectedWorkspaceIndex] = { ...nw[selectedWorkspaceIndex], name: e.target.value };
-                                                                setConfig({ ...config, workspaces: nw });
-                                                            }}
-                                                            className="w-full bg-transparent text-xl font-bold text-white border-none outline-none placeholder-white/20"
-                                                            placeholder="Enter name..."
-                                                        />
+                                                {selectedWorkspaceIndex !== null && config.workspaces[selectedWorkspaceIndex] && (
+                                                    <div className="flex items-center gap-4 mb-6 bg-white/[0.02] p-4 rounded-2xl border border-white/5">
+                                                        <div className="flex-1">
+                                                            <label className="text-xs font-bold text-white/30 uppercase tracking-wider block mb-1.5 ml-1">Workspace Name</label>
+                                                            <input
+                                                                type="text"
+                                                                value={config.workspaces[selectedWorkspaceIndex].name}
+                                                                onChange={e => {
+                                                                    const nw = [...config.workspaces];
+                                                                    nw[selectedWorkspaceIndex] = { ...nw[selectedWorkspaceIndex], name: e.target.value };
+                                                                    setConfig({ ...config, workspaces: nw });
+                                                                }}
+                                                                className="w-full bg-transparent text-xl font-bold text-white border-none outline-none placeholder-white/20"
+                                                                placeholder="Enter name..."
+                                                            />
+                                                        </div>
+                                                        <div className="h-10 w-px bg-white/10 mx-2" />
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                onClick={() => {
+                                                                    const nw = [...config.workspaces];
+                                                                    nw[selectedWorkspaceIndex] = {
+                                                                        ...nw[selectedWorkspaceIndex],
+                                                                        enabled: !nw[selectedWorkspaceIndex].enabled
+                                                                    };
+                                                                    setConfig({ ...config, workspaces: nw });
+                                                                }}
+                                                                className={`h-10 px-4 rounded-xl text-sm font-bold transition-all border ${config.workspaces[selectedWorkspaceIndex].enabled ? 'bg-green-500/10 text-green-400 border-green-500/20 hover:bg-green-500/20' : 'bg-white/5 text-white/40 border-white/10 hover:bg-white/10'}`}
+                                                            >
+                                                                {config.workspaces[selectedWorkspaceIndex].enabled ? 'Enabled' : 'Disabled'}
+                                                            </button>
+                                                            <button
+                                                                onClick={() => {
+                                                                    if (confirm('Delete this workspace?')) deleteWorkspace(selectedWorkspaceIndex);
+                                                                }}
+                                                                className="h-10 w-10 flex items-center justify-center rounded-xl bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-all"
+                                                            >
+                                                                <Trash2 size={18} />
+                                                            </button>
+                                                        </div>
                                                     </div>
-                                                    <div className="h-10 w-px bg-white/10 mx-2" />
-                                                    <div className="flex items-center gap-2">
-                                                        <button
-                                                            onClick={() => {
-                                                                const nw = [...config.workspaces];
-                                                                nw[selectedWorkspaceIndex].enabled = !nw[selectedWorkspaceIndex].enabled;
-                                                                setConfig({ ...config, workspaces: nw });
-                                                            }}
-                                                            className={`h-10 px-4 rounded-xl text-sm font-bold transition-all border ${config.workspaces[selectedWorkspaceIndex].enabled ? 'bg-green-500/10 text-green-400 border-green-500/20 hover:bg-green-500/20' : 'bg-white/5 text-white/40 border-white/10 hover:bg-white/10'}`}
-                                                        >
-                                                            {config.workspaces[selectedWorkspaceIndex].enabled ? 'Enabled' : 'Disabled'}
-                                                        </button>
-                                                        <button
-                                                            onClick={() => {
-                                                                if (confirm('Delete this workspace?')) deleteWorkspace(selectedWorkspaceIndex);
-                                                            }}
-                                                            className="h-10 w-10 flex items-center justify-center rounded-xl bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-all"
-                                                        >
-                                                            <Trash2 size={18} />
-                                                        </button>
-                                                    </div>
-                                                </div>
+                                                )}
 
                                                 {/* App Grid */}
                                                 <div className="flex-1 overflow-y-auto custom-scrollbar bg-black/20 rounded-2xl border border-white/5 p-6 mb-6">
@@ -1159,13 +1152,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                                             if (isFolder) {
                                                                                 setWorkspaceFolderPath([...workspaceFolderPath, i]);
                                                                             } else {
-                                                                                setEditingApp({ app, index: i, workspaceIndex: selectedWorkspaceIndex });
+                                                                                setEditingApp({ app, index: i, workspaceIndex: selectedWorkspaceIndex, path: workspaceFolderPath });
                                                                             }
                                                                         }}
                                                                         className="group relative p-4 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/10 transition-all flex items-center gap-4 cursor-pointer"
                                                                     >
-                                                                        <div className="w-12 h-12 rounded-lg bg-black/40 flex items-center justify-center text-white">
-                                                                            <Icon size={24} strokeWidth={1.5} className={isFolder ? 'text-blue-400' : ''} />
+                                                                        <div className="w-10 h-10 rounded-lg bg-black/40 flex items-center justify-center text-white/80 overflow-hidden border border-white/5 group-hover:text-white transition-colors">
+                                                                            {app.iconSource === 'native' && app.customIconUrl ? (
+                                                                                <img src={app.customIconUrl} className="w-5 h-5 object-contain" alt="" />
+                                                                            ) : (
+                                                                                <Icon size={20} strokeWidth={1.5} className={isFolder ? 'text-blue-400' : ''} />
+                                                                            )}
                                                                         </div>
                                                                         <div className="flex-1 min-w-0">
                                                                             <div className="font-bold text-white truncate">{app.label}</div>
@@ -1174,7 +1171,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                                             {!isFolder && (
                                                                                 <button
-                                                                                    onClick={(e) => { e.stopPropagation(); setEditingApp({ app, index: i, workspaceIndex: selectedWorkspaceIndex }); }}
+                                                                                    onClick={(e) => { e.stopPropagation(); setEditingApp({ app, index: i, workspaceIndex: selectedWorkspaceIndex, path: workspaceFolderPath }); }}
                                                                                     className="p-2 text-white/30 hover:text-white transition-all"
                                                                                 >
                                                                                     <Settings2 size={16} />
@@ -1183,9 +1180,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                                             <button
                                                                                 onClick={(e) => {
                                                                                     e.stopPropagation();
-                                                                                    const newWorkspaces = [...config.workspaces];
-                                                                                    newWorkspaces[selectedWorkspaceIndex].apps = updateAppTree(newWorkspaces[selectedWorkspaceIndex].apps, workspaceFolderPath, (list) => list.filter((_, idx) => idx !== i));
-                                                                                    setConfig({ ...config, workspaces: newWorkspaces });
+                                                                                    removeAppFromWorkspace(selectedWorkspaceIndex, i, workspaceFolderPath);
                                                                                 }}
                                                                                 className="p-2 text-white/30 hover:text-red-400 transition-all"
                                                                             >
@@ -1202,27 +1197,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                 {/* Action Bar */}
                                                 <div className="flex gap-4">
                                                     <button
-                                                        onClick={() => {
-                                                            const newApp: AppItem = {
-                                                                id: crypto.randomUUID(), type: 'app', label: 'New App', iconName: 'Layout', iconSource: 'lucide', command: '', description: 'Application'
-                                                            };
-                                                            const nws = [...config.workspaces];
-                                                            nws[selectedWorkspaceIndex].apps = updateAppTree(nws[selectedWorkspaceIndex].apps, workspaceFolderPath, (list) => [...list, newApp]);
-                                                            setConfig({ ...config, workspaces: nws });
-                                                        }}
+                                                        onClick={() => addAppToWorkspace(selectedWorkspaceIndex, 'app', workspaceFolderPath)}
                                                         className="flex-1 py-4 bg-white text-black rounded-xl font-bold hover:bg-gray-100 transition-all flex items-center justify-center gap-2 shadow-lg hover:scale-[1.01] active:scale-[0.99]"
                                                     >
                                                         <Plus size={20} /> Add Application
                                                     </button>
                                                     <button
-                                                        onClick={() => {
-                                                            const newFolder: AppItem = {
-                                                                id: crypto.randomUUID(), type: 'folder', label: 'New Folder', iconName: 'Folder', iconSource: 'lucide', command: '', description: 'Folder Group', children: []
-                                                            };
-                                                            const nws = [...config.workspaces];
-                                                            nws[selectedWorkspaceIndex].apps = updateAppTree(nws[selectedWorkspaceIndex].apps, workspaceFolderPath, (list) => [...list, newFolder]);
-                                                            setConfig({ ...config, workspaces: nws });
-                                                        }}
+                                                        onClick={() => addAppToWorkspace(selectedWorkspaceIndex, 'folder', workspaceFolderPath)}
                                                         className="flex-1 py-4 bg-white/10 text-white rounded-xl font-bold hover:bg-white/15 transition-all flex items-center justify-center gap-2 border border-white/5 hover:border-white/10"
                                                     >
                                                         <Folder size={20} /> Add Folder Group
@@ -1289,8 +1270,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                         >
                                             <div className="flex items-center justify-between">
                                                 <div>
-                                                    <label className="text-base font-bold text-white">Start at Login</label>
-                                                    <p className="text-xs text-white/40 mt-1">Automatically launch Zenith when Windows starts</p>
+                                                    <label className="text-sm font-medium text-white">Start at Login</label>
+                                                    <p className="text-xs text-white/40 mt-0.5">Automatically launch Zenith when Windows starts</p>
                                                 </div>
                                                 <motion.button
                                                     onClick={() => {
@@ -1433,8 +1414,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                         >
                                             <div className="flex items-center justify-between">
                                                 <div>
-                                                    <label className="text-base font-bold text-white">Center on Screen</label>
-                                                    <p className="text-xs text-white/40 mt-1">Show menu in screen center instead of mouse cursor</p>
+                                                    <label className="text-sm font-medium text-white">Center on Screen</label>
+                                                    <p className="text-xs text-white/40 mt-0.5">Show menu in screen center instead of mouse cursor</p>
                                                 </div>
                                                 <motion.button
                                                     onClick={() => setConfig({ ...config, fixedPosition: !config.fixedPosition })}
@@ -1507,64 +1488,72 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                     <div className="space-y-8">
 
                                         {/* CLOCK & DATE */}
-                                        <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-                                            <h4 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Clock size={20} /> Time & Date</h4>
+                                        <div className="bg-white/[0.03] border border-white/[0.08] rounded-2xl p-6">
+                                            <h4 className="text-sm font-bold text-white/70 uppercase tracking-wider mb-5 flex items-center gap-2"><Clock size={16} /> Time & Date</h4>
                                             <div className="space-y-4">
                                                 <div className="flex items-center justify-between">
                                                     <div>
-                                                        <div className="text-white font-medium">Show Clock</div>
-                                                        <div className="text-white/40 text-xs">Display current time</div>
+                                                        <div className="text-sm font-medium text-white">Show Clock</div>
+                                                        <div className="text-xs text-white/40 mt-0.5">Display current time</div>
                                                     </div>
                                                     <motion.button
                                                         onClick={() => setConfig({ ...config, showClock: !config.showClock })}
-                                                        className={`relative w-12 h-7 rounded-full transition-colors ${config.showClock ? 'bg-white' : 'bg-white/10'}`}
+                                                        className={`relative w-14 h-8 rounded-full transition-all duration-300 ${config.showClock ? 'bg-white' : 'bg-white/10'}`}
+                                                        whileHover={{ scale: 1.05 }}
+                                                        whileTap={{ scale: 0.95 }}
                                                     >
-                                                        <motion.div className={`absolute top-1 w-5 h-5 rounded-full shadow-sm ${config.showClock ? 'bg-black' : 'bg-white'}`} animate={{ x: config.showClock ? 24 : 4 }} />
+                                                        <motion.div className={`absolute top-1 w-6 h-6 rounded-full shadow-md ${config.showClock ? 'bg-black' : 'bg-white'}`} animate={{ x: config.showClock ? 28 : 4 }} transition={{ type: "spring", stiffness: 500, damping: 30 }} />
                                                     </motion.button>
                                                 </div>
-                                                <div className="h-px bg-white/10" />
+                                                <div className="h-px bg-white/[0.08]" />
                                                 <div className="flex items-center justify-between">
                                                     <div>
-                                                        <div className="text-white font-medium">Show Date</div>
-                                                        <div className="text-white/40 text-xs">Display current date</div>
+                                                        <div className="text-sm font-medium text-white">Show Date</div>
+                                                        <div className="text-xs text-white/40 mt-0.5">Display current date</div>
                                                     </div>
                                                     <motion.button
                                                         onClick={() => setConfig({ ...config, showDate: !config.showDate })}
-                                                        className={`relative w-12 h-7 rounded-full transition-colors ${config.showDate ? 'bg-white' : 'bg-white/10'}`}
+                                                        className={`relative w-14 h-8 rounded-full transition-all duration-300 ${config.showDate ? 'bg-white' : 'bg-white/10'}`}
+                                                        whileHover={{ scale: 1.05 }}
+                                                        whileTap={{ scale: 0.95 }}
                                                     >
-                                                        <motion.div className={`absolute top-1 w-5 h-5 rounded-full shadow-sm ${config.showDate ? 'bg-black' : 'bg-white'}`} animate={{ x: config.showDate ? 24 : 4 }} />
+                                                        <motion.div className={`absolute top-1 w-6 h-6 rounded-full shadow-md ${config.showDate ? 'bg-black' : 'bg-white'}`} animate={{ x: config.showDate ? 28 : 4 }} transition={{ type: "spring", stiffness: 500, damping: 30 }} />
                                                     </motion.button>
                                                 </div>
                                             </div>
                                         </div>
 
                                         {/* SYSTEM STATUS */}
-                                        <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-                                            <h4 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Monitor size={20} /> System Status</h4>
+                                        <div className="bg-white/[0.03] border border-white/[0.08] rounded-2xl p-6">
+                                            <h4 className="text-sm font-bold text-white/70 uppercase tracking-wider mb-5 flex items-center gap-2"><Monitor size={16} /> System Status</h4>
                                             <div className="space-y-4">
                                                 <div className="flex items-center justify-between">
                                                     <div>
-                                                        <div className="text-white font-medium">Battery Level</div>
-                                                        <div className="text-white/40 text-xs">Show laptop battery percentage</div>
+                                                        <div className="text-sm font-medium text-white">Battery Level</div>
+                                                        <div className="text-xs text-white/40 mt-0.5">Show laptop battery percentage</div>
                                                     </div>
                                                     <motion.button
                                                         onClick={() => setConfig({ ...config, showBattery: !config.showBattery })}
-                                                        className={`relative w-12 h-7 rounded-full transition-colors ${config.showBattery ? 'bg-white' : 'bg-white/10'}`}
+                                                        className={`relative w-14 h-8 rounded-full transition-all duration-300 ${config.showBattery ? 'bg-white' : 'bg-white/10'}`}
+                                                        whileHover={{ scale: 1.05 }}
+                                                        whileTap={{ scale: 0.95 }}
                                                     >
-                                                        <motion.div className={`absolute top-1 w-5 h-5 rounded-full shadow-sm ${config.showBattery ? 'bg-black' : 'bg-white'}`} animate={{ x: config.showBattery ? 24 : 4 }} />
+                                                        <motion.div className={`absolute top-1 w-6 h-6 rounded-full shadow-md ${config.showBattery ? 'bg-black' : 'bg-white'}`} animate={{ x: config.showBattery ? 28 : 4 }} transition={{ type: "spring", stiffness: 500, damping: 30 }} />
                                                     </motion.button>
                                                 </div>
-                                                <div className="h-px bg-white/10" />
+                                                <div className="h-px bg-white/[0.08]" />
                                                 <div className="flex items-center justify-between">
                                                     <div>
-                                                        <div className="text-white font-medium">Weather Info</div>
-                                                        <div className="text-white/40 text-xs">Show local weather</div>
+                                                        <div className="text-sm font-medium text-white">Weather Info</div>
+                                                        <div className="text-xs text-white/40 mt-0.5">Show local weather</div>
                                                     </div>
                                                     <motion.button
                                                         onClick={() => setConfig({ ...config, showWeather: !config.showWeather })}
-                                                        className={`relative w-12 h-7 rounded-full transition-colors ${config.showWeather ? 'bg-white' : 'bg-white/10'}`}
+                                                        className={`relative w-14 h-8 rounded-full transition-all duration-300 ${config.showWeather ? 'bg-white' : 'bg-white/10'}`}
+                                                        whileHover={{ scale: 1.05 }}
+                                                        whileTap={{ scale: 0.95 }}
                                                     >
-                                                        <motion.div className={`absolute top-1 w-5 h-5 rounded-full shadow-sm ${config.showWeather ? 'bg-black' : 'bg-white'}`} animate={{ x: config.showWeather ? 24 : 4 }} />
+                                                        <motion.div className={`absolute top-1 w-6 h-6 rounded-full shadow-md ${config.showWeather ? 'bg-black' : 'bg-white'}`} animate={{ x: config.showWeather ? 28 : 4 }} transition={{ type: "spring", stiffness: 500, damping: 30 }} />
                                                     </motion.button>
                                                 </div>
                                                 {config.showWeather && (
@@ -1631,9 +1620,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                     <div className="space-y-6">
                                         {/* MASTER TOGGLE */}
                                         <motion.div
-                                            className={`p-8 rounded-2xl bg-gradient-to-br border flex items-center justify-between shadow-lg relative overflow-hidden group transition-all duration-300 ${config.gameMode?.enabled
+                                            className={`p-6 rounded-2xl bg-gradient-to-br border flex items-center justify-between shadow-lg relative overflow-hidden group transition-all duration-300 ${config.gameMode?.enabled
                                                 ? 'from-green-500/20 to-emerald-600/10 border-green-500/20'
-                                                : 'from-white/5 to-white/5 border-white/10'
+                                                : 'from-white/[0.03] to-white/[0.03] border-white/[0.08]'
                                                 }`}
                                             initial={{ opacity: 0, y: 10 }}
                                             animate={{ opacity: 1, y: 0 }}
@@ -1642,14 +1631,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                             <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 mix-blend-overlay ${config.gameMode?.enabled ? 'bg-green-500/5' : 'bg-white/5'}`} />
                                             <div className="relative z-10">
                                                 <div className="flex items-center gap-3 mb-2">
-                                                    <h4 className={`text-2xl font-bold ${config.gameMode?.enabled ? 'text-green-400' : 'text-white/70'}`}>
+                                                    <h4 className={`text-lg font-bold ${config.gameMode?.enabled ? 'text-green-400' : 'text-white/70'}`}>
                                                         {config.gameMode?.enabled ? 'Game Mode Active' : 'Game Mode Disabled'}
                                                     </h4>
                                                     {config.gameMode?.enabled && (
                                                         <div className="px-2.5 py-0.5 rounded-full bg-green-500/20 border border-green-500/30 text-[10px] font-bold text-green-300 uppercase tracking-widest">ON</div>
                                                     )}
                                                 </div>
-                                                <p className={`text-sm font-medium ${config.gameMode?.enabled ? 'text-green-200/60' : 'text-white/40'}`}>
+                                                <p className={`text-xs font-medium ${config.gameMode?.enabled ? 'text-green-200/60' : 'text-white/40'}`}>
                                                     {config.gameMode?.enabled ? 'Radial menu is blocked based on your settings below' : 'Enable to prevent menu from opening during games or fullscreen apps'}
                                                 </p>
                                             </div>
@@ -1658,15 +1647,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                     ...prev,
                                                     gameMode: { ...prev.gameMode, enabled: !prev.gameMode?.enabled }
                                                 }))}
-                                                className={`relative z-10 w-16 h-9 rounded-full shadow-lg transition-all ${config.gameMode?.enabled ? 'bg-green-500 shadow-green-900/20' : 'bg-white/10'
+                                                className={`relative z-10 w-14 h-8 rounded-full shadow-lg transition-all duration-300 ${config.gameMode?.enabled ? 'bg-green-500 shadow-green-900/20' : 'bg-white/10'
                                                     }`}
                                                 whileHover={{ scale: 1.05 }}
                                                 whileTap={{ scale: 0.95 }}
                                             >
                                                 <motion.div
-                                                    className={`absolute top-1 w-7 h-7 rounded-full shadow-md ${config.gameMode?.enabled ? 'bg-white' : 'bg-white/60'
+                                                    className={`absolute top-1 w-6 h-6 rounded-full shadow-md ${config.gameMode?.enabled ? 'bg-white' : 'bg-white/60'
                                                         }`}
-                                                    animate={{ x: config.gameMode?.enabled ? 32 : 4 }}
+                                                    animate={{ x: config.gameMode?.enabled ? 28 : 4 }}
                                                     transition={{ type: "spring", stiffness: 500, damping: 30 }}
                                                 />
                                             </motion.button>
@@ -1681,8 +1670,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                     exit={{ opacity: 0, height: 0 }}
                                                     className="space-y-6"
                                                 >
-                                                    <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-                                                        <h4 className="text-lg font-bold text-white mb-4">Blocking Mode</h4>
+                                                    <div className="bg-white/[0.03] border border-white/[0.08] rounded-2xl p-6">
+                                                        <h4 className="text-sm font-bold text-white/70 uppercase tracking-wider mb-4">Blocking Mode</h4>
                                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                                             <button
                                                                 onClick={() => setConfig(prev => ({
@@ -1718,9 +1707,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                         <motion.div
                                                             initial={{ opacity: 0, y: 10 }}
                                                             animate={{ opacity: 1, y: 0 }}
-                                                            className="bg-white/5 border border-white/10 rounded-2xl p-6"
+                                                            className="bg-white/[0.03] border border-white/[0.08] rounded-2xl p-6"
                                                         >
-                                                            <h4 className="text-lg font-bold text-white mb-2">Blocked Applications</h4>
+                                                            <h4 className="text-sm font-bold text-white/70 uppercase tracking-wider mb-2">Blocked Applications</h4>
                                                             <p className="text-xs text-white/40 mb-4">Enter process names separated by commas (e.g., "game.exe, steam.exe")</p>
                                                             <textarea
                                                                 value={config.gameMode?.blockedApps || ''}
@@ -1748,7 +1737,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 {
                     editingApp && (
                         <div className="absolute inset-0 z-[200] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-                            <div className="w-full max-w-md bg-[#111] border border-white/10 rounded-xl p-6 shadow-2xl relative">
+                            <div className="w-full max-w-xl bg-[#0A0A0A] border border-white/[0.08] rounded-2xl p-5 shadow-[0_32px_64px_rgba(0,0,0,0.8)] relative" style={{ backdropFilter: 'blur(40px)' }}>
                                 <button
                                     onClick={() => setEditingApp(null)}
                                     className="absolute top-4 right-4 p-2 text-white/30 hover:text-white transition-colors"
@@ -1756,9 +1745,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                     <X size={20} />
                                 </button>
 
-                                <h3 className="text-lg font-bold text-white mb-6">Edit Item</h3>
+                                <h3 className="text-xl font-semibold text-white/90 mb-4 tracking-tight">Edit Item</h3>
 
-                                <div className="space-y-5">
+                                <div className="space-y-4">
                                     {/* Label Input */}
                                     <div className="space-y-1.5">
                                         <label className="text-xs font-bold text-white/40 uppercase tracking-wider ml-1">Label</label>
@@ -1805,48 +1794,74 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                     )}
 
                                     {/* Icon Input */}
-                                    <div className="space-y-1.5">
-                                        <label className="text-xs font-bold text-white/40 uppercase tracking-wider ml-1">Icon Customization</label>
-                                        <div className="flex items-center gap-4 p-4 bg-white/5 rounded-xl border border-white/5">
-                                            {/* Icon Preview / Picker */}
-                                            <div className="relative group shrink-0">
-                                                <div className="w-16 h-16 rounded-lg bg-black/40 flex items-center justify-center border border-white/10 group-hover:border-white/30 transition-colors cursor-pointer overflow-hidden"
-                                                    onClick={handlePickIcon}>
-                                                    {editingApp.app.customIconUrl ? (
-                                                        <img src={editingApp.app.customIconUrl} className="w-full h-full object-contain" alt="Icon" />
-                                                    ) : (
-                                                        (() => {
-                                                            const Icon = getIcon(editingApp.app.iconName);
-                                                            return <Icon size={24} className="text-white/60" />;
-                                                        })()
-                                                    )}
+                                    <div className="space-y-3">
+                                        <label className="text-[11px] font-semibold text-white/30 uppercase tracking-[0.15em] ml-1">Icon Customization</label>
 
-                                                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <Upload size={16} className="text-white" />
+                                        {/* Icon Source Toggles */}
+                                        <div className="flex p-1 bg-white/[0.03] rounded-xl border border-white/[0.06] gap-1">
+                                            <button
+                                                onClick={() => handleAppChange('iconSource', 'native')}
+                                                className={`flex-1 py-2.5 text-xs font-semibold rounded-lg transition-all duration-300 ${editingApp.app.iconSource === 'native' ? 'bg-white text-black shadow-[0_4px_12px_rgba(255,255,255,0.15)]' : 'text-white/35 hover:text-white/70 hover:bg-white/[0.04]'}`}
+                                            >
+                                                Nativo / Imagem
+                                            </button>
+                                            <button
+                                                onClick={() => handleAppChange('iconSource', 'lucide')}
+                                                className={`flex-1 py-2.5 text-xs font-semibold rounded-lg transition-all duration-300 ${editingApp.app.iconSource === 'lucide' ? 'bg-white text-black shadow-[0_4px_12px_rgba(255,255,255,0.15)]' : 'text-white/35 hover:text-white/70 hover:bg-white/[0.04]'}`}
+                                            >
+                                                Biblioteca Lucide
+                                            </button>
+                                        </div>
+
+                                        {/* Fixed Height Content Area */}
+                                        <div className="h-[200px] overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.02]">
+                                            {editingApp.app.iconSource === 'native' ? (
+                                                <div className="h-full flex flex-col items-center justify-center gap-3 p-4">
+                                                    {/* Icon Preview */}
+                                                    <div className="relative group">
+                                                        <div className="w-16 h-16 rounded-2xl bg-black/40 flex items-center justify-center border border-white/[0.08] group-hover:border-white/25 transition-all duration-300 cursor-pointer overflow-hidden shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
+                                                            onClick={handlePickIcon}>
+                                                            {editingApp.app.customIconUrl ? (
+                                                                <img src={editingApp.app.customIconUrl} className="w-full h-full object-contain" alt="Icon" />
+                                                            ) : (
+                                                                (() => {
+                                                                    const Icon = getIcon(editingApp.app.iconName);
+                                                                    return <Icon size={28} className="text-white/50" />;
+                                                                })()
+                                                            )}
+                                                            <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                                                <Upload size={18} className="text-white" />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="w-full max-w-[240px] space-y-2">
+                                                        <button
+                                                            onClick={handlePickIcon}
+                                                            className="w-full py-2.5 bg-white/[0.06] hover:bg-white/[0.12] text-white text-xs font-semibold uppercase tracking-[0.1em] rounded-xl border border-white/[0.06] hover:border-white/15 transition-all duration-300"
+                                                        >
+                                                            Pick Image File
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleAppChange('customIconUrl', undefined)}
+                                                            className="w-full py-2 bg-transparent hover:bg-white/[0.04] text-white/30 hover:text-white/60 text-xs font-medium rounded-xl transition-all duration-300"
+                                                        >
+                                                            Reset to Native
+                                                        </button>
                                                     </div>
                                                 </div>
-                                            </div>
-
-                                            <div className="flex-1 space-y-2">
-                                                <button
-                                                    onClick={handlePickIcon}
-                                                    className="w-full py-2 bg-white/5 hover:bg-white/10 text-white text-xs font-bold uppercase tracking-wider rounded-lg border border-white/5 transition-all"
-                                                >
-                                                    Pick Image File
-                                                </button>
-
-                                                {/* Lucide Reset */}
-                                                <button
-                                                    onClick={() => handleAppChange('customIconUrl', undefined)}
-                                                    className="w-full py-2 bg-transparent hover:bg-white/5 text-white/40 hover:text-white text-xs font-medium rounded-lg transition-all"
-                                                >
-                                                    Reset to Default
-                                                </button>
-                                            </div>
+                                            ) : (
+                                                <div className="h-full p-4">
+                                                    <IconPicker
+                                                        selectedIcon={editingApp.app.iconName}
+                                                        onSelect={(name) => handleAppChange('iconName', name)}
+                                                    />
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 
-                                    <div className="flex justify-end gap-2 mt-2 pt-4 border-t border-white/10">
+                                    <div className="flex justify-end gap-2 pt-3 border-t border-white/[0.06]">
                                         <button onClick={() => setEditingApp(null)} className="px-6 py-2.5 bg-white text-black rounded-xl font-bold hover:bg-gray-200 transition-colors shadow-lg">Done</button>
                                     </div>
                                 </div>

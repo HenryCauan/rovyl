@@ -589,11 +589,25 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                   y: Math.sin(angleRad) * labelDist
                 };
 
-                const shouldUseCustomIcon = app.iconSource === 'native' && app.customIconUrl;
+                const shouldUseCustomIcon = (() => {
+                  // Lista de apps que devem usar ícone Lucide em vez do nativo por serem problemáticos ou feios
+                  const LUCIDE_ICON_EXCEPTIONS = [
+                    'Microsoft.WindowsTerminal',
+                    'WindowsTerminal',
+                    'Terminal',
+                    'cmd.exe',
+                    'powershell.exe'
+                  ];
 
-                if (isActive && shouldUseCustomIcon) {
-                  // Debug: console.log(`Menu Rendering: Item ${app.label} using custom icon. URL length: ${app.customIconUrl?.length || 0}`);
-                }
+                  const isException = LUCIDE_ICON_EXCEPTIONS.some(exception =>
+                    app.command?.toLowerCase().includes(exception.toLowerCase()) ||
+                    app.label?.toLowerCase().includes(exception.toLowerCase())
+                  );
+
+                  if (isException) return false;
+
+                  return app.iconSource === 'native' && !!app.customIconUrl;
+                })();
 
                 return (
                   <motion.div
@@ -630,7 +644,8 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                         className="relative z-20"
                         style={{
                           width: `${iconSizePx}px`,
-                          height: `${iconSizePx}px`
+                          height: `${iconSizePx}px`,
+                          filter: !isActive ? `drop-shadow(0 0 ${Math.round(config.backdropOpacity * 12)}px rgba(255,255,255,${config.backdropOpacity * 0.15}))` : 'none'
                         }}
                       >
                         {/* INNER MASKED CONTAINER (Overflow Hidden) */}
@@ -641,36 +656,32 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                             ${isActive ? 'shadow-[0_0_30px_rgba(255,255,255,0.2)]' : 'hover:bg-white/5'}
                           `}
                           style={{
-                            backgroundColor: isActive ? config.accentColor : '#0D0D0D',
-                            border: isActive ? `1px solid ${config.accentColor}` : '1px solid rgba(255,255,255,0.1)',
+                            backgroundColor: isActive ? config.accentColor : `rgb(${13 + Math.round(config.backdropOpacity * 15)}, ${13 + Math.round(config.backdropOpacity * 15)}, ${13 + Math.round(config.backdropOpacity * 15)})`,
+                            border: isActive ? `1px solid ${config.accentColor}` : `1px solid rgba(255,255,255,${0.1 + config.backdropOpacity * 0.08})`,
                             color: isActive ? '#000' : '#fff'
                           }}
                         >
-                          {/* Icon Container: Native icon on top, Vector icon behind */}
+                          {/* Icon Container: Show either native icon OR vector icon, not both */}
                           <div className="w-full h-full flex items-center justify-center relative">
-                            {/* Vector Fallback (Always there, behind) */}
-                            <div className="absolute inset-0 flex items-center justify-center text-white/20">
-                              <Icon size={Math.round(iconSizePx * 0.45)} strokeWidth={1.5} />
-                            </div>
-
-                            {/* Native Icon (On top) */}
-                            {shouldUseCustomIcon && (
+                            {shouldUseCustomIcon ? (
+                              /* Native Icon (Larger to compensate for whitespace in extracted icons) */
                               <img
                                 src={app.customIconUrl}
                                 alt={app.label}
-                                className="w-full h-full object-contain p-2 relative z-10 bg-inherit"
+                                className="object-contain relative z-10"
+                                style={{
+                                  width: `${Math.round(iconSizePx * 0.65)}px`,
+                                  height: `${Math.round(iconSizePx * 0.65)}px`,
+                                  imageRendering: 'high-quality'
+                                } as any}
                                 onError={(e) => {
                                   console.warn(`Radial Icon Error: Falling back for ${app.label}`);
                                   (e.target as HTMLImageElement).classList.add('hidden');
                                 }}
                               />
-                            )}
-
-                            {/* If not using custom icon at all, show vector icon in full color */}
-                            {!shouldUseCustomIcon && (
-                              <div className="absolute inset-0 flex items-center justify-center z-20">
-                                <Icon size={Math.round(iconSizePx * 0.45)} strokeWidth={1.5} />
-                              </div>
+                            ) : (
+                              /* Vector Icon (Only when no custom icon) */
+                              <Icon size={Math.round(iconSizePx * 0.45)} strokeWidth={1.5} />
                             )}
                           </div>
                         </div>

@@ -50,11 +50,11 @@ const AppIcon: React.FC<{ path: string; isSelected: boolean }> = ({ path, isSele
             {iconUrl ? (
                 <img src={iconUrl} className="w-full h-full object-contain p-1.5" alt="" />
             ) : path.includes('!') ? (
-                <Package size={20} className={isSelected ? 'text-black/40' : 'text-blue-400/40'} />
+                <Package size={24} className={isSelected ? 'text-black/40' : 'text-blue-400/40'} />
             ) : (!path.includes('\\') && !path.includes('/')) ? (
-                <Terminal size={20} className={isSelected ? 'text-black/40' : 'text-emerald-400/40'} />
+                <Terminal size={24} className={isSelected ? 'text-black/40' : 'text-emerald-400/40'} />
             ) : (
-                <Monitor size={20} className={isSelected ? 'text-black/40' : 'text-white/20'} />
+                <Monitor size={24} className={isSelected ? 'text-black/40' : 'text-white/20'} />
             )}
         </div>
     );

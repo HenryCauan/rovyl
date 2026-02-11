@@ -90,13 +90,39 @@ export default function App() {
       finalWorkspaces = DEFAULT_WORKSPACES;
     }
 
+    // FUNCTIONAL ICON MIGRATION: Ensure internal widgets use 'lucide' and correct icon names
+    const updateIconsRecursive = (items: AppItem[]): AppItem[] => {
+      return items.map(item => {
+        let newItem = { ...item };
+        if (item.command?.startsWith('internal:')) {
+          newItem.iconSource = 'lucide';
+          // Also force update icon names to the new ones if they are the old ones
+          if (item.command === 'internal:notes' && item.iconName === 'StickyNote') newItem.iconName = 'FileText';
+          if (item.command === 'internal:alarm' && item.iconName === 'Bell') newItem.iconName = 'AlarmClock';
+          if (item.command === 'internal:pomodoro' && item.iconName === 'Hourglass') newItem.iconName = 'TimerReset';
+        }
+        if (newItem.children) {
+          newItem.children = updateIconsRecursive(newItem.children);
+        }
+        return newItem;
+      });
+    };
+
+    finalWorkspaces = finalWorkspaces.map((ws: Workspace) => ({
+      ...ws,
+      apps: updateIconsRecursive(ws.apps)
+    }));
+
+    const finalApps = updateIconsRecursive(loaded.apps || DEFAULT_APPS);
+
     return {
       ...DEFAULT_UI_CONFIG,
       ...loaded,
       centerButton: loaded.centerButton || DEFAULT_UI_CONFIG.centerButton,
       gameMode: { ...DEFAULT_UI_CONFIG.gameMode, ...(loaded.gameMode || {}) },
       workspaces: finalWorkspaces,
-      activeWorkspaceIndex: loaded.activeWorkspaceIndex ?? 0
+      activeWorkspaceIndex: loaded.activeWorkspaceIndex ?? 0,
+      apps: finalApps
     };
   });
   const configRef = useRef(config);

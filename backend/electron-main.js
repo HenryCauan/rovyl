@@ -69,6 +69,10 @@ let gameModeConfig = {
   blockedApps: "",
 };
 
+// Window Management Persistence
+let lastWindowedBounds = { width: 1280, height: 800, x: 100, y: 100 };
+let isUpdatingBounds = false;
+
 async function createWindow() {
   const { width, height } = screen.getPrimaryDisplay().bounds;
 
@@ -116,6 +120,33 @@ async function createWindow() {
       // For now, we only resolve. User can open via Tray or Shortcut.
       console.log("Main window ready");
       resolve(newWindow);
+    });
+
+    // Track bounds for persistence
+    newWindow.on("resize", () => {
+      if (
+        !newWindow.isFullScreen() &&
+        !newWindow.isMaximized() &&
+        !isUpdatingBounds
+      ) {
+        lastWindowedBounds = {
+          ...lastWindowedBounds,
+          ...newWindow.getBounds(),
+        };
+      }
+    });
+
+    newWindow.on("move", () => {
+      if (
+        !newWindow.isFullScreen() &&
+        !newWindow.isMaximized() &&
+        !isUpdatingBounds
+      ) {
+        lastWindowedBounds = {
+          ...lastWindowedBounds,
+          ...newWindow.getBounds(),
+        };
+      }
     });
   });
 }
@@ -288,8 +319,9 @@ function updateWindowSize(mode) {
       mainWindow.setFullScreen(false);
     }
     mainWindow.setResizable(true);
-    mainWindow.setSize(1280, 800);
-    mainWindow.center();
+    isUpdatingBounds = true;
+    mainWindow.setBounds(lastWindowedBounds);
+    isUpdatingBounds = false;
     mainWindow.setAlwaysOnTop(false);
     mainWindow.setIgnoreMouseEvents(false);
     mainWindow.setOpacity(1);
@@ -524,18 +556,6 @@ app.whenReady().then(async () => {
   mouseHook.on("error", (err) =>
     console.error("Mouse Hook Process Error:", err),
   );
-});
-
-// IPC: Selecionar Arquivo (.exe)
-ipcMain.handle("select-file", async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ["openFile"],
-    filters: [
-      { name: "Executables", extensions: ["exe", "lnk", "bat", "cmd"] },
-      { name: "All Files", extensions: ["*"] },
-    ],
-  });
-  return result.canceled ? null : result.filePaths[0];
 });
 
 // IPC: Recebe atualização de configuração do Game Mode
@@ -868,14 +888,66 @@ ipcMain.on("quit-app", () => {
 ipcMain.on("reset-config", () => {
   try {
     const configPath = path.join(app.getPath("userData"), "config.json");
+    const settingsPath = path.join(app.getPath("userData"), "settings.json");
+
+    // Delete config files
     if (fs.existsSync(configPath)) {
       fs.unlinkSync(configPath);
+      console.log("Deleted config.json");
     }
-    app.relaunch();
-    app.exit(0);
+    if (fs.existsSync(settingsPath)) {
+      fs.unlinkSync(settingsPath);
+      console.log("Deleted settings.json");
+    }
+
+    // Clear internal caches
+    iconCache.clear();
+    gameModeConfig = { enabled: false, blockFullscreen: true, blockedApps: "" };
+
+    // Relaunch logic handles dev vs prod
+    if (isDev) {
+      console.log("Dev mode: Reloading window instead of relaunching app...");
+      if (mainWindow) {
+        mainWindow.reload();
+        mainWindow.show();
+      }
+    } else {
+      app.relaunch();
+      app.exit(0);
+    }
   } catch (err) {
     console.error("Failed to reset config:", err);
   }
+});
+
+// IPC: Select File (Executable)
+ipcMain.handle("select-file", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openFile"],
+    filters: [
+      { name: "Executables", extensions: ["exe", "lnk", "bat", "cmd"] },
+      { name: "All Files", extensions: ["*"] },
+    ],
+  });
+  if (!result.canceled && result.filePaths.length > 0) {
+    return result.filePaths[0];
+  }
+  return null;
+});
+
+// IPC: Select Image (Custom Icon)
+ipcMain.handle("select-image", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openFile"],
+    filters: [
+      { name: "Images", extensions: ["png", "jpg", "jpeg", "ico", "svg"] },
+      { name: "All Files", extensions: ["*"] },
+    ],
+  });
+  if (!result.canceled && result.filePaths.length > 0) {
+    return result.filePaths[0];
+  }
+  return null;
 });
 
 // IPC: Get File Icon
@@ -885,16 +957,29 @@ ipcMain.handle("get-file-icon", async (event, filePath) => {
   try {
     if (!filePath || typeof filePath !== "string") return null;
 
-    // Check Cache
+    diagLog(`[IconRequest] Fetching icon for: ${filePath}`);
+
+    // Check Cache with expiration (24 hours)
+    const CACHE_EXPIRATION_MS = 24 * 60 * 60 * 1000;
     if (iconCache.has(filePath)) {
-      return iconCache.get(filePath);
+      const cached = iconCache.get(filePath);
+      if (
+        cached &&
+        cached.timestamp &&
+        Date.now() - cached.timestamp < CACHE_EXPIRATION_MS
+      ) {
+        // diagLog(`[IconRequest] Cache hit for: ${filePath}`);
+        return cached.data;
+      } else {
+        iconCache.delete(filePath);
+      }
     }
 
-    // 1. Resolve shell paths (GUIDs, env vars)
+    // 1. Resolve shell paths
     let resolvedPath = resolveShellPath(filePath);
-    resolvedPath = resolvedPath.replace(/['"]/g, "");
+    resolvedPath = resolvedPath.replace(/['\"]/g, "");
 
-    // Special Handling for Common Apps that might be passed as IDs
+    // Special Handling for Common Apps
     if (
       filePath === "Microsoft.Windows.Explorer" ||
       filePath === "File Explorer"
@@ -907,7 +992,6 @@ ipcMain.handle("get-file-icon", async (event, filePath) => {
       filePath === "Microsoft.MicrosoftEdge" ||
       filePath === "MSEdge"
     ) {
-      // Edge is tricky, let's try the standard installation path first
       const edgePath = path.join(
         process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)",
         "Microsoft\\Edge\\Application\\msedge.exe",
@@ -915,55 +999,89 @@ ipcMain.handle("get-file-icon", async (event, filePath) => {
       if (fs.existsSync(edgePath)) {
         resolvedPath = edgePath;
       } else {
-        // Fallback to the UWP-style AUMID if checking file fails
         resolvedPath = "Microsoft.MicrosoftEdge_8wekyb3d8bbwe!MicrosoftEdge";
       }
     }
 
-    // 2. PowerShell Extraction Strategy (Robust default)
-    // We use our custom script which handles both Files and UWP AUMIDs
-    const psScript = path.join(__dirname, "extract-icon.ps1");
+    const isAUMID = resolvedPath.includes("!");
+    const isExplicitFile =
+      resolvedPath.includes("\\") || resolvedPath.includes("/");
 
-    // Construct command safely
+    diagLog(
+      `[IconRequest] Resolved: ${resolvedPath} (AUMID: ${isAUMID}, File: ${isExplicitFile})`,
+    );
+
+    // 2. Try Electron Native first if it's a file path
+    if (isExplicitFile && !isAUMID) {
+      try {
+        const icon = await app.getFileIcon(resolvedPath, { size: "large" });
+        if (icon) {
+          const dataUrl = icon.toDataURL();
+          iconCache.set(filePath, { data: dataUrl, timestamp: Date.now() });
+          return dataUrl;
+        }
+      } catch (e) {
+        // Fall through to PowerShell
+        diagLog(
+          `[IconRequest] Native extraction failed for ${resolvedPath}: ${e.message}`,
+        );
+      }
+    }
+
+    // 3. PowerShell Extraction Strategy
+    const psScript = path.join(__dirname, "extract-icon.ps1");
+    // Only pass necessary args. Note: PowerShell output needs to be captured.
     const command = `powershell -NoProfile -ExecutionPolicy Bypass -File "${psScript}" -Target "${resolvedPath}"`;
 
-    // Wrap exec in a promise to await the result
     const iconData = await new Promise((resolve) => {
-      exec(command, { maxBuffer: 1024 * 1024 * 2 }, (error, stdout, stderr) => {
+      exec(command, { maxBuffer: 1024 * 1024 * 5 }, (error, stdout, stderr) => {
+        if (stderr) {
+          diagLog(`[IconRequest] PS Stderr: ${stderr}`);
+        }
+        if (stdout) {
+          // Filter out debug lines if any (lines not starting with data:)
+          const lines = stdout.trim().split(/\r?\n/);
+          const dataLine = lines.find((line) => line.startsWith("data:image"));
+          if (dataLine) {
+            resolve(dataLine);
+            return;
+          }
+          const debugLines = lines.filter((line) => line.startsWith("DEBUG:"));
+          if (debugLines.length > 0) {
+            diagLog(`[IconRequest] PS Debug: ${debugLines.join(" | ")}`);
+          } else {
+            diagLog(
+              `[IconRequest] PS Stdout (No data): ${stdout.substring(0, 200)}...`,
+            );
+          }
+        }
+
         if (error) {
-          // If PowerShell fails, we'll try Electron's native fallback below
-          // console.error("PS Icon Extraction Error:", error);
+          diagLog(`[IconRequest] PS Error: ${error.message}`);
           resolve(null);
         } else {
-          const result = stdout.trim();
-          if (result.startsWith("data:image")) {
-            resolve(result);
-          } else {
-            resolve(null);
-          }
+          resolve(null);
         }
       });
     });
 
     if (iconData) {
-      iconCache.set(filePath, iconData); // Cache the result
+      diagLog(`[IconRequest] Success via PowerShell for ${filePath}`);
+      iconCache.set(filePath, { data: iconData, timestamp: Date.now() });
       return iconData;
     }
 
-    // 3. Fallback: Electron Native (Only works for paths, not AUMIDs)
-    // If resolvedPath looks like a file path, try Electron
-    if (resolvedPath.includes("\\") || resolvedPath.includes("/")) {
-      try {
-        const icon = await app.getFileIcon(resolvedPath, { size: "large" });
-        const dataUrl = icon.toDataURL();
-        iconCache.set(filePath, dataUrl); // Cache fallback too
-        return dataUrl;
-      } catch (e) {
-        return null;
-      }
+    // 4. Final Fallback
+    try {
+      diagLog(`[IconRequest] Trying final fallback for ${resolvedPath}`);
+      const icon = await app.getFileIcon(resolvedPath, { size: "large" });
+      const dataUrl = icon.toDataURL();
+      iconCache.set(filePath, { data: dataUrl, timestamp: Date.now() });
+      return dataUrl;
+    } catch (e) {
+      diagLog(`[IconRequest] Final fallback failed: ${e.message}`);
+      return null;
     }
-
-    return null;
   } catch (error) {
     console.error("Critical error in get-file-icon:", error);
     return null;
@@ -1041,7 +1159,11 @@ ipcMain.handle("get-volume", async () => {
 });
 
 ipcMain.on("set-volume", async (event, level) => {
-  systemControl.setVolume(level);
+  try {
+    await systemControl.setVolume(level);
+  } catch (err) {
+    console.error("Failed to set volume:", err);
+  }
 });
 
 ipcMain.handle("get-brightness", async () => {
@@ -1049,7 +1171,11 @@ ipcMain.handle("get-brightness", async () => {
 });
 
 ipcMain.on("set-brightness", async (event, level) => {
-  systemControl.setBrightness(level);
+  try {
+    await systemControl.setBrightness(level);
+  } catch (err) {
+    console.error("Failed to set brightness:", err);
+  }
 });
 
 ipcMain.handle("toggle-bluetooth", async (event, enabled) => {
