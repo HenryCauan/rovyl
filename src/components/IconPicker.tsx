@@ -49,7 +49,7 @@ export const IconPicker: React.FC<IconPickerProps> = ({ selectedIcon, onSelect }
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           placeholder="Procure por um ícone..."
-          className="w-full bg-white/[0.03] border border-white/[0.06] rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-white/15 focus:bg-white/[0.06] transition-all duration-300"
+          className="w-full bg-white/[0.03] border border-white/[0.06] rounded-lg pl-10 pr-4 py-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-white/15 focus:bg-white/[0.06] transition-all duration-300"
         />
       </div>
 
@@ -70,7 +70,7 @@ export const IconPicker: React.FC<IconPickerProps> = ({ selectedIcon, onSelect }
                 onSelect(iconName);
               }}
               className={`
-                aspect-square rounded-xl flex items-center justify-center
+                aspect-square rounded-lg flex items-center justify-center
                 transition-all duration-200 relative
                 ${isSelected
                   ? 'bg-white text-black shadow-[0_0_16px_rgba(255,255,255,0.15)] scale-105'
@@ -91,21 +91,6 @@ export const IconPicker: React.FC<IconPickerProps> = ({ selectedIcon, onSelect }
         )}
       </div>
 
-      <style>{`
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 3px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: rgba(255, 255, 255, 0.06);
-          border-radius: 10px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: rgba(255, 255, 255, 0.15);
-        }
-      `}</style>
     </div>
   );
 };

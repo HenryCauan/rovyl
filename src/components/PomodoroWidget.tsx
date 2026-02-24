@@ -102,7 +102,7 @@ export const PomodoroWidget: React.FC<PomodoroWidgetProps> = ({
         initial={{ scale: 0.9, opacity: 0, y: 20 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.9, opacity: 0, y: 20 }}
-        className="relative bg-[#0f0f0f] border border-white/10 rounded-3xl shadow-2xl w-[400px] h-[600px] flex flex-col overflow-hidden z-[70]"
+        className="relative bg-[#0f0f0f] border border-white/10 rounded-2xl shadow-2xl w-[400px] h-[600px] flex flex-col overflow-hidden z-[70]"
         onClick={e => e.stopPropagation()}
         onDoubleClick={e => e.stopPropagation()}
       >
@@ -272,7 +272,7 @@ export const PomodoroWidget: React.FC<PomodoroWidgetProps> = ({
                 className="h-full flex flex-col space-y-6"
               >
                 <div className="space-y-4">
-                  <h3 className="text-white/40 text-xs uppercase tracking-widest font-bold mb-4">Timers (Minutes)</h3>
+                  <h3 className="text-white/40 text-xs uppercase tracking-widest font-semibold mb-4">Timers (Minutes)</h3>
 
                   <div className="space-y-2">
                     <label className="text-sm text-white/70 flex justify-between">
@@ -315,7 +315,7 @@ export const PomodoroWidget: React.FC<PomodoroWidgetProps> = ({
                 </div>
 
                 <div className="space-y-4 pt-4 border-t border-white/5">
-                  <h3 className="text-white/40 text-xs uppercase tracking-widest font-bold mb-4">Behavior</h3>
+                  <h3 className="text-white/40 text-xs uppercase tracking-widest font-semibold mb-4">Behavior</h3>
 
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-white/80">Auto-start Breaks</span>
@@ -329,7 +329,7 @@ export const PomodoroWidget: React.FC<PomodoroWidgetProps> = ({
                 </div>
 
                 <div className="mt-auto pt-6 text-center">
-                  <div className="text-6xl font-black text-white/5 tracking-tighter">ZENITH</div>
+                  <div className="text-6xl font-semibold text-white/5 tracking-tighter">ZENITH</div>
                 </div>
 
               </motion.div>
@@ -338,11 +338,6 @@ export const PomodoroWidget: React.FC<PomodoroWidgetProps> = ({
         </div>
       </motion.div>
 
-      <style>{`
-          .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-          .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); }
-          .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 10px; }
-        `}</style>
     </div>
   );
 };

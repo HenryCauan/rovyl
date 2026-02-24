@@ -167,9 +167,9 @@ export const AppSelector: React.FC<AppSelectorProps> = ({ isOpen, onClose, onApp
                     </div>
                     <button
                         onClick={onClose}
-                        className="p-2 hover:bg-white/10 rounded-full transition-colors"
+                        className="p-2 hover:bg-white/10 rounded-lg transition-colors"
                     >
-                        <X size={20} className="text-white/60" />
+                        <X size={18} className="text-white/60" />
                     </button>
                 </div>
 
@@ -179,10 +179,10 @@ export const AppSelector: React.FC<AppSelectorProps> = ({ isOpen, onClose, onApp
                         <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
                         <input
                             type="text"
-                            placeholder="Search applications..."
+                            placeholder="Procure por um ícone..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full bg-[#1A1A1A] border border-white/10 rounded-lg pl-10 pr-4 py-3 text-white placeholder-white/40 focus:outline-none focus:border-white/30 transition-colors"
+                            className="w-full bg-white/[0.03] border border-white/[0.06] rounded-lg pl-10 pr-4 py-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-white/15 focus:bg-white/[0.06] transition-all duration-300"
                             autoFocus
                         />
                     </div>

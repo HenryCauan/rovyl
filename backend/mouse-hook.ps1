@@ -44,6 +44,15 @@ public class MouseHook {
         public int y;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MSLLHOOKSTRUCT {
+        public POINT pt;
+        public uint mouseData;
+        public uint flags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
     private const int WH_MOUSE_LL = 14;
     private const int WM_MBUTTONDOWN = 0x0207;
     private const int WM_MBUTTONUP = 0x0208;
@@ -71,12 +80,11 @@ public class MouseHook {
     private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam) {
         if (nCode >= 0) {
             if (wParam == (IntPtr)WM_MBUTTONDOWN) {
-                 Console.WriteLine("MIDDLE_DOWN");
-                 return (IntPtr)1; // Swallow event
-            }
-            if (wParam == (IntPtr)WM_MBUTTONUP) {
-                 Console.WriteLine("MIDDLE_UP");
-                 return (IntPtr)1; // Swallow event
+                Console.WriteLine("MIDDLE_DOWN");
+                return (IntPtr)1; // Swallow
+            } else if (wParam == (IntPtr)WM_MBUTTONUP) {
+                Console.WriteLine("MIDDLE_UP");
+                return (IntPtr)1; // Swallow
             }
         }
         return CallNextHookEx(_hookID, nCode, wParam, lParam);

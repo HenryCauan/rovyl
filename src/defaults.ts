@@ -5,8 +5,8 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   menuRadius: 140,
   iconSize: 64,
   fixedPosition: true,
-  backdropBlur: 4,
-  backdropOpacity: 0.4,
+  backdropBlur: 0,
+  backdropOpacity: 0.8,
   menuOpacity: 0.8,
   menuBackgroundStyle: "circle",
   appSpacing: 10, // Default spacing between apps
@@ -179,7 +179,8 @@ export const DEFAULT_WORKSPACES: Workspace[] = [
     name: "Main",
     hotkey: 1,
     enabled: true,
-    apps: DEFAULT_APPS, // Use existing default apps
+    apps: DEFAULT_APPS,
+    color: "#3B82F6", // Blue
   },
   {
     id: "workspace-2",
@@ -228,5 +229,6 @@ export const DEFAULT_WORKSPACES: Workspace[] = [
         description: "Netflix Brasil",
       },
     ],
+    color: "#EF4444", // Red
   },
 ];

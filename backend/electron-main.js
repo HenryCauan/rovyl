@@ -92,6 +92,7 @@ async function createWindow() {
     hasShadow: true,
     icon: path.join(__dirname, "../public/icon.png"),
     backgroundColor: "#00000000",
+    backgroundMaterial: "acrylic", // Enable native Windows 10/11 blur
     webPreferences: {
       preload: path.join(__dirname, "electron-preload.js"),
       nodeIntegration: false,
@@ -290,6 +291,9 @@ function showMenuAtCursor(source = "shortcut") {
     updateWindowSize("fullscreen");
   }
 
+  // Ensure visibility - opaqueness 1
+  mainWindow.setOpacity(1);
+
   const cursorPoint = screen.getCursorScreenPoint();
 
   // Send open-menu immediately
@@ -304,15 +308,19 @@ function updateWindowSize(mode) {
   if (!mainWindow) return;
 
   const primaryDisplay = screen.getPrimaryDisplay();
-  const { width, height } = primaryDisplay.bounds;
+  const { width: screenWidth, height: screenHeight } = primaryDisplay.bounds;
 
   if (mode === "fullscreen") {
-    if (!mainWindow.isFullScreen()) {
-      mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
-      mainWindow.setResizable(true);
-      mainWindow.setFullScreen(true);
-      mainWindow.setBounds({ x: 0, y: 0, width, height });
-    }
+    // Fill the entire screen
+    mainWindow.setBounds({
+      x: primaryDisplay.bounds.x,
+      y: primaryDisplay.bounds.y,
+      width: screenWidth,
+      height: screenHeight,
+    });
+    mainWindow.setResizable(true);
+    mainWindow.setOpacity(1); // ENSURE VISIBILITY
+    mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
     mainWindow.setIgnoreMouseEvents(false);
   } else if (mode === "windowed") {
     if (mainWindow.isFullScreen()) {
@@ -334,7 +342,12 @@ function updateWindowSize(mode) {
     mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
     // Keep it large/fullscreen but transparent and ignore mouse to avoid resize flashes
     // We use setBounds to ensure it covers the whole screen even if not "fullscreen" mode
-    mainWindow.setBounds({ x: 0, y: 0, width, height });
+    mainWindow.setBounds({
+      x: 0,
+      y: 0,
+      width: screenWidth,
+      height: screenHeight,
+    });
     mainWindow.setOpacity(1);
   }
 }
@@ -429,12 +442,12 @@ app.whenReady().then(async () => {
       },
       {
         label: "Abrir Configurações",
-        click: () => {
-          if (mainWindow && !mainWindow.isDestroyed()) {
+        click: async () => {
+          if (mainWindow) {
+            mainWindow.setOpacity(1); // Restore opacity
             mainWindow.show();
-            mainWindow.setSkipTaskbar(false);
             mainWindow.focus();
-            mainWindow.webContents.send("open-settings");
+            mainWindow.webContents.send("on-open-dashboard");
           }
         },
       },
@@ -507,6 +520,25 @@ app.whenReady().then(async () => {
     }
   });
 
+  ipcMain.on("set-background-material", (event, material) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setBackgroundMaterial(material);
+    }
+  });
+
+  ipcMain.on("open-config-folder", () => {
+    shell.openPath(app.getPath("userData"));
+  });
+
+  ipcMain.on("toggle-settings", () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setOpacity(1);
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.webContents.send("on-open-dashboard");
+    }
+  });
+
   // Open Settings Window Handler
 
   // Helper to handle ASAR path for child processes
@@ -525,23 +557,15 @@ app.whenReady().then(async () => {
     psScriptPath,
   ]);
 
-  let middleHoldTimer = null;
-  const HOLD_THRESHOLD_MS = 100; // Reduced from 200ms for snappier response
-
-  let isMenuCurrentlyOpen = false;
-
   mouseHook.stdout.on("data", async (data) => {
     const lines = data.toString().split(/\r?\n/);
     for (const line of lines) {
       const msg = line.trim();
+      if (!msg) continue;
 
       if (msg === "MIDDLE_DOWN") {
-        if (!isMenuCurrentlyOpen) {
-          isMenuCurrentlyOpen = true;
-          showMenuAtCursor("mmb");
-        }
+        showMenuAtCursor("mmb");
       } else if (msg === "MIDDLE_UP") {
-        isMenuCurrentlyOpen = false;
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send("mmb-release");
         }
@@ -830,7 +854,6 @@ ipcMain.on("execute-command", async (event, command, commandType) => {
 });
 
 // IPC: Recebe comando para esconder janela
-// IPC: Recebe comando para esconder janela
 ipcMain.on("hide-window", () => {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return; // Do nothing if the window is not available
@@ -843,9 +866,6 @@ ipcMain.on("hide-window", () => {
   mainWindow.setOpacity(0);
   mainWindow.setIgnoreMouseEvents(true, { forward: true });
 
-  // Do NOT call hide() - keeps it in compositor for instant re-show
-  // mainWindow.hide();
-
   // Blur to return focus to previous app
   mainWindow.blur();
 });
@@ -853,6 +873,7 @@ ipcMain.on("hide-window", () => {
 // IPC: Show Window explicitly
 ipcMain.on("show-window", () => {
   if (mainWindow) {
+    mainWindow.setOpacity(1); // Restore opacity
     mainWindow.show();
     mainWindow.focus();
   }

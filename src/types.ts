@@ -100,6 +100,7 @@ export interface Workspace {
   apps: AppItem[];
   hotkey: number; // 1-9
   enabled: boolean;
+  color?: string; // Optional project/workspace color
 }
 
 export interface UIConfig {
@@ -176,6 +177,11 @@ export interface ElectronAPI {
   setLoginItemSettings: (settings: { openAtLogin: boolean }) => void;
   openSettingsWindow: () => void;
   resetConfig: () => void;
+  openConfigFolder: () => void;
+  toggleSettings: () => void;
+  setBackgroundMaterial: (
+    material: "none" | "acrylic" | "mica" | "tabbed",
+  ) => void;
 }
 
 declare global {

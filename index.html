@@ -239,30 +239,39 @@
       }
 
       /* ============================================
-         CUSTOM SCROLLBAR - Enhanced
+         REVOLUTIONARY SCROLLBAR - 2026 Floating Capsule
          ============================================ */
 
-      .custom-scrollbar::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
+      ::-webkit-scrollbar {
+        width: 4px;
       }
 
-      .custom-scrollbar::-webkit-scrollbar-track {
-        background: rgba(255, 255, 255, var(--opacity-subtle));
-        border-radius: var(--radius-sm);
+      ::-webkit-scrollbar-track {
+        background: transparent;
+        margin: 8px 0;
       }
 
-      .custom-scrollbar::-webkit-scrollbar-thumb {
-        background: rgba(255, 255, 255, var(--opacity-strong));
-        border-radius: var(--radius-sm);
-        border: 2px solid transparent;
-        background-clip: content-box;
-        transition: background var(--transition-base);
+      ::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 100px;
+        box-shadow: 0 0 8px rgba(255, 255, 255, 0.1);
+        transition:
+          background var(--transition-base),
+          box-shadow var(--transition-base);
       }
 
-      .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-        background: rgba(255, 255, 255, var(--opacity-intense));
-        background-clip: content-box;
+      ::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.7);
+        box-shadow:
+          0 0 12px rgba(255, 255, 255, 0.4),
+          0 0 24px rgba(255, 255, 255, 0.15);
+      }
+
+      ::-webkit-scrollbar-thumb:active {
+        background: rgba(255, 255, 255, 0.95);
+        box-shadow:
+          0 0 16px rgba(255, 255, 255, 0.6),
+          0 0 32px rgba(255, 255, 255, 0.2);
       }
 
       /* ============================================

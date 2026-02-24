@@ -69,6 +69,10 @@ contextBridge.exposeInMainWorld("electron", {
   setSettings: (settings) => ipcRenderer.send("set-settings", settings),
   openSettingsWindow: () => ipcRenderer.send("open-settings-window"),
   resetConfig: () => ipcRenderer.send("reset-config"),
+  openConfigFolder: () => ipcRenderer.send("open-config-folder"),
+  toggleSettings: () => ipcRenderer.send("toggle-settings"),
+  setBackgroundMaterial: (material) =>
+    ipcRenderer.send("set-background-material", material),
 });
 
 // Intercept console messages from the renderer process and send them to the main process

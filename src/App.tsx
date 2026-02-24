@@ -159,7 +159,13 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem('zenith_config', JSON.stringify(config));
-    if (window.electron && config.gameMode) window.electron.setGameMode(config.gameMode);
+    if (window.electron) {
+      if (config.gameMode) window.electron.setGameMode(config.gameMode);
+      // Sync native blur on Windows 10/11
+      if (window.electron.setBackgroundMaterial) {
+        window.electron.setBackgroundMaterial(config.backdropBlur > 0 ? 'acrylic' : 'none');
+      }
+    }
   }, [config]);
 
   useEffect(() => {
@@ -355,20 +361,15 @@ export default function App() {
 
   // Centralized function to open settings and handle dashboard logic
   const handleOpenSettings = () => {
-    // Integrated Mode: Just open the local modal
     if (isMenuOpen) setIsMenuOpen(false);
     setIsSettingsOpen(true);
-    // Ensure window size is updated to show the modal if we are in 'small' mode
+    // When opening settings from dashboard, we keep track of it via existing props
+    // or we can just let SettingsModal call onOpenDashboard when closed.
     if (isDesktopMode && window.electron) {
       window.electron.setWindowSize('windowed');
       window.electron.showWindow();
     }
-    // Also pause the dashboard if it's open, or keep it?
-    // User wants it to feel like "part of dashboard", so maybe we don't close dashboard explicitly,
-    // BUT SettingsModal traditionally overlays everything.
-    // For now, let's keep dashboard state as is, but SettingsModal usually implies a modal on top.
   };
-
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button === 1) { // Botão do meio
       e.preventDefault();
@@ -439,7 +440,7 @@ export default function App() {
   const handleMenuClose = (selectedId: string | null) => {
     console.log("Menu closing, selectedId:", selectedId);
     setIsMenuOpen(false);
-    isHolding.current = false; // This was tied to Space hold, but kept for now if other logic relies on it.
+    isHolding.current = false;
 
     if (!selectedId && isDesktopMode && !isSettingsOpen && !isSystemCenterOpen && !isNotesOpen && !isPomodoroOpen && !ringingAlarm && !isDashboardOpen) {
       window.electron?.setWindowSize('small');
@@ -522,39 +523,45 @@ export default function App() {
 
 
       {/* Visibility Wrapper for the whole app content */}
-      <div className={`relative w-full h-full transition-opacity duration-300 border-2 border-white/10 rounded-xl overflow-hidden ${isAnyModalOpen ? 'opacity-100' : 'opacity-0'}`}>
+      <div className={`
+        relative w-full h-full transition-opacity duration-300 overflow-hidden
+        ${isAnyModalOpen ? 'opacity-100' : 'opacity-0'}
+        ${(!isDashboardOpen && !isSettingsOpen) ? 'border-2 border-white/10 rounded-xl' : ''}
+      `}>
         {/* CUSTOM TITLE BAR OVERLAY (for drag region + app name) */}
         {(isDashboardOpen || isSettingsOpen) && !isMenuOpen && (
           <div
-            className="fixed top-0 left-0 right-0 h-[36px] z-[999] flex items-center justify-between px-3 pt-1"
+            className="fixed top-0 left-0 right-0 h-[38px] z-[999] flex items-center justify-between px-4 bg-[#0A0A0A]/80 backdrop-blur-xl border-b border-white/[0.05]"
             style={{ WebkitAppRegion: 'drag' } as any}
           >
-            <div className="flex items-center gap-2 pointer-events-none">
-              <div className="w-3 h-3 bg-gradient-to-br from-white/20 to-transparent border border-white/10 rounded-sm flex items-center justify-center relative">
-                <img src="/icon.png" alt="Zenith Icon" className="w-3 h-3" />
+            <div className="flex items-center gap-3 pointer-events-none">
+              <div className="w-5 h-5 bg-gradient-to-br from-white/10 to-transparent border border-white/10 rounded-md flex items-center justify-center bg-black shadow-inner">
+                <img src="/icon.png" alt="Zenith" className="w-3.5 h-3.5 opacity-90" />
               </div>
-              <span className="text-[9px] text-white/30 font-mono tracking-[0.3em] uppercase select-none">Zenith</span>
             </div>
 
             {/* Custom Window Controls */}
-            <div className="flex items-center space-x-1 pointer-events-auto" style={{ WebkitAppRegion: 'no-drag' } as any}>
+            <div className="flex items-center gap-1 pointer-events-auto" style={{ WebkitAppRegion: 'no-drag' } as any}>
               <button
-                className="w-8 h-6 flex items-center justify-center text-white/50 hover:bg-white/10 rounded-md transition-colors"
+                className="w-8 h-6 flex items-center justify-center text-white/30 hover:text-white hover:bg-white/10 rounded-md transition-all duration-200"
                 onClick={() => window.electron?.minimizeWindow()}
+                title="Minimize"
               >
-                <Minus size={14} strokeWidth={2} />
+                <Minus size={13} strokeWidth={2} />
               </button>
               <button
-                className="w-8 h-6 flex items-center justify-center text-white/50 hover:bg-white/10 rounded-md transition-colors"
+                className="w-8 h-6 flex items-center justify-center text-white/30 hover:text-white hover:bg-white/10 rounded-md transition-all duration-200"
                 onClick={() => window.electron?.toggleMaximize()}
+                title={windowState === 'maximized' ? "Restore" : "Maximize"}
               >
-                {windowState === 'maximized' ? <Square size={14} strokeWidth={2} /> : <Maximize size={14} strokeWidth={2} />}
+                {windowState === 'maximized' ? <Square size={11} strokeWidth={2.5} /> : <Maximize size={11} strokeWidth={2.5} />}
               </button>
               <button
-                className="w-8 h-6 flex items-center justify-center text-white/50 hover:bg-red-500/80 rounded-md transition-colors"
+                className="w-8 h-6 flex items-center justify-center text-white/30 hover:text-white hover:bg-red-500/80 rounded-md transition-all duration-200"
                 onClick={() => window.electron?.quitApp()}
+                title="Quit Zenith"
               >
-                <X size={14} strokeWidth={2} />
+                <X size={13} strokeWidth={2.5} />
               </button>
             </div>
           </div>
@@ -568,7 +575,7 @@ export default function App() {
 
         {/* WELCOME SCREEN / DASHBOARD */}
         <AnimatePresence>
-          {isDashboardOpen && !isMenuOpen && !isSystemCenterOpen && !isNotesOpen && !isAlarmWidgetOpen && !isStopwatchOpen && !isPomodoroOpen && !ringingAlarm && (
+          {isDashboardOpen && !isSettingsOpen && !isMenuOpen && !isSystemCenterOpen && !isNotesOpen && !isAlarmWidgetOpen && !isStopwatchOpen && !isPomodoroOpen && !ringingAlarm && (
             <motion.div
               key="welcome"
               exit={{ opacity: 0, scale: 0.95, filter: 'blur(10px)' }}
@@ -623,10 +630,14 @@ export default function App() {
 
         <SettingsModal
           isOpen={isSettingsOpen}
+          isPage={isDashboardOpen}
           onClose={() => {
             setIsSettingsOpen(false);
-            // Only hide window if Dashboard is NOT open (and menu is not open)
-            if (isDesktopMode && !isMenuOpen && !isDashboardOpen) window.electron?.hideWindow();
+            if (isDashboardOpen) {
+              // Staying on dashboard if we were already there
+            } else if (isDesktopMode && !isMenuOpen) {
+              window.electron?.hideWindow();
+            }
           }}
           apps={apps} setApps={setApps} config={config} setConfig={setConfig} onReset={() => { setApps(DEFAULT_APPS); setConfig(DEFAULT_UI_CONFIG); }}
           onOpenDashboard={() => {
@@ -640,9 +651,6 @@ export default function App() {
 
         <style>{`
           .group:active { cursor: ${isAnyModalOpen ? 'default' : 'crosshair'}; }
-          .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-          .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); }
-          .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 10px; }
           ${isMenuOpen ? '#dashboard-container { display: none !important; }' : ''}
         `}</style>
       </div>

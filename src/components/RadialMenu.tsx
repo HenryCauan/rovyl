@@ -368,17 +368,30 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
     <AnimatePresence>
       {isOpen && (
         <>
-          {/* Unified Backdrop (Fullscreen + Optional Circular Highlight) */}
+          {/* Layer 1: Adjustable CSS Backdrop Blur (Radius controlled by Slider) */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-40 pointer-events-auto"
+            className="fixed inset-0 z-40 pointer-events-none"
+            style={{
+              backgroundColor: config.backdropBlur > 0 ? 'rgba(0,0,0,0.02)' : 'transparent',
+              backdropFilter: config.backdropBlur > 0 ? `blur(${config.backdropBlur}px)` : 'none',
+              WebkitBackdropFilter: config.backdropBlur > 0 ? `blur(${config.backdropBlur}px)` : 'none',
+              willChange: 'backdrop-filter'
+            }}
+          />
+
+          {/* Layer 2: Color/Gradient Overlay (Opacity controlled by Slider) */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[41] pointer-events-auto"
             style={{
               background: config.menuBackgroundStyle === 'fullscreen'
-                ? `radial-gradient(circle at center, rgba(0, 0, 0, ${config.backdropOpacity * 0.5}) 0%, rgba(0, 0, 0, ${config.backdropOpacity * 0.95}) 100%)`
-                : `radial-gradient(circle at ${position.x}px ${position.y}px, rgba(0, 0, 0, ${config.backdropOpacity + 0.2}) 0%, rgba(0, 0, 0, ${config.backdropOpacity * 0.6}) ${config.menuRadius * 1.5}px, rgba(0, 0, 0, 0) 100%)`,
-              backdropFilter: config.backdropBlur > 0 ? `blur(${config.backdropBlur}px)` : 'none',
+                ? `radial-gradient(circle at center, rgba(0, 0, 0, ${config.backdropOpacity * 0.4}) 0%, rgba(0, 0, 0, ${config.backdropOpacity * 0.85}) 100%)`
+                : `radial-gradient(circle at ${position.x}px ${position.y}px, rgba(0, 0, 0, ${config.backdropOpacity + 0.1}) 0%, rgba(0, 0, 0, ${config.backdropOpacity * 0.5}) ${config.menuRadius * 1.5}px, rgba(0, 0, 0, 0) 100%)`,
               willChange: 'opacity'
             }}
           />
@@ -476,16 +489,20 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
             <motion.div
               className={`
                 absolute top-0 left-0
-                w-24 h-24 rounded-full flex items-center justify-center z-20
+                rounded-full flex items-center justify-center z-20
                 transition-all duration-300 pointer-events-auto cursor-pointer
                 ${isCenterActive
                   ? 'bg-white text-black border-2 border-white shadow-[0_0_50px_rgba(255,255,255,0.4)]'
                   : 'bg-[#0D0D0D] border border-white/10 text-white/50 shadow-lg'
                 }
               `}
+              style={{
+                width: `${Math.round(iconSizePx * 1.2)}px`,
+                height: `${Math.round(iconSizePx * 1.2)}px`,
+              }}
               initial={{ x: '-50%', y: '-50%', scale: 1, opacity: 1 }}
               animate={{
-                scale: isCenterActive ? 1.1 : 1,
+                scale: isCenterActive ? 1.2 : 1,
                 opacity: 1,
                 x: '-50%',
                 y: '-50%'
@@ -513,22 +530,23 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
             >
               {isCenterActive ? (
                 <div className="flex flex-col items-center animate-in fade-in duration-300">
-                  <CenterIcon size={24} strokeWidth={1.5} />
-                  <span className="text-[8px] font-bold tracking-widest mt-1 max-w-[80px] truncate text-center px-1">
-                    {centerLabel}
-                  </span>
+                  <CenterIcon size={isRoot && config.centerButton?.type === 'none' ? Math.round(iconSizePx * 0.65) : Math.round(iconSizePx * 0.5)} strokeWidth={1.5} />
                 </div>
               ) : (
-                <div className="flex flex-col items-center gap-1">
-                  <span className="text-[10px] tracking-[0.2em] font-medium text-white/60">
-                    {folderStack.length > 0 ? folderStack[folderStack.length - 1].label.toUpperCase() : 'APPS'}
-                  </span>
-                  {folderStack.length > 0 && (
-                    <div className="flex gap-0.5">
-                      {folderStack.map((_, i) => (
-                        <div key={i} className="w-1 h-1 rounded-full bg-white/40" />
-                      ))}
-                    </div>
+                <div className="flex flex-col items-center justify-center gap-1">
+                  {folderStack.length > 0 ? (
+                    // Inside folder: show back icon + depth dots
+                    <>
+                      <CenterIcon size={Math.round(iconSizePx * 0.45)} strokeWidth={1.5} />
+                      <div className="flex gap-0.5 mt-0.5">
+                        {folderStack.map((_, i) => (
+                          <div key={i} className="w-1 h-1 rounded-full bg-white/40" />
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    // Root: same icon as hover, dimmed
+                    <CenterIcon size={isRoot && config.centerButton?.type === 'none' ? Math.round(iconSizePx * 0.65) : Math.round(iconSizePx * 0.5)} strokeWidth={1.5} className="text-white/40" />
                   )}
                 </div>
               )}
