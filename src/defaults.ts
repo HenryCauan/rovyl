@@ -12,7 +12,7 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   appSpacing: 10, // Default spacing between apps
   activationThreshold: 50,
   centerButton: {
-    type: "system",
+    type: "none",
     target: "system-center",
     label: "SYSTEM",
     iconName: "Settings2",
@@ -29,9 +29,10 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
     blockFullscreen: true,
     blockedApps: "csgo.exe, valorant.exe, dota2.exe, overwatch.exe",
   },
-  globalShortcut: "",
+  globalShortcut: "Alt+Z",
   workspaces: [], // Will be populated with DEFAULT_WORKSPACES
   activeWorkspaceIndex: 0,
+  enableMouseTrigger: true,
 };
 
 export const AVAILABLE_WIDGETS: WidgetDefinition[] = [

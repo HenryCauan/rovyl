@@ -10,7 +10,7 @@ import {
     Gamepad2, AppWindow, Settings2, Folder, ChevronRight, CornerUpLeft,
     Image as ImageIcon, Upload, Search, FileType,
     Lock, LayoutDashboard, Box, Command, Ban, ChevronDown, Play, CheckCircle2,
-    HelpCircle, User, MessageSquare, CreditCard, Globe, Eye, Zap,
+    HelpCircle, User, MessageSquare, CreditCard, Globe, Eye, Zap, MousePointer2,
     Hash, Download, ExternalLink, Moon, Sun, ArrowRight, ArrowLeft, TimerReset,
     FolderPlus, FileText, Edit3, Image, Calendar, Battery, CloudRain,
     Layout, Compass, Laptop, Smartphone, Bell, GripVertical, ChevronLeft
@@ -45,7 +45,7 @@ const AppEditorModal = React.memo(({
                         className="absolute inset-0 bg-black/80 backdrop-blur-xl"
                     />
                     <motion.div
-                        className="w-full max-w-md bg-gradient-to-br from-[#0A0A0A] to-[#010101] border border-white/10 rounded-2xl shadow-[0_40px_100px_-20px_rgba(0,0,0,1)] relative overflow-hidden flex flex-col max-h-[90%]"
+                        className="w-full max-w-md bg-gradient-to-br from-[#0A0A0A] to-[#010101] border border-white/10 rounded-xl shadow-[0_40px_100px_-20px_rgba(0,0,0,1)] relative overflow-hidden flex flex-col max-h-[90%]"
                         initial={{ opacity: 0, scale: 0.9, y: 40 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -138,11 +138,11 @@ const AppEditorModal = React.memo(({
                                     </button>
                                 </div>
 
-                                <div className="min-h-[200px] rounded-2xl border border-white/5 bg-black/40 shadow-inner overflow-hidden">
+                                <div className="min-h-[200px] rounded-xl border border-white/5 bg-black/40 shadow-inner overflow-hidden">
                                     {editingApp.app.iconSource === 'native' ? (
                                         <div className="h-full flex flex-col items-center justify-center gap-6 p-8">
                                             <div className="relative group">
-                                                <div className="w-20 h-20 rounded-2xl bg-black/60 flex items-center justify-center border border-white/10 group-hover:border-white/30 transition-all duration-700 cursor-pointer overflow-hidden shadow-2xl"
+                                                <div className="w-20 h-20 rounded-xl bg-black/60 flex items-center justify-center border border-white/10 group-hover:border-white/30 transition-all duration-700 cursor-pointer overflow-hidden shadow-2xl"
                                                     onClick={handlePickIcon}>
                                                     {editingApp.app.customIconUrl ? (
                                                         <img
@@ -211,38 +211,25 @@ const AppEditorModal = React.memo(({
 const WidgetsTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig: (c: any) => void }) => {
     return (
         <motion.div
-            className="p-4 sm:p-8 md:p-12 h-full overflow-y-auto custom-scrollbar"
+            className="pt-10 md:pt-16 lg:pt-20 h-full overflow-y-auto custom-scrollbar"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
             transition={{ duration: 0.3 }}
         >
-            <div className="max-w-5xl mx-auto">
+            <div className="max-w-5xl mx-auto px-6 md:px-10 lg:px-12">
                 <motion.div
-                    className="mb-8"
+                    className="mb-12"
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.1 }}
                 >
                     <h3 className="text-xl font-semibold text-white mb-1 tracking-tight">Zenith Widgets</h3>
-                    <p className="text-white/30 text-[11px] font-medium tracking-wide">Add powerful system widgets to your menu</p>
+                    <p className="text-[11px] text-white/30 font-medium tracking-wide leading-relaxed mt-1 max-w-2xl">
+                        Deploy autonomous system modules. Enhance your radial hub with real-time telemetry, productivity oscillators, and environmental sensors.
+                    </p>
                 </motion.div>
 
-                {/* Modular Architecture Guidance */}
-                <motion.div
-                    className="mb-10 p-5 rounded-2xl bg-white/[0.02] border border-white/5 backdrop-blur-sm flex items-center gap-5"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.4, delay: 0.15 }}
-                >
-                    <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center text-white/30 shrink-0">
-                        <Zap size={22} />
-                    </div>
-                    <div>
-                        <h4 className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] mb-1">Modular Architecture</h4>
-                        <p className="text-[11px] text-white/20 leading-relaxed uppercase tracking-tight">Widgets are autonomous system modules. Toggle their deployment status across your neural workspaces to maintain optimized operational focus.</p>
-                    </div>
-                </motion.div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {AVAILABLE_WIDGETS.map((widget, index) => {
@@ -252,7 +239,7 @@ const WidgetsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                         return (
                             <motion.div
                                 key={widget.id}
-                                className="p-5 rounded-xl bg-gradient-to-br from-white/[0.04] to-transparent border border-white/[0.08] hover:border-white/20 hover:bg-white/[0.06] flex flex-col transition-all duration-500 group relative overflow-hidden shadow-lg"
+                                className="p-5 rounded-xl bg-white/[0.015] border border-white/5 hover:border-white/10 hover:bg-white/[0.03] flex flex-col transition-all duration-500 group relative overflow-hidden shadow-lg"
                                 initial={{ opacity: 0, y: 15 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ delay: index * 0.05, duration: 0.5 }}
@@ -332,7 +319,7 @@ const WidgetsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
 
 const BentoCard = React.memo(({ title, icon: Icon, children, description, className = '' }: any) => (
     <motion.div
-        className={`p-6 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:border-white/20 transition-all duration-500 overflow-hidden relative group ${className}`}
+        className={`p-6 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:border-white/20 transition-all duration-500 overflow-hidden relative group ${className}`}
         initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
@@ -342,8 +329,8 @@ const BentoCard = React.memo(({ title, icon: Icon, children, description, classN
                 <Icon size={20} strokeWidth={1.5} />
             </div>
             <div>
-                <h4 className="text-[13px] font-bold text-white tracking-tight leading-tight">{title}</h4>
-                {description && <p className="text-[10px] text-white/20 font-medium tracking-wide uppercase mt-0.5">{description}</p>}
+                <h4 className="text-[13px] font-semibold text-white tracking-tight leading-tight">{title}</h4>
+                {description && <p className="text-[10px] text-white/30 font-medium tracking-wide uppercase mt-0.5">{description}</p>}
             </div>
         </div>
         <div className="relative z-10">
@@ -356,17 +343,24 @@ const BentoCard = React.memo(({ title, icon: Icon, children, description, classN
 const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig: (c: any) => void }) => {
     return (
         <motion.div
-            className="p-8 md:p-12 h-full overflow-y-auto custom-scrollbar"
+            className="pt-10 md:pt-16 lg:pt-20 h-full overflow-y-auto custom-scrollbar"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
             transition={{ duration: 0.3 }}
         >
-            <div className="max-w-5xl mx-auto">
-                <div className="mb-10">
-                    <h3 className="text-2xl font-bold text-white mb-1.5 tracking-tight">Atmospheric Visuals</h3>
-                    <p className="text-white/30 text-[12px] font-medium tracking-wide uppercase">Fine-tune the neural dark field intensity and radial matrix</p>
-                </div>
+            <div className="max-w-5xl mx-auto px-6 md:px-10 lg:px-12">
+                <motion.div
+                    className="mb-12"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, delay: 0.1 }}
+                >
+                    <h3 className="text-xl font-semibold text-white mb-1 tracking-tight">Atmospheric Visuals</h3>
+                    <p className="text-[11px] text-white/30 font-medium tracking-wide leading-relaxed mt-1 max-w-2xl">
+                        Sculpt the aesthetic field. Refine the radial matrix expansion, glassmorphic refraction, and atmospheric dark-matter intensity.
+                    </p>
+                </motion.div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     <BentoCard
@@ -467,7 +461,7 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                         className="lg:col-span-2"
                     >
                         <div className="flex gap-6 items-center">
-                            <div className="relative group/color p-2 rounded-2xl bg-black/40 border border-white/10">
+                            <div className="relative group/color p-2 rounded-xl bg-black/40 border border-white/10">
                                 <input
                                     type="color"
                                     value={config.accentColor}
@@ -494,7 +488,6 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
 
                     <BentoCard title="Nomenclature" icon={FileType} description="Semantic Labels">
                         <div className="flex flex-col gap-4">
-                            <p className="text-[11px] text-white/30 leading-relaxed">Toggle molecular labels within the radial matrix.</p>
                             <button
                                 onClick={() => setConfig({ ...config, showLabels: !config.showLabels })}
                                 className={`w-full flex items-center justify-between p-3.5 rounded-xl border transition-all duration-500 ${config.showLabels ? 'bg-white border-white' : 'bg-white/[0.02] border-white/10'}`}
@@ -552,14 +545,24 @@ const WorkspaceCard = React.memo(({
     >
         <div className="relative w-full h-full flex flex-col items-center p-6 transition-[transform,opacity] duration-300">
             <div className="absolute inset-x-[-2%] inset-y-0 z-0 pointer-events-none transition-[transform,filter] duration-300 overflow-visible rounded-3xl will-change-transform">
-                <img src="/folder.svg" className="w-full h-full object-fill filter brightness-[0.7] group-hover:brightness-[1] group-hover:scale-[1.01] transition-[transform,filter] duration-500" alt="" />
+                <img src="folder.svg" className="w-full h-full object-fill filter brightness-[0.7] group-hover:brightness-[1] group-hover:scale-[1.01] transition-[transform,filter] duration-500" alt="" />
             </div>
 
-            {/* Top Right Labeling */}
-            <div className="absolute top-[12%] right-[10%] flex items-center gap-1.5 z-20">
-                <div className={`w-2 h-2 rounded-full ring-2 ring-black/20 ${workspace.enabled ? 'bg-white shadow-[0_0_10px_rgba(255,255,255,0.5)]' : 'bg-white/10'}`} />
-                <div className="px-2 py-0.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-md text-[8px] font-black text-white/30 uppercase tracking-widest">
-                    MN-{workspace.hotkey}
+            <div className="absolute top-[10%] right-[10%] z-20">
+                <div className={`
+                    flex items-center gap-2 px-2.5 py-1 rounded-lg 
+                    backdrop-blur-3xl border transition-all duration-500
+                    ${workspace.enabled
+                        ? 'bg-white/[0.05] border-white/10'
+                        : 'bg-white/[0.01] border-white/5 opacity-30'
+                    }
+                `}>
+                    <div className="relative flex items-center justify-center">
+                        <div className={`w-1 h-1 rounded-full ${workspace.enabled ? 'bg-white shadow-[0_0_8px_white]' : 'bg-white/10'}`} />
+                    </div>
+                    <span className={`text-[9px] font-medium tabular-nums tracking-[0.15em] ${workspace.enabled ? 'text-white/80' : 'text-white/10'}`}>
+                        {workspace.hotkey}
+                    </span>
                 </div>
             </div>
 
@@ -601,6 +604,9 @@ const WorkspaceCard = React.memo(({
                         {workspace.name}
                     </h4>
                     <div className="h-[1px] w-4 bg-white/10 group-hover:w-8 group-hover:bg-white/30 transition-all duration-700" />
+                    <span className="text-[8px] text-white/20 font-bold uppercase tracking-[0.2em] mt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-500">
+                        {workspace.apps.length} Modules
+                    </span>
                 </div>
             </div>
 
@@ -619,7 +625,6 @@ const WorkspaceAppItem = React.memo(({
     const Icon = getIcon(app.iconName);
     return (
         <motion.div
-            layout
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             draggable
@@ -746,213 +751,221 @@ const WorkspacesTab = React.memo(({
     handleAddApp: (type: 'app' | 'folder') => void
 }) => {
     return (
-        <div className="h-full w-full p-6 overflow-y-auto custom-scrollbar">
-            <div className="max-w-6xl mx-auto h-full flex flex-col">
-                <div className="flex items-center gap-6 mb-8 group/header">
-                    {selectedWorkspaceIndex !== null && (
-                        <motion.button
-                            onClick={() => setSelectedWorkspaceIndex(null)}
-                            className="w-10 h-10 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-white/40 hover:text-white rounded-xl transition-all duration-300 active:scale-95"
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            whileHover={{ x: -2 }}
-                            title="Back to Workspaces"
-                        >
-                            <ChevronLeft size={20} />
-                        </motion.button>
-                    )}
+        <div className="h-full w-full flex flex-col overflow-hidden relative">
+            <div className={`flex-1 overflow-y-auto custom-scrollbar ${selectedWorkspaceIndex !== null ? 'pt-6 md:pt-10 lg:pt-12' : 'pt-10 md:pt-16 lg:pt-20'}`}>
+                <div className="max-w-5xl mx-auto flex flex-col px-6 md:px-10 lg:px-12">
+                    <div className={`flex items-center gap-6 ${selectedWorkspaceIndex !== null ? 'mb-6' : 'mb-12'} group/header`}>
+                        {selectedWorkspaceIndex !== null && (
+                            <motion.button
+                                onClick={() => setSelectedWorkspaceIndex(null)}
+                                className="w-10 h-10 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-white/40 hover:text-white rounded-xl transition-all duration-300 active:scale-95"
+                                initial={{ opacity: 0, x: -20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                whileHover={{ x: -2 }}
+                                title="Back to Workspaces"
+                            >
+                                <ChevronLeft size={20} />
+                            </motion.button>
+                        )}
 
-                    <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4 }}
-                        className="flex-1"
-                    >
-                        <h3 className="text-2xl font-semibold text-white mb-1 tracking-tight">
-                            {selectedWorkspaceIndex !== null ? config.workspaces[selectedWorkspaceIndex].name : 'Workspaces'}
-                        </h3>
-                        <p className="text-white/30 text-[11px] font-medium tracking-wide">
-                            {selectedWorkspaceIndex !== null ? 'Manage apps in this workspace' : 'Organize your apps into switchable environments'}
-                        </p>
-                    </motion.div>
-                </div>
-
-                <AnimatePresence mode="wait">
-                    {selectedWorkspaceIndex === null ? (
                         <motion.div
-                            key="overview"
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
                             transition={{ duration: 0.3 }}
-                            className="flex flex-col gap-8"
+                            className="flex-1"
                         >
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 auto-rows-[200px]">
-                                {config.workspaces.map((workspace, index) => (
-                                    <WorkspaceCard
-                                        key={workspace.id}
-                                        workspace={workspace}
-                                        index={index}
-                                        dragOverWorkspace={dragOverWorkspace}
-                                        dragWorkspaceRef={dragWorkspaceRef}
-                                        setDragOverWorkspace={setDragOverWorkspace}
-                                        reorderWorkspaces={reorderWorkspaces}
-                                        setSelectedWorkspaceIndex={setSelectedWorkspaceIndex}
-                                        getIcon={getIcon}
-                                    />
-                                ))}
-
-                                {config.workspaces.length < 9 && (
-                                    <motion.button
-                                        onClick={createWorkspace}
-                                        className="h-full rounded-[2.5rem] border-2 border-dashed border-white/[0.08] hover:border-white/[0.3] hover:bg-white/[0.03] flex flex-col items-center justify-center gap-4 text-white/20 hover:text-white transition-all group scale-95 hover:scale-100 duration-500"
-                                        whileHover={{ y: -4 }}
-                                        whileTap={{ scale: 0.98 }}
-                                    >
-                                        <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-white/10 group-hover:rotate-90 transition-all duration-500">
-                                            <Plus size={28} strokeWidth={1.5} />
-                                        </div>
-                                        <span className="font-semibold text-[10px] uppercase tracking-[0.15em] opacity-40 group-hover:opacity-100 transition-opacity">Expand Matrix</span>
-                                    </motion.button>
-                                )}
-                            </div>
+                            <h3 className="text-xl font-medium text-white/90 mb-1 tracking-tight">
+                                {selectedWorkspaceIndex === null ? 'Workspaces' : null}
+                            </h3>
+                            {selectedWorkspaceIndex === null && (
+                                <p className="text-[11px] text-white/30 font-medium tracking-wide leading-relaxed mt-1 max-w-2xl">
+                                    Construct and manage high-intensity project hubs with custom neural pathways.
+                                </p>
+                            )}
                         </motion.div>
-                    ) : (
-                        <motion.div
-                            key="detail"
-                            initial={{ opacity: 0, x: 20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: 20 }}
-                            transition={{ duration: 0.3 }}
-                            className="flex-1 flex flex-col"
-                        >
-                            {selectedWorkspaceIndex !== null && config.workspaces[selectedWorkspaceIndex] && (
-                                <div className="flex items-center gap-5 mb-6 bg-gradient-to-r from-white/[0.04] to-transparent p-5 rounded-2xl border border-white/10 backdrop-blur-md">
-                                    <div className="flex-1">
-                                        <label className="text-[9px] font-semibold text-white/20 uppercase tracking-[0.25em] block mb-2">Workspace Alias</label>
-                                        <input
-                                            type="text"
-                                            value={config.workspaces[selectedWorkspaceIndex].name}
-                                            onChange={e => {
-                                                const nw = [...config.workspaces];
-                                                nw[selectedWorkspaceIndex] = { ...nw[selectedWorkspaceIndex], name: e.target.value };
-                                                setConfig({ ...config, workspaces: nw });
-                                            }}
-                                            className="w-full bg-transparent text-xl font-semibold text-white border-none outline-none placeholder-white/10 focus:placeholder-transparent transition-all"
-                                            placeholder="Neural Network..."
+                    </div>
+
+                    <AnimatePresence mode="wait">
+                        {selectedWorkspaceIndex === null ? (
+                            <motion.div
+                                key="overview"
+                                initial={{ opacity: 0, scale: 0.95 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.95 }}
+                                transition={{ duration: 0.3 }}
+                                className="flex flex-col gap-8"
+                            >
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 auto-rows-[200px] pb-12">
+                                    {config.workspaces.map((workspace, index) => (
+                                        <WorkspaceCard
+                                            key={workspace.id}
+                                            workspace={workspace}
+                                            index={index}
+                                            dragOverWorkspace={dragOverWorkspace}
+                                            dragWorkspaceRef={dragWorkspaceRef}
+                                            setDragOverWorkspace={setDragOverWorkspace}
+                                            reorderWorkspaces={reorderWorkspaces}
+                                            setSelectedWorkspaceIndex={setSelectedWorkspaceIndex}
+                                            getIcon={getIcon}
                                         />
-                                        <div className="flex items-center gap-3 mt-3">
-                                            {['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#6B7280'].map(c => (
-                                                <button
-                                                    key={c}
-                                                    onClick={() => {
-                                                        const nw = [...config.workspaces];
-                                                        nw[selectedWorkspaceIndex] = { ...nw[selectedWorkspaceIndex], color: c };
-                                                        setConfig({ ...config, workspaces: nw });
-                                                    }}
-                                                    className={`w-5 h-5 rounded-full border-2 transition-all ${config.workspaces[selectedWorkspaceIndex].color === c || (!config.workspaces[selectedWorkspaceIndex].color && c === '#3B82F6') ? 'border-white scale-110 shadow-lg' : 'border-transparent opacity-30 hover:opacity-100'}`}
-                                                    style={{ backgroundColor: c }}
-                                                    title={`Set project color to ${c}`}
+                                    ))}
+
+                                </div>
+                            </motion.div>
+                        ) : (
+                            <motion.div
+                                key="detail"
+                                initial={{ opacity: 0, x: 20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0, x: 20 }}
+                                transition={{ duration: 0.3 }}
+                                className="flex-1 flex flex-col"
+                            >
+                                {selectedWorkspaceIndex !== null && config.workspaces[selectedWorkspaceIndex] && (
+                                    <div className="flex items-center gap-6 mb-6 bg-white/[0.015] p-4 rounded-xl border border-white/5 backdrop-blur-3xl">
+                                        <div className="flex-1">
+                                            {workspaceFolderPath.length === 0 && (
+                                                <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.3em] block mb-3 ml-1">Workspace Identity</label>
+                                            )}
+                                            <input
+                                                type="text"
+                                                value={config.workspaces[selectedWorkspaceIndex].name}
+                                                onChange={e => {
+                                                    const nw = [...config.workspaces];
+                                                    nw[selectedWorkspaceIndex] = { ...nw[selectedWorkspaceIndex], name: e.target.value };
+                                                    setConfig({ ...config, workspaces: nw });
+                                                }}
+                                                className={`w-full bg-transparent ${workspaceFolderPath.length > 0 ? 'text-lg' : 'text-2xl'} font-medium text-white/90 border-none outline-none placeholder-white/10 focus:placeholder-transparent transition-all tracking-tight`}
+                                                placeholder="Neural Network..."
+                                            />
+                                        </div>
+                                        {workspaceFolderPath.length === 0 && (
+                                            <>
+                                                <div className="h-10 w-px bg-white/5 mx-2" />
+                                                <div className="flex items-center gap-2.5">
+                                                    <button
+                                                        onClick={() => {
+                                                            const nw = [...config.workspaces];
+                                                            nw[selectedWorkspaceIndex] = {
+                                                                ...nw[selectedWorkspaceIndex],
+                                                                enabled: !nw[selectedWorkspaceIndex].enabled
+                                                            };
+                                                            setConfig({ ...config, workspaces: nw });
+                                                        }}
+                                                        className={`h-10 px-5 rounded-xl text-[9px] font-semibold uppercase tracking-[0.2em] transition-all border duration-500 ${config.workspaces[selectedWorkspaceIndex].enabled ? 'bg-white text-black border-white shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-white/[0.02] text-white/30 border-white/5 hover:bg-white/10 hover:text-white'}`}
+                                                    >
+                                                        {config.workspaces[selectedWorkspaceIndex].enabled ? 'Online' : 'Offline'}
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            if (confirm('Decommission this workspace?')) deleteWorkspace(selectedWorkspaceIndex);
+                                                        }}
+                                                        className="h-10 w-10 flex items-center justify-center bg-red-500/5 hover:bg-red-500/10 text-red-500/60 hover:text-red-500 rounded-xl border border-red-500/10 hover:border-red-500/20 transition-all duration-300 shrink-0"
+                                                    >
+                                                        <Trash2 size={18} strokeWidth={1.5} />
+                                                    </button>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* App Grid - Refined 2026 */}
+                                <div className="flex-1 overflow-y-auto custom-scrollbar bg-black/40 rounded-xl border border-white/5 p-5 pb-12 mb-4 shadow-inner">
+                                    <div className="flex items-center gap-4 mb-5">
+                                        {workspaceFolderPath.length > 0 && (
+                                            <button
+                                                onClick={() => {
+                                                    const newPath = [...workspaceFolderPath];
+                                                    newPath.pop();
+                                                    setWorkspaceFolderPath(newPath);
+                                                }}
+                                                className="h-11 px-4 bg-white/5 hover:bg-white/10 text-white/40 hover:text-white rounded-xl border border-white/5 hover:border-white/20 transition-all duration-300 text-xs font-bold uppercase tracking-widest shrink-0"
+                                            >
+                                                <CornerUpLeft size={18} /> Back to Overview
+                                            </button>
+                                        )}
+                                        <div className="text-[10px] font-black text-white/20 uppercase tracking-[0.3em] px-1">
+                                            {workspaceFolderPath.length === 0 ? 'Root Cluster' : null}
+                                        </div>
+                                    </div>
+
+                                    {getCurrentLevel(config.workspaces[selectedWorkspaceIndex!].apps, workspaceFolderPath).length === 0 ? (
+                                        <div className="h-4/5 flex flex-col items-center justify-center text-white/10 animate-pulse">
+                                            <Box size={64} strokeWidth={0.5} className="mb-6" />
+                                            <p className="text-xl font-bold tracking-tight text-white/20">Empty Matrix</p>
+                                            <p className="text-xs uppercase tracking-[0.2em] opacity-30">Deploy modules below</p>
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                            {getCurrentLevel(config.workspaces[selectedWorkspaceIndex!].apps, workspaceFolderPath).map((app, i) => (
+                                                <WorkspaceAppItem
+                                                    key={app.id}
+                                                    app={app}
+                                                    i={i}
+                                                    isFolder={app.type === 'folder'}
+                                                    getIcon={getIcon}
+                                                    dragAppRef={dragAppRef}
+                                                    setDragOverApp={setDragOverApp}
+                                                    dragOverApp={dragOverApp}
+                                                    selectedWorkspaceIndex={selectedWorkspaceIndex}
+                                                    workspaceFolderPath={workspaceFolderPath}
+                                                    reorderAppsInWorkspace={reorderAppsInWorkspace}
+                                                    setEditingApp={setEditingApp}
+                                                    removeAppFromWorkspace={removeAppFromWorkspace}
+                                                    setWorkspaceFolderPath={setWorkspaceFolderPath}
                                                 />
                                             ))}
                                         </div>
-                                    </div>
-                                    <div className="h-12 w-px bg-white/10 mx-2" />
-                                    <div className="flex items-center gap-3">
-                                        <button
-                                            onClick={() => {
-                                                const nw = [...config.workspaces];
-                                                nw[selectedWorkspaceIndex] = {
-                                                    ...nw[selectedWorkspaceIndex],
-                                                    enabled: !nw[selectedWorkspaceIndex].enabled
-                                                };
-                                                setConfig({ ...config, workspaces: nw });
-                                            }}
-                                            className={`h-9 px-4 rounded-lg text-[10px] font-semibold uppercase tracking-widest transition-all border duration-300 ${config.workspaces[selectedWorkspaceIndex].enabled ? 'bg-white text-black border-white shadow-lg' : 'bg-white/5 text-white/30 border-white/10 hover:bg-white/10 hover:text-white'}`}
-                                        >
-                                            {config.workspaces[selectedWorkspaceIndex].enabled ? 'Active' : 'Standby'}
-                                        </button>
-                                        <button
-                                            onClick={() => {
-                                                if (confirm('Decommission this workspace matrix?')) deleteWorkspace(selectedWorkspaceIndex);
-                                            }}
-                                            className="h-11 px-4 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl border border-red-500/20 hover:border-red-500/40 transition-all duration-300 shrink-0"
-                                        >
-                                            <Trash2 size={20} strokeWidth={1.5} />
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* App Grid - Refined 2026 */}
-                            <div className="flex-1 overflow-y-auto custom-scrollbar bg-black/40 rounded-xl border border-white/5 p-5 mb-5 shadow-inner">
-                                <div className="flex items-center gap-4 mb-8">
-                                    {workspaceFolderPath.length > 0 && (
-                                        <button
-                                            onClick={() => {
-                                                const newPath = [...workspaceFolderPath];
-                                                newPath.pop();
-                                                setWorkspaceFolderPath(newPath);
-                                            }}
-                                            className="h-11 px-4 bg-white/5 hover:bg-white/10 text-white/40 hover:text-white rounded-xl border border-white/5 hover:border-white/20 transition-all duration-300 text-xs font-bold uppercase tracking-widest shrink-0"
-                                        >
-                                            <CornerUpLeft size={18} /> Back to Overview
-                                        </button>
                                     )}
-                                    <div className="text-[10px] font-black text-white/20 uppercase tracking-[0.3em] px-1">
-                                        {workspaceFolderPath.length === 0 ? 'Root Cluster' : 'Sub-Directory Cluster'}
-                                    </div>
                                 </div>
 
-                                {getCurrentLevel(config.workspaces[selectedWorkspaceIndex!].apps, workspaceFolderPath).length === 0 ? (
-                                    <div className="h-4/5 flex flex-col items-center justify-center text-white/10 animate-pulse">
-                                        <Box size={64} strokeWidth={0.5} className="mb-6" />
-                                        <p className="text-xl font-bold tracking-tight text-white/20">Empty Matrix</p>
-                                        <p className="text-xs uppercase tracking-[0.2em] opacity-30">Deploy modules below</p>
-                                    </div>
-                                ) : (
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                                        {getCurrentLevel(config.workspaces[selectedWorkspaceIndex!].apps, workspaceFolderPath).map((app, i) => (
-                                            <WorkspaceAppItem
-                                                key={app.id}
-                                                app={app}
-                                                i={i}
-                                                isFolder={app.type === 'folder'}
-                                                getIcon={getIcon}
-                                                dragAppRef={dragAppRef}
-                                                setDragOverApp={setDragOverApp}
-                                                dragOverApp={dragOverApp}
-                                                selectedWorkspaceIndex={selectedWorkspaceIndex}
-                                                workspaceFolderPath={workspaceFolderPath}
-                                                reorderAppsInWorkspace={reorderAppsInWorkspace}
-                                                setEditingApp={setEditingApp}
-                                                removeAppFromWorkspace={removeAppFromWorkspace}
-                                                setWorkspaceFolderPath={setWorkspaceFolderPath}
-                                            />
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
+            </div>
 
-                            {/* Action Bar */}
-                            <div className="flex gap-4">
-                                <button
-                                    onClick={() => handleAddApp('app')}
-                                    className="flex-1 py-3 bg-white text-black rounded-lg text-sm font-semibold hover:bg-gray-100 transition-all flex items-center justify-center gap-2 shadow-md hover:scale-[1.01] active:scale-[0.99]"
-                                >
-                                    <Plus size={20} /> Add Application
-                                </button>
-                                <button
-                                    onClick={() => handleAddApp('folder')}
-                                    className="flex-1 py-3 bg-white/10 text-white rounded-lg text-sm font-semibold hover:bg-white/15 transition-all flex items-center justify-center gap-2 border border-white/5 hover:border-white/10"
-                                >
-                                    <Folder size={20} /> Add Folder Group
-                                </button>
+            {/* Unified Global Fixed Action Bar - Premium 2026 */}
+            <div className="pb-16 pt-4 flex justify-center flex-shrink-0 bg-transparent">
+                <div className="flex items-center gap-1.5 p-1.5 bg-white/[0.03] backdrop-blur-3xl rounded-full border border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.6)] z-[50] ring-1 ring-white/5">
+                    {selectedWorkspaceIndex === null ? (
+                        <button
+                            onClick={createWorkspace}
+                            className="h-12 pl-4 pr-7 bg-white/[0.9] hover:bg-white text-black rounded-full text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-3 shadow-2xl hover:scale-[1.02] active:scale-[0.98] duration-300 group"
+                            title="Deploy new Workspace Matrix"
+                        >
+                            <div className="w-8 h-8 rounded-full bg-black/10 flex items-center justify-center group-hover:bg-black/20 transition-colors">
+                                <Plus size={18} strokeWidth={3} />
                             </div>
-                        </motion.div>
+                            <span>New Workspace</span>
+                        </button>
+                    ) : (
+                        <>
+                            <button
+                                onClick={() => handleAddApp('app')}
+                                className="h-11 pl-4 pr-6 bg-white/[0.9] hover:bg-white text-black rounded-full text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-2.5 shadow-lg hover:scale-[1.02] active:scale-[0.98] duration-300"
+                                title="Deploy new application module"
+                            >
+                                <div className="w-7 h-7 rounded-full bg-black/10 flex items-center justify-center">
+                                    <Plus size={16} strokeWidth={3} />
+                                </div>
+                                <span>Add Module</span>
+                            </button>
+                            <button
+                                onClick={() => handleAddApp('folder')}
+                                className="h-11 pl-4 pr-6 bg-white/[0.05] hover:bg-white/[0.1] text-white/90 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-2.5 border border-white/5 hover:border-white/10 duration-300"
+                                title="Create new directory cluster"
+                            >
+                                <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center">
+                                    <FolderPlus size={16} strokeWidth={2} />
+                                </div>
+                                <span>Create Group</span>
+                            </button>
+                        </>
                     )}
-                </AnimatePresence>
+                </div>
             </div>
         </div>
     );
@@ -984,38 +997,25 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
 }) => {
     return (
         <motion.div
-            className="p-6 overflow-y-auto custom-scrollbar"
+            className="pt-10 md:pt-16 lg:pt-20 overflow-y-auto custom-scrollbar"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
             transition={{ duration: 0.3 }}
         >
-            <div className="max-w-3xl mx-auto">
+            <div className="max-w-3xl mx-auto px-6 md:px-10 lg:px-12">
                 <motion.div
-                    className="mb-8"
+                    className="mb-12"
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.1 }}
                 >
                     <h3 className="text-xl font-semibold text-white mb-1 tracking-tight">Interface</h3>
-                    <p className="text-white/30 text-[11px] font-medium">Configure interaction and behavior</p>
+                    <p className="text-[11px] text-white/30 font-medium tracking-wide leading-relaxed mt-1 max-w-2xl">
+                        Tune the human-machine interface. Calibrate interaction dynamics, activation shortcuts, and somatic feedback to align with your neural workflow.
+                    </p>
                 </motion.div>
 
-                {/* Interaction Flow Guidance */}
-                <motion.div
-                    className="mb-10 p-5 rounded-2xl bg-white/[0.02] border border-white/5 backdrop-blur-sm flex items-center gap-5"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.4, delay: 0.15 }}
-                >
-                    <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center text-white/30 shrink-0">
-                        <Keyboard size={22} />
-                    </div>
-                    <div>
-                        <h4 className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] mb-1">Interaction Flow</h4>
-                        <p className="text-[11px] text-white/20 leading-relaxed uppercase tracking-tight">Use the global activation shortcut to manifest the radial matrix. Configure deployment modes and visual descriptors to streamline your workflow.</p>
-                    </div>
-                </motion.div>
                 <div className="space-y-5">
                     {/* GLOBAL SHORTCUT - Refined 2026 */}
                     <motion.div
@@ -1042,7 +1042,6 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
                                 Re-Sync
                             </button>
                         </div>
-                        <p className="text-[10px] text-white/20 px-2 font-medium uppercase tracking-wider">Primary interception sequence for manual deployment.</p>
                     </motion.div>
 
                     {/* SYSTEM STARTUP - Refined 2026 */}
@@ -1055,7 +1054,6 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
                         <div className="relative z-10">
                             <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.25em] block ml-0.5 mb-0.5">System Integration</label>
                             <h4 className="text-[13px] font-medium text-white">Autostart Protocol</h4>
-                            <p className="text-[10px] text-white/30 font-medium leading-relaxed mt-1">Automate deployment upon executive kernel initialization.</p>
                         </div>
                         <motion.button
                             onClick={() => {
@@ -1077,6 +1075,37 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
                         </motion.button>
                     </motion.div>
 
+                    {/* MOUSE TRIGGER - New 2026 */}
+                    <motion.div
+                        className="p-5 rounded-xl bg-gradient-to-br from-white/[0.04] to-transparent border border-white/[0.08] flex items-center justify-between hover:bg-white/[0.07] transition-all duration-500 group"
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3, delay: 0.28 }}
+                    >
+                        <div className="relative z-10">
+                            <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.25em] block ml-0.5 mb-0.5">Somatic Input</label>
+                            <h4 className="text-[13px] font-medium text-white">Middle Mouse Trigger</h4>
+                        </div>
+                        <motion.button
+                            onClick={() => {
+                                const newValue = !config.enableMouseTrigger;
+                                setConfig({ ...config, enableMouseTrigger: newValue });
+                                if (window.electron && window.electron.setSettings) {
+                                    window.electron.setSettings({ ...config, enableMouseTrigger: newValue });
+                                }
+                            }}
+                            className={`relative w-16 h-10 rounded-2xl transition-all duration-500 p-1.5 shadow-lg ${config.enableMouseTrigger ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                        >
+                            <motion.div
+                                className={`w-7 h-7 rounded-[0.8rem] shadow-xl ${config.enableMouseTrigger ? 'bg-black' : 'bg-white/20'}`}
+                                animate={{ x: config.enableMouseTrigger ? 26 : 0 }}
+                                transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                            />
+                        </motion.button>
+                    </motion.div>
+
                     <div className="h-px bg-white/[0.08]" />
 
                     {/* CENTER BUTTON - Refined 2026 */}
@@ -1089,7 +1118,6 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
                         <div>
                             <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.25em] block ml-0.5 mb-4">Center Button Functionality</label>
                             <h4 className="text-sm font-medium text-white tracking-tight">The Neural Center</h4>
-                            <p className="text-[10px] text-white/30 font-normal leading-relaxed mt-1">Determine the primary action of the radial menu's nucleus.</p>
                         </div>
 
                         <div className="flex bg-black/40 p-1 rounded-xl border border-white/5 shadow-inner">
@@ -1195,7 +1223,6 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
                                 </motion.div>
                             )}
                         </AnimatePresence>
-                        <p className="text-xs text-white/30 px-1 mt-2">Choose function for the central button.</p>
                     </motion.div>
 
                     <div className="h-px bg-white/[0.08]" />
@@ -1210,7 +1237,6 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
                         <div className="flex items-center justify-between">
                             <div>
                                 <label className="text-sm font-normal text-white">Center on Screen</label>
-                                <p className="text-xs text-white/40 mt-0.5">Show menu in screen center instead of mouse cursor</p>
                             </div>
                             <motion.button
                                 onClick={() => setConfig({ ...config, fixedPosition: !config.fixedPosition })}
@@ -1229,32 +1255,6 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
 
                     <div className="h-px bg-white/[0.08]" />
 
-                    {/* RESTART APP - Redesigned 2026 */}
-                    <motion.div
-                        className="p-5 rounded-xl bg-gradient-to-br from-white/[0.04] to-transparent border border-white/[0.08] space-y-4 shadow-[0_12px_40px_-10px_rgba(0,0,0,0.5)] relative overflow-hidden group"
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ duration: 0.5, delay: 0.4 }}
-                    >
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-500/[0.03] rounded-full blur-3xl -mr-16 -mt-16 group-hover:bg-yellow-500/[0.06] transition-colors duration-700" />
-
-                        <div className="flex items-start gap-4 text-white/60 relative z-10">
-                            <div className="p-2.5 bg-white/5 rounded-xl text-white/80 border border-white/10 shadow-inner group-hover:rotate-12 transition-transform duration-500">
-                                <AlertTriangle size={20} strokeWidth={1.5} />
-                            </div>
-                            <div>
-                                <h4 className="text-base font-semibold text-white tracking-tight mb-1">System Relaunch Required</h4>
-                                <p className="text-[11px] leading-relaxed text-white/40 font-normal">Some architectural adjustments require a complete application restart to calibrate correctly with the system kernel.</p>
-                            </div>
-                        </div>
-                        <button
-                            onClick={() => window.electron?.relaunchApp()}
-                            className="w-full py-3 bg-white text-black font-semibold text-xs uppercase tracking-[0.2em] rounded-lg hover:bg-white hover:shadow-[0_8px_24px_rgba(255,255,255,0.2)] transition-all duration-300 flex items-center justify-center gap-3 relative z-10 group/btn"
-                        >
-                            <RotateCw size={16} strokeWidth={2} className="group-hover/btn:rotate-180 transition-transform duration-700" />
-                            Initialize Relaunch Sequence
-                        </button>
-                    </motion.div>
                 </div>
             </div>
         </motion.div>
@@ -1264,119 +1264,108 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
 const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig: (c: any) => void }) => {
     return (
         <motion.div
-            className="p-6 h-full overflow-y-auto custom-scrollbar"
+            className="pt-10 md:pt-16 lg:pt-20 h-full overflow-y-auto custom-scrollbar"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
             transition={{ duration: 0.3 }}
         >
-            <div className="max-w-3xl mx-auto">
+            <div className="max-w-3xl mx-auto px-6 md:px-10 lg:px-12">
                 <motion.div
-                    className="mb-10"
+                    className="mb-12"
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.1 }}
                 >
                     <h3 className="text-xl font-semibold text-white mb-1 tracking-tight">HUD Elements</h3>
-                    <p className="text-white/30 text-[11px] font-medium">Configure on-screen widgets and overlays</p>
+                    <p className="text-[11px] text-white/30 font-medium tracking-wide leading-relaxed mt-1 max-w-2xl">
+                        Configure the persistent awareness layer. Position system metadata and temporal markers within your peripheral visual field.
+                    </p>
                 </motion.div>
 
                 <div className="space-y-4">
                     {/* CLOCK & DATE - Refined 2026 */}
                     <motion.div
-                        className="bg-gradient-to-br from-white/[0.04] to-transparent border border-white/[0.08] rounded-xl p-5 hover:bg-white/[0.06] transition-colors duration-500 group"
+                        className="bg-white/[0.015] border border-white/5 rounded-xl p-5 hover:bg-white/[0.03] transition-colors duration-500 group"
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.2 }}
                     >
-                        <div className="flex items-center gap-3 mb-5">
-                            <div className="w-9 h-9 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center text-white/40 group-hover:text-white group-hover:border-white/20 transition-all duration-500">
-                                <Clock size={20} strokeWidth={1.2} />
+                        <div className="flex items-center gap-4 mb-6">
+                            <div className="w-9 h-9 rounded-lg bg-black/40 border border-white/5 flex items-center justify-center text-white/40 group-hover:text-white group-hover:border-white/10 transition-all duration-500">
+                                <Clock size={18} strokeWidth={1} />
                             </div>
                             <div>
-                                <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.2em] block ml-0.5 mb-0.5">Chronos Module</label>
-                                <h4 className="text-sm font-medium text-white tracking-tight">Time &amp; Temporal Flow</h4>
+                                <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.2em] block ml-0.5 mb-0.5">Temporal Module</label>
+                                <h4 className="text-sm font-medium text-white/90 tracking-tight">Time & Flow</h4>
                             </div>
                         </div>
 
-                        <div className="space-y-6">
-                            <div className="flex items-center justify-between p-4 bg-black/20 rounded-2xl border border-white/5">
-                                <div>
-                                    <div className="text-[13px] font-medium text-white">Chronometer Display</div>
-                                    <div className="text-[10px] text-white/30 font-medium">Render digital clock in active matrix.</div>
-                                </div>
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-between p-4 bg-black/20 rounded-xl border border-white/[0.02]">
+                                <div className="text-[13px] font-medium text-white/80">Chronometer</div>
                                 <motion.button
                                     onClick={() => setConfig({ ...config, showClock: !config.showClock })}
-                                    className={`relative w-16 h-9 rounded-2xl transition-all duration-500 p-1.5 ${config.showClock ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
+                                    className={`relative w-14 h-8 rounded-xl transition-all duration-500 p-1.5 ${config.showClock ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
                                     whileHover={{ scale: 1.05 }}
                                     whileTap={{ scale: 0.95 }}
                                 >
-                                    <motion.div className={`w-6 h-6 rounded-xl shadow-lg ${config.showClock ? 'bg-black' : 'bg-white/20'}`} animate={{ x: config.showClock ? 28 : 0 }} transition={{ type: "spring", stiffness: 400, damping: 30 }} />
+                                    <motion.div className={`w-5 h-5 rounded-lg shadow-lg ${config.showClock ? 'bg-black' : 'bg-white/20'}`} animate={{ x: config.showClock ? 24 : 0 }} transition={{ type: "spring", stiffness: 400, damping: 30 }} />
                                 </motion.button>
                             </div>
 
-                            <div className="flex items-center justify-between p-4 bg-black/20 rounded-2xl border border-white/5">
-                                <div>
-                                    <div className="text-[13px] font-medium text-white">Calendar Meta-data</div>
-                                    <div className="text-[10px] text-white/30 font-medium">Inject current date into system HUD.</div>
-                                </div>
+                            <div className="flex items-center justify-between p-4 bg-black/20 rounded-xl border border-white/[0.02]">
+                                <div className="text-[13px] font-medium text-white/80">Calendar Meta</div>
                                 <motion.button
                                     onClick={() => setConfig({ ...config, showDate: !config.showDate })}
-                                    className={`relative w-16 h-9 rounded-2xl transition-all duration-500 p-1.5 ${config.showDate ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
+                                    className={`relative w-14 h-8 rounded-xl transition-all duration-500 p-1.5 ${config.showDate ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
                                     whileHover={{ scale: 1.05 }}
                                     whileTap={{ scale: 0.95 }}
                                 >
-                                    <motion.div className={`w-6 h-6 rounded-xl shadow-lg ${config.showDate ? 'bg-black' : 'bg-white/20'}`} animate={{ x: config.showDate ? 28 : 0 }} transition={{ type: "spring", stiffness: 400, damping: 30 }} />
+                                    <motion.div className={`w-5 h-5 rounded-lg shadow-lg ${config.showDate ? 'bg-black' : 'bg-white/20'}`} animate={{ x: config.showDate ? 24 : 0 }} transition={{ type: "spring", stiffness: 400, damping: 30 }} />
                                 </motion.button>
                             </div>
                         </div>
                     </motion.div>
 
-                    {/* SYSTEM STATUS - Refined 2026 */}
                     <motion.div
-                        className="bg-gradient-to-br from-white/[0.04] to-transparent border border-white/[0.08] rounded-xl p-5 hover:bg-white/[0.06] transition-colors duration-500 group"
+                        className="bg-white/[0.01] border border-white/5 rounded-xl p-6 hover:bg-white/[0.02] transition-colors duration-500 group"
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.25 }}
                     >
-                        <div className="flex items-center gap-4 mb-7">
-                            <div className="w-11 h-11 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center text-white/40 group-hover:text-white group-hover:border-white/20 transition-all duration-500">
-                                <Monitor size={20} strokeWidth={1.2} />
+                        <div className="flex items-center gap-4 mb-8">
+                            <div className="w-10 h-10 rounded-lg bg-black/40 border border-white/5 flex items-center justify-center text-white/40 group-hover:text-white/60 transition-all duration-500">
+                                <Monitor size={18} strokeWidth={1} />
                             </div>
                             <div>
-                                <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.2em] block ml-0.5 mb-0.5">Vital Telemetry</label>
-                                <h4 className="text-sm font-medium text-white tracking-tight">System Status</h4>
+                                <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.2em] block ml-0.5 mb-1">Vital Metrics</label>
+                                <h4 className="text-sm font-medium text-white/90 tracking-tight">System Awareness</h4>
                             </div>
                         </div>
 
-                        <div className="space-y-6">
-                            <div className="flex items-center justify-between p-4 bg-black/20 rounded-2xl border border-white/5">
-                                <div>
-                                    <div className="text-[13px] font-medium text-white">Energy Capacitor</div>
-                                    <div className="text-[10px] text-white/30 font-medium">Monitor battery charge levels.</div>
-                                </div>
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-between p-4 bg-black/20 rounded-xl border border-white/[0.02]">
+                                <div className="text-[13px] font-medium text-white/80">Energy Status</div>
                                 <motion.button
                                     onClick={() => setConfig({ ...config, showBattery: !config.showBattery })}
-                                    className={`relative w-16 h-9 rounded-2xl transition-all duration-500 p-1.5 ${config.showBattery ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
+                                    className={`relative w-14 h-8 rounded-xl transition-all duration-500 p-1.5 ${config.showBattery ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
                                     whileHover={{ scale: 1.05 }}
                                     whileTap={{ scale: 0.95 }}
                                 >
-                                    <motion.div className={`w-6 h-6 rounded-xl shadow-lg ${config.showBattery ? 'bg-black' : 'bg-white/20'}`} animate={{ x: config.showBattery ? 28 : 0 }} transition={{ type: "spring", stiffness: 400, damping: 30 }} />
+                                    <motion.div className={`w-5 h-5 rounded-lg shadow-lg ${config.showBattery ? 'bg-black' : 'bg-white/20'}`} animate={{ x: config.showBattery ? 24 : 0 }} transition={{ type: "spring", stiffness: 400, damping: 30 }} />
                                 </motion.button>
                             </div>
 
-                            <div className="flex items-center justify-between p-4 bg-black/20 rounded-2xl border border-white/5">
-                                <div>
-                                    <div className="text-[13px] font-medium text-white">Atmospheric Data</div>
-                                    <div className="text-[10px] text-white/30 font-medium">Fetch local environmental metrics.</div>
-                                </div>
+                            <div className="flex items-center justify-between p-4 bg-black/20 rounded-xl border border-white/[0.02]">
+                                <div className="text-[13px] font-medium text-white/80">Ambient Intel</div>
                                 <motion.button
                                     onClick={() => setConfig({ ...config, showWeather: !config.showWeather })}
-                                    className={`relative w-16 h-9 rounded-2xl transition-all duration-500 p-1.5 ${config.showWeather ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
+                                    className={`relative w-14 h-8 rounded-xl transition-all duration-500 p-1.5 ${config.showWeather ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
                                     whileHover={{ scale: 1.05 }}
                                     whileTap={{ scale: 0.95 }}
                                 >
-                                    <motion.div className={`w-6 h-6 rounded-xl shadow-lg ${config.showWeather ? 'bg-black' : 'bg-white/20'}`} animate={{ x: config.showWeather ? 28 : 0 }} transition={{ type: "spring", stiffness: 400, damping: 30 }} />
+                                    <motion.div className={`w-5 h-5 rounded-lg shadow-lg ${config.showWeather ? 'bg-black' : 'bg-white/20'}`} animate={{ x: config.showWeather ? 24 : 0 }} transition={{ type: "spring", stiffness: 400, damping: 30 }} />
                                 </motion.button>
                             </div>
 
@@ -1388,13 +1377,13 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
                                         exit={{ opacity: 0, height: 0 }}
                                         className="space-y-2 pt-2"
                                     >
-                                        <label className="text-[10px] font-black text-white/20 uppercase tracking-widest ml-1">Geospatial Tag</label>
+                                        <label className="text-[9px] font-medium text-white/20 uppercase tracking-[0.1em] ml-1">Location Identifier</label>
                                         <input
                                             type="text"
                                             value={config.weatherLocation || ''}
                                             onChange={(e) => setConfig({ ...config, weatherLocation: e.target.value })}
-                                            placeholder="e.g. 01310-100 or São Paulo, BR"
-                                            className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:border-white/30 outline-none hover:bg-black/60 transition-all shadow-inner font-mono"
+                                            placeholder="e.g. San Francisco..."
+                                            className="w-full bg-black/40 border border-white/5 rounded-lg px-4 py-3 text-sm text-white/80 focus:border-white/20 outline-none hover:bg-black/60 transition-all font-mono"
                                         />
                                     </motion.div>
                                 )}
@@ -1402,25 +1391,24 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
                         </div>
                     </motion.div>
 
-                    {/* POSITION - Refined 2026 */}
                     <motion.div
-                        className="bg-gradient-to-br from-white/[0.04] to-transparent border border-white/[0.08] rounded-xl p-5 hover:bg-white/[0.06] transition-colors duration-500 group"
+                        className="bg-white/[0.015] border border-white/5 rounded-xl p-6"
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.3 }}
                     >
-                        <label className="text-[10px] font-semibold text-white/20 uppercase tracking-[0.2em] block ml-1 mb-6">Spatial Quadrant</label>
-                        <div className="grid grid-cols-2 gap-4">
+                        <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.3em] block ml-1 mb-6">Spatial Quadrant</label>
+                        <div className="grid grid-cols-2 gap-3">
                             {['top-left', 'top-right', 'bottom-left', 'bottom-right'].map((pos) => (
                                 <button
                                     key={pos}
                                     onClick={() => setConfig({ ...config, clockPosition: pos as any })}
-                                    className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-2.5 transition-all duration-500 ${config.clockPosition === pos
-                                        ? 'bg-white text-black border-white shadow-lg translate-y-[-2px]'
-                                        : 'bg-black/40 border-white/5 text-white/30 hover:border-white/20 hover:text-white/60'}`}
+                                    className={`py-4 rounded-xl border flex flex-col items-center justify-center gap-3 transition-all duration-500 ${config.clockPosition === pos
+                                        ? 'bg-white text-black border-white shadow-xl translate-y-[-1px]'
+                                        : 'bg-black/40 border-white/5 text-white/30 hover:border-white/10 hover:text-white/60'}`}
                                 >
-                                    <div className={`w-2.5 h-2.5 rounded-full transition-transform duration-500 ${config.clockPosition === pos ? 'bg-black scale-125' : 'bg-white/10'}`} />
-                                    <span className="font-black text-[10px] uppercase tracking-[0.2em]">{pos.replace('-', ' ')}</span>
+                                    <div className={`w-1.5 h-1.5 rounded-full transition-all duration-500 ${config.clockPosition === pos ? 'bg-black scale-125' : 'bg-white/10'}`} />
+                                    <span className="font-medium text-[9px] uppercase tracking-[0.2em]">{pos.replace('-', ' ')}</span>
                                 </button>
                             ))}
                         </div>
@@ -1434,53 +1422,50 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
 const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig: (c: any) => void }) => {
     return (
         <motion.div
-            className="p-6 h-full overflow-y-auto custom-scrollbar"
+            className="pt-10 md:pt-16 lg:pt-20 h-full overflow-y-auto custom-scrollbar"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
             transition={{ duration: 0.3 }}
         >
-            <div className="max-w-3xl mx-auto">
+            <div className="max-w-3xl mx-auto px-6 md:px-10 lg:px-12">
                 <motion.div
-                    className="mb-10"
+                    className="mb-12"
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.1 }}
                 >
                     <h3 className="text-xl font-semibold text-white mb-1 tracking-tight">Game Mode</h3>
-                    <p className="text-white/30 text-[11px] font-medium">Prevent interruptions during focused sessions</p>
+                    <p className="text-[11px] text-white/30 font-medium tracking-wide leading-relaxed mt-1 max-w-2xl">
+                        Engage operational focus. Implement recursive shielding and process blacklisting to eliminate extrinsic interruptions during high-stakes execution.
+                    </p>
                 </motion.div>
 
                 <div className="space-y-10">
                     <motion.div
-                        className={`p-5 rounded-xl border flex items-center justify-between shadow-xl relative overflow-hidden group transition-all duration-700 ${config.gameMode?.enabled
-                            ? 'bg-gradient-to-br from-[#0A1A0A] to-[#000000] border-green-500/20'
-                            : 'bg-gradient-to-br from-white/[0.04] to-transparent border-white/[0.08]'
+                        className={`p-6 rounded-xl border flex items-center justify-between relative overflow-hidden group transition-all duration-700 ${config.gameMode?.enabled
+                            ? 'bg-white/[0.03] border-white/10'
+                            : 'bg-white/[0.01] border-white/5'
                             }`}
                         initial={{ opacity: 0, scale: 0.98 }}
                         animate={{ opacity: 1, scale: 1 }}
-                        transition={{ duration: 0.6, delay: 0.2 }}
+                        transition={{ duration: 0.5, delay: 0.2 }}
                     >
                         <div className="relative z-10">
-                            <label className="text-[9px] font-semibold text-white/20 uppercase tracking-[0.25em] block ml-1 mb-1">Protection Matrix</label>
-                            <h4 className="text-lg font-medium text-white tracking-tight">Master Toggle</h4>
-                            <p className="text-[11px] text-white/30 font-normal leading-relaxed mt-1">Activate neural shielding to block all manual menu requests.</p>
+                            <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.3em] block ml-0.5 mb-1.5">Operational Logic</label>
+                            <h4 className="text-base font-medium text-white/90 tracking-tight">Stealth Mode</h4>
                         </div>
 
                         <button
                             onClick={() => setConfig({ ...config, gameMode: { ...config.gameMode, enabled: !config.gameMode?.enabled } })}
-                            className={`relative w-14 h-8 rounded-xl transition-all duration-500 p-1.5 shadow-2xl ${config.gameMode?.enabled ? 'bg-green-500 shadow-green-500/20' : 'bg-white/5 border border-white/10'}`}
+                            className={`relative w-14 h-8 rounded-xl transition-all duration-500 p-1.5 ${config.gameMode?.enabled ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
                         >
                             <motion.div
-                                className={`w-5 h-5 rounded-lg shadow-xl ${config.gameMode?.enabled ? 'bg-white' : 'bg-white/20'}`}
+                                className={`w-5 h-5 rounded-lg shadow-xl ${config.gameMode?.enabled ? 'bg-black' : 'bg-white/20'}`}
                                 animate={{ x: config.gameMode?.enabled ? 24 : 0 }}
-                                transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                                transition={{ type: "spring", stiffness: 300, damping: 25 }}
                             />
                         </button>
-
-                        {config.gameMode?.enabled && (
-                            <div className="absolute top-0 right-0 w-64 h-64 bg-green-500/5 rounded-full blur-[80px] -mr-32 -mt-32 animate-pulse" />
-                        )}
                     </motion.div>
 
                     <AnimatePresence mode="wait">
@@ -1494,30 +1479,28 @@ const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setCo
                             >
                                 <div className="bg-white/[0.03] border border-white/[0.08] p-5 rounded-xl space-y-5">
                                     <div>
-                                        <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.25em] block ml-0.5 mb-4">Heuristic Engine</label>
-                                        <div className="grid grid-cols-2 gap-4">
+                                        <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.3em] block ml-0.5 mb-5">Isolation Strategy</label>
+                                        <div className="grid grid-cols-2 gap-3">
                                             <button
                                                 onClick={() => setConfig({ ...config, gameMode: { ...config.gameMode, mode: 'all' } })}
-                                                className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-3 transition-all duration-500 ${config.gameMode?.mode === 'all'
-                                                    ? 'bg-white text-black border-white shadow-lg translate-y-[-2px]'
-                                                    : 'bg-black/40 border-white/5 text-white/30 hover:border-white/20 hover:text-white/60'}`}
+                                                className={`py-6 rounded-xl border flex flex-col items-center justify-center gap-4 transition-all duration-500 ${config.gameMode?.mode === 'all'
+                                                    ? 'bg-white text-black border-white shadow-xl translate-y-[-1px]'
+                                                    : 'bg-black/40 border-white/5 text-white/30 hover:border-white/10 hover:text-white/60'}`}
                                             >
-                                                <Ban size={22} strokeWidth={1.5} />
+                                                <Ban size={22} strokeWidth={1} />
                                                 <div className="text-center">
-                                                    <div className="font-semibold text-sm">Omnipresent</div>
-                                                    <div className="text-[9px] uppercase tracking-widest opacity-40">Block all fullscreen</div>
+                                                    <div className="font-medium text-xs uppercase tracking-[0.1em]">Absolute</div>
                                                 </div>
                                             </button>
                                             <button
                                                 onClick={() => setConfig({ ...config, gameMode: { ...config.gameMode, mode: 'list' } })}
-                                                className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-3 transition-all duration-500 ${config.gameMode?.mode === 'list'
-                                                    ? 'bg-white text-black border-white shadow-lg translate-y-[-2px]'
-                                                    : 'bg-black/40 border-white/5 text-white/30 hover:border-white/20 hover:text-white/60'}`}
+                                                className={`py-6 rounded-xl border flex flex-col items-center justify-center gap-4 transition-all duration-500 ${config.gameMode?.mode === 'list'
+                                                    ? 'bg-white text-black border-white shadow-xl translate-y-[-1px]'
+                                                    : 'bg-black/40 border-white/5 text-white/30 hover:border-white/10 hover:text-white/60'}`}
                                             >
-                                                <Hash size={22} strokeWidth={1.5} />
+                                                <Hash size={22} strokeWidth={1} />
                                                 <div className="text-center">
-                                                    <div className="font-semibold text-sm">Targeted</div>
-                                                    <div className="text-[9px] uppercase tracking-widest opacity-40">Specific blacklist</div>
+                                                    <div className="font-medium text-xs uppercase tracking-[0.1em]">Targeted</div>
                                                 </div>
                                             </button>
                                         </div>
@@ -1552,7 +1535,6 @@ const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setCo
                                                         placeholder="e.g. valorant.exe, cs2.exe, elden_ring.exe"
                                                         className="w-full bg-black/60 border border-white/10 rounded-lg p-3 text-sm text-white focus:border-white/30 outline-none font-mono resize-none h-32 shadow-inner hover:bg-black/80 transition-all placeholder-white/5"
                                                     />
-                                                    <p className="text-[11px] text-white/20 px-2 leading-relaxed">Ensure executable filenames are calibrated correctly, separated by commas.</p>
                                                 </motion.div>
                                             )}
                                         </motion.div>
@@ -1570,21 +1552,23 @@ const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setCo
 const UserTab = React.memo(({ user }: { user: UserProfile | null }) => {
     return (
         <motion.div
-            className="p-6 h-full overflow-y-auto custom-scrollbar"
+            className="pt-10 md:pt-16 lg:pt-20 h-full overflow-y-auto custom-scrollbar"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
             transition={{ duration: 0.3 }}
         >
-            <div className="max-w-3xl mx-auto">
+            <div className="max-w-3xl mx-auto px-6 md:px-10 lg:px-12">
                 <motion.div
-                    className="mb-10 text-center sm:text-left"
+                    className="mb-12 text-center sm:text-left"
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.1 }}
                 >
                     <h3 className="text-xl font-semibold text-white mb-1 tracking-tight">Neural Profile</h3>
-                    <p className="text-white/30 text-[11px] font-normal">Manage your digital identity and nexus status</p>
+                    <p className="text-[11px] text-white/30 font-medium tracking-wide leading-relaxed mt-1 max-w-2xl">
+                        Manage your neural identity. Synchronize personal metadata and biometric profiles across the Zenith ecosystem.
+                    </p>
                 </motion.div>
 
                 <div className="space-y-8">
@@ -1833,6 +1817,121 @@ const NavButton = React.memo(({
         </button>
     );
 });
+
+type SearchResult = {
+    id: string;
+    type: 'setting' | 'workspace' | 'app';
+    label: string;
+    description?: string;
+    tab: SettingsTab;
+    icon: any;
+    workspaceIndex?: number;
+    appIndex?: number;
+    path?: number[];
+};
+
+const SEARCHABLE_SETTINGS: Omit<SearchResult, 'id'>[] = [
+    { type: 'setting', label: 'Global Shortcut', description: 'Activation Matrix Keybind', tab: 'interface', icon: Keyboard },
+    { type: 'setting', label: 'Autostart Protocol', description: 'System Boot Integration', tab: 'interface', icon: Zap },
+    { type: 'setting', label: 'Middle Mouse Trigger', description: 'Somatic Input Hook', tab: 'interface', icon: MousePointer2 },
+    { type: 'setting', label: 'Center Button', description: 'Radial Menu Core Function', tab: 'interface', icon: Box },
+    { type: 'setting', label: 'Menu Position', description: 'Screen Centering Toggles', tab: 'interface', icon: Layout },
+    { type: 'setting', label: 'Backdrop Bloom', description: 'Atmospheric Visual Effects', tab: 'visuals', icon: Palette },
+    { type: 'setting', label: 'Glassmorphism', description: 'Transparency & Blur Density', tab: 'visuals', icon: ImageIcon },
+    { type: 'setting', label: 'Sidebar Rhythm', description: 'Navigation Layout Settings', tab: 'visuals', icon: Layout },
+    { type: 'setting', label: 'HUD Elements', description: 'Clock, Date, Battery, Weather', tab: 'widgets', icon: Clock },
+    { type: 'setting', label: 'Game Mode', description: 'Performance & Latency Shields', tab: 'gamemode', icon: Gamepad2 },
+    { type: 'setting', label: 'User Profile', description: 'Identity & Cloud Sync', tab: 'user', icon: User },
+];
+
+const SearchResultsView = React.memo(({
+    results,
+    onResultClick
+}: {
+    results: SearchResult[],
+    onResultClick: (result: SearchResult) => void
+}) => {
+    return (
+        <motion.div
+            className="pt-10 md:pt-16 lg:pt-20 h-full overflow-y-auto custom-scrollbar"
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.98 }}
+            transition={{ duration: 0.3 }}
+        >
+            <div className="max-w-4xl mx-auto px-6 md:px-10 lg:px-12 pb-20">
+                <div className="flex items-center justify-between mb-10">
+                    <div>
+                        <h3 className="text-2xl font-semibold text-white mb-2 tracking-tight">Search Index</h3>
+                        <p className="text-xs text-white/30 font-medium uppercase tracking-[0.2em]">Neural Match Results</p>
+                    </div>
+                    <div className="px-3 py-1 bg-white/5 border border-white/10 rounded-full text-[10px] text-white/40 font-bold uppercase tracking-widest">
+                        {results.length} Matches found
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {results.map((result, idx) => {
+                        const Icon = result.icon;
+                        return (
+                            <motion.button
+                                key={result.id}
+                                onClick={() => onResultClick(result)}
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: idx * 0.05 }}
+                                className="group p-5 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.08] hover:border-white/20 transition-all duration-300 flex items-center gap-4 text-left relative overflow-hidden active:scale-[0.98]"
+                            >
+                                <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+
+                                <div className="w-12 h-12 rounded-xl bg-black/40 border border-white/10 flex items-center justify-center text-white/30 group-hover:text-white group-hover:scale-110 group-hover:rotate-3 transition-all duration-500 relative z-10 shrink-0">
+                                    <Icon size={24} strokeWidth={1.5} />
+                                </div>
+
+                                <div className="flex-1 min-w-0 relative z-10">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <span className="text-[9px] font-black text-white/20 uppercase tracking-widest group-hover:text-white/40 transition-colors">
+                                            {result.type}
+                                        </span>
+                                        <span className="text-[10px] text-white/10">•</span>
+                                        <span className="text-[9px] font-bold text-white/30 uppercase tracking-tight truncate">
+                                            {result.tab.replace('_', ' ')}
+                                        </span>
+                                    </div>
+                                    <div className="text-base font-medium text-white group-hover:translate-x-1 transition-transform duration-300">{result.label}</div>
+                                    {result.description && (
+                                        <div className="text-[11px] text-white/20 truncate mt-0.5 group-hover:text-white/40 transition-colors">
+                                            {result.description}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white/0 group-hover:text-white/20 transition-all relative z-10 group-hover:translate-x-1">
+                                    <ChevronRight size={18} />
+                                </div>
+                            </motion.button>
+                        );
+                    })}
+                </div>
+
+                {results.length === 0 && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="flex flex-col items-center justify-center py-32 text-center"
+                    >
+                        <div className="w-20 h-20 rounded-full bg-white/[0.02] border border-white/[0.05] flex items-center justify-center text-white/5 mb-6">
+                            <Search size={40} strokeWidth={1} />
+                        </div>
+                        <h4 className="text-lg font-medium text-white/40 mb-2">No matches found in the matrix</h4>
+                        <p className="text-xs text-white/20 uppercase tracking-[0.2em]">Try broadening your temporal search parameters</p>
+                    </motion.div>
+                )}
+            </div>
+        </motion.div>
+    );
+});
+
 export const SettingsModal: React.FC<SettingsModalProps> = ({
     isOpen, onClose, apps, setApps, config, setConfig, onReset, onOpenDashboard, user, isPage = false
 }) => {
@@ -1979,6 +2078,72 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         if (text.includes('chat') || text.includes('whatsapp') || text.includes('messenger')) return 'MessageSquare';
         if (text.includes('store')) return 'ShoppingBag';
         return 'Layout'; // Default
+    };
+
+    const searchResults = useMemo(() => {
+        if (!searchTerm.trim()) return [];
+        const term = searchTerm.toLowerCase();
+        const results: SearchResult[] = [];
+
+        // 1. Search Settings
+        SEARCHABLE_SETTINGS.forEach((s, idx) => {
+            if (s.label.toLowerCase().includes(term) || s.description?.toLowerCase().includes(term)) {
+                results.push({ ...s, id: `setting-${idx}` } as SearchResult);
+            }
+        });
+
+        // 2. Search Workspaces
+        config.workspaces.forEach((ws, wsIdx) => {
+            if (ws.name.toLowerCase().includes(term)) {
+                results.push({
+                    id: `ws-${ws.id}`,
+                    type: 'workspace',
+                    label: ws.name,
+                    description: `Primary Workspace • Hotkey ${ws.hotkey}`,
+                    tab: 'workspaces',
+                    icon: LayoutGrid,
+                    workspaceIndex: wsIdx
+                });
+            }
+
+            // 3. Search Apps within Workspaces
+            const searchInApps = (items: AppItem[], path: number[]) => {
+                items.forEach((app, appIdx) => {
+                    if (app.label.toLowerCase().includes(term) || app.command.toLowerCase().includes(term)) {
+                        results.push({
+                            id: `app-${app.id}`,
+                            type: 'app',
+                            label: app.label,
+                            description: `Location: ${ws.name}${path.length > 0 ? ' • In Folder' : ''}`,
+                            tab: 'workspaces',
+                            icon: app.iconSource === 'lucide' ? getIcon(app.iconName) : Box,
+                            workspaceIndex: wsIdx,
+                            appIndex: appIdx,
+                            path: path
+                        });
+                    }
+                    if (app.children) {
+                        searchInApps(app.children, [...path, appIdx]);
+                    }
+                });
+            };
+            searchInApps(ws.apps, []);
+        });
+
+        return results;
+    }, [searchTerm, config.workspaces]);
+
+    const handleResultClick = (result: SearchResult) => {
+        setActiveTab(result.tab);
+        if (result.type === 'workspace' || result.type === 'app') {
+            setSelectedWorkspaceIndex(result.workspaceIndex ?? null);
+            if (result.path) {
+                setWorkspaceFolderPath(result.path);
+            } else {
+                setWorkspaceFolderPath([]);
+            }
+        }
+        setSearchTerm(''); // Clear search on navigate
     };
 
     const handlePickCommand = async () => {
@@ -2374,7 +2539,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             initial={{ opacity: 0, scale: 0.95, y: 15 }}
                             animate={{ opacity: 1, scale: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.95, y: 15 }}
-                            className="relative w-full max-w-sm bg-[#0D0D0D] border border-white/10 rounded-2xl p-7 shadow-2xl overflow-hidden"
+                            className="relative w-full max-w-sm bg-white/[0.015] border border-white/10 rounded-xl p-7 shadow-2xl backdrop-blur-3xl overflow-hidden"
                             onClick={(e) => e.stopPropagation()}
                         >
                             {/* Decorative Glow */}
@@ -2450,8 +2615,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     />
                 )}
                 <motion.div
-                    className={`relative z-[101] bg-gradient-to-br from-[#0A0A0A] to-[#000000] backdrop-blur-2xl overflow-hidden flex ${!isPage ? 'mx-auto rounded-2xl shadow-[0_0_0_1px_rgba(255,255,255,0.05),0_40px_100px_-20px_rgba(0,0,0,0.8)] border border-white/10' : 'w-full h-full border-none'}`}
-                    style={!isPage ? { width: '95%', maxWidth: 1400, marginTop: 32, height: 'calc(100% - 44px)' } : { width: '100%', height: '100%', paddingTop: 38 }}
+                    className={`relative z-[101] bg-white/[0.015] backdrop-blur-3xl overflow-hidden flex ${!isPage ? 'mx-auto rounded-xl shadow-[0_0_0_1px_rgba(255,255,255,0.05),0_40px_100px_-20px_rgba(0,0,0,0.8)] border border-white/5' : 'w-full h-full border-none'}`}
+                    style={!isPage ? { width: '95%', maxWidth: 1400, marginTop: 32, height: 'calc(100% - 64px)' } : { width: '100%', height: '100%', paddingTop: 0 }}
                     onClick={(e) => e.stopPropagation()}
                     initial={!isPage ? { opacity: 0, scale: 0.96, y: 40, filter: 'blur(10px)' } : { opacity: 0, x: 20 }}
                     animate={{ opacity: 1, scale: 1, y: 0, x: 0, filter: 'blur(0px)' }}
@@ -2473,7 +2638,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </motion.button>
                     {/* Sidebar */}
                     <motion.div
-                        className="bg-white/[0.01] border-r border-white/[0.06] p-4 shrink-0 flex flex-col gap-1.5 relative overflow-hidden"
+                        className="bg-white/[0.01] border-r border-white/[0.06] p-4 pt-[52px] shrink-0 flex flex-col gap-1.5 relative overflow-hidden"
                         animate={{ width: isSidebarExpanded ? 280 : 80 }}
                         transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
                         onMouseEnter={() => setIsHoveringSidebar(true)}
@@ -2525,13 +2690,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                     className="px-1 mb-4"
                                 >
                                     <div className="relative group">
-                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-white/50 transition-colors" size={14} />
+                                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/10 group-focus-within:text-white/40 transition-colors" size={14} />
                                         <input
                                             type="text"
-                                            placeholder="Search settings..."
+                                            placeholder="Find preferences..."
                                             value={searchTerm}
                                             onChange={(e) => setSearchTerm(e.target.value)}
-                                            className="w-full bg-white/[0.03] border border-white/[0.06] rounded-xl py-2 pl-9 pr-4 text-[11px] text-white placeholder:text-white/20 outline-none focus:bg-white/[0.05] focus:border-white/20 transition-all"
+                                            className="w-full bg-white/[0.02] border border-white/5 rounded-xl py-2.5 pl-10 pr-4 text-[11px] text-white/90 placeholder:text-white/10 outline-none focus:bg-white/[0.04] focus:border-white/10 transition-all font-medium"
                                         />
                                     </div>
                                 </motion.div>
@@ -2647,48 +2812,59 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                     {/* Content */}
                     <div className="flex-1 bg-[#0D0D0D] overflow-hidden flex flex-col relative">
-
-                        {activeTab === 'zenith_apps' && <WidgetsTab config={config} setConfig={setConfig} />}
-                        {activeTab === 'visuals' && <VisualsTab config={config} setConfig={setConfig} />}
-                        {activeTab === 'workspaces' && (
-                            <WorkspacesTab
-                                config={config}
-                                setConfig={setConfig}
-                                selectedWorkspaceIndex={selectedWorkspaceIndex}
-                                setSelectedWorkspaceIndex={setSelectedWorkspaceIndex}
-                                workspaceFolderPath={workspaceFolderPath}
-                                setWorkspaceFolderPath={setWorkspaceFolderPath}
-                                dragWorkspaceRef={dragWorkspaceRef}
-                                dragOverWorkspace={dragOverWorkspace}
-                                setDragOverWorkspace={setDragOverWorkspace}
-                                reorderWorkspaces={reorderWorkspaces}
-                                createWorkspace={createWorkspace}
-                                deleteWorkspace={deleteWorkspace}
-                                getCurrentLevel={getCurrentLevel}
-                                dragAppRef={dragAppRef}
-                                dragOverApp={dragOverApp}
-                                setDragOverApp={setDragOverApp}
-                                reorderAppsInWorkspace={reorderAppsInWorkspace}
-                                setEditingApp={setEditingApp}
-                                removeAppFromWorkspace={removeAppFromWorkspace}
-                                handleAddApp={handleAddApp}
-                            />
-                        )}
-
-                        {activeTab === 'interface' && (
-                            <InterfaceTab
-                                config={config}
-                                setConfig={setConfig}
-                                handleCenterTypeChange={handleCenterTypeChange}
-                                handleCenterTargetChange={handleCenterTargetChange}
-                                setAppSelectorMode={setAppSelectorMode}
-                                setShowAppSelector={setShowAppSelector}
-                            />
-                        )}
-
-                        {activeTab === 'widgets' && <HUDTab config={config} setConfig={setConfig} />}
-                        {activeTab === 'gamemode' && <GameModeTab config={config} setConfig={setConfig} />}
-                        {activeTab === 'user' && <UserTab user={user} />}
+                        <AnimatePresence mode="wait">
+                            {searchTerm.trim() ? (
+                                <SearchResultsView
+                                    key="search"
+                                    results={searchResults}
+                                    onResultClick={handleResultClick}
+                                />
+                            ) : (
+                                <>
+                                    {activeTab === 'zenith_apps' && <WidgetsTab key="widgets" config={config} setConfig={setConfig} />}
+                                    {activeTab === 'visuals' && <VisualsTab key="visuals" config={config} setConfig={setConfig} />}
+                                    {activeTab === 'workspaces' && (
+                                        <WorkspacesTab
+                                            key="workspaces"
+                                            config={config}
+                                            setConfig={setConfig}
+                                            selectedWorkspaceIndex={selectedWorkspaceIndex}
+                                            setSelectedWorkspaceIndex={setSelectedWorkspaceIndex}
+                                            workspaceFolderPath={workspaceFolderPath}
+                                            setWorkspaceFolderPath={setWorkspaceFolderPath}
+                                            dragWorkspaceRef={dragWorkspaceRef}
+                                            dragOverWorkspace={dragOverWorkspace}
+                                            setDragOverWorkspace={setDragOverWorkspace}
+                                            reorderWorkspaces={reorderWorkspaces}
+                                            createWorkspace={createWorkspace}
+                                            deleteWorkspace={deleteWorkspace}
+                                            getCurrentLevel={getCurrentLevel}
+                                            dragAppRef={dragAppRef}
+                                            dragOverApp={dragOverApp}
+                                            setDragOverApp={setDragOverApp}
+                                            reorderAppsInWorkspace={reorderAppsInWorkspace}
+                                            setEditingApp={setEditingApp}
+                                            removeAppFromWorkspace={removeAppFromWorkspace}
+                                            handleAddApp={handleAddApp}
+                                        />
+                                    )}
+                                    {activeTab === 'interface' && (
+                                        <InterfaceTab
+                                            key="interface"
+                                            config={config}
+                                            setConfig={setConfig}
+                                            handleCenterTypeChange={handleCenterTypeChange}
+                                            handleCenterTargetChange={handleCenterTargetChange}
+                                            setAppSelectorMode={setAppSelectorMode}
+                                            setShowAppSelector={setShowAppSelector}
+                                        />
+                                    )}
+                                    {activeTab === 'widgets' && <HUDTab key="hud" config={config} setConfig={setConfig} />}
+                                    {activeTab === 'gamemode' && <GameModeTab key="gamemode" config={config} setConfig={setConfig} />}
+                                    {activeTab === 'user' && <UserTab key="user" user={user} />}
+                                </>
+                            )}
+                        </AnimatePresence>
                     </div>
                 </motion.div>
 

@@ -103,8 +103,13 @@ function Get-Base64Icon {
 function Get-UWPIconFromPackage {
     param ([string]$PackageFamilyName)
     
-    $pkg = Get-AppxPackage | Where-Object { $_.PackageFamilyName -eq $PackageFamilyName }
-    if (-not $pkg) { return $null }
+    # Speed optimization: filter by name directly
+    $pkg = Get-AppxPackage -Name ($PackageFamilyName.Split('_')[0]) | Where-Object { $_.PackageFamilyName -eq $PackageFamilyName }
+    if (-not $pkg) { 
+        # Fallback: try search without filter if split failed
+        $pkg = Get-AppxPackage | Where-Object { $_.PackageFamilyName -eq $PackageFamilyName }
+        if (-not $pkg) { return $null }
+    }
 
     $installPath = $pkg.InstallLocation
     $manifestPath = Join-Path $installPath "AppxManifest.xml"
@@ -191,8 +196,12 @@ function Get-UWPIconFromPackage {
 # Main logic
 # 1. Try as file path
 if (Test-Path $Target) {
-    $res = Get-Base64Icon -Path $Target
-    if ($res) { Write-Output $res; exit }
+    if ((Get-Item $Target).Attributes -match "Directory") {
+        # If it's a directory, we can't extract associated icon normally, but let's try shell info
+    } else {
+        $res = Get-Base64Icon -Path $Target
+        if ($res) { Write-Output $res; exit }
+    }
 }
 
 # 2. Try as AUMID
@@ -223,7 +232,7 @@ if ($knownApps.ContainsKey($Target)) {
 }
 
 # 4. Search by Name OR AppID in Start Apps
-$apps = Get-StartApps | Where-Object { $_.Name -like "*$Target*" -or $_.AppID -eq $Target } | Select-Object -First 1
+$apps = Get-StartApps | Where-Object { $_.Name -like "*$Target*" -or $_.AppID -eq $Target -or $_.AppID -like "*$Target*" } | Select-Object -First 1
 if ($apps) {
     $appId = $apps.AppID
     if ($appId -match '!') {
@@ -244,22 +253,19 @@ if ($apps) {
         )
         
         $appName = $apps.Name
-        Write-Host "DEBUG: Searching for .lnk in Start Menu for $appName"
         foreach ($path in $startMenuPaths) {
             if (Test-Path $path) {
                 # Search for shortcut matching app name (recursive)
                 $lnk = Get-ChildItem -Path $path -Filter "$appName.lnk" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
                 
                 if ($lnk) {
-                    Write-Host "DEBUG: Found shortcut: $($lnk.FullName)"
                     $shell = New-Object -ComObject WScript.Shell
                     $shortcut = $shell.CreateShortcut($lnk.FullName)
                     
                     # Priority 1: IconLocation (often used by Squirrel apps like Discord)
                     if ($shortcut.IconLocation) {
                         $iconPath = $shortcut.IconLocation.Split(',')[0]
-                        Write-Host "DEBUG: Shortcut has IconLocation: $iconPath"
-                        if (Test-Path $iconPath) {
+                        if ($iconPath -and (Test-Path $iconPath)) {
                              $res = Get-Base64Icon -Path $iconPath
                              if ($res) { Write-Output $res; exit }
                         }
@@ -267,13 +273,12 @@ if ($apps) {
 
                     # Priority 2: TargetPath
                     if ($shortcut.TargetPath -and (Test-Path $shortcut.TargetPath)) {
-                        Write-Host "DEBUG: Using TargetPath: $($shortcut.TargetPath)"
                         $res = Get-Base64Icon -Path $shortcut.TargetPath
                         if ($res) { Write-Output $res; exit }
                     }
                 }
             }
         }
-        Write-Host "DEBUG: No icon found via .lnk search"
     }
 }
+

@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld("electron", {
   selectFile: () => ipcRenderer.invoke("select-file"),
   selectImage: () => ipcRenderer.invoke("select-image"),
   getInstalledApps: () => ipcRenderer.invoke("get-installed-apps"),
+  getOnboardingApps: () => ipcRenderer.invoke("get-onboarding-apps"),
   onExecutionError: (callback) => {
     const listener = (event, errorMsg) => callback(errorMsg);
     ipcRenderer.on("execution-error", listener);

@@ -127,6 +127,7 @@ export interface UIConfig {
   workspaces: Workspace[]; // New: Workspace configurations
   activeWorkspaceIndex: number; // New: Currently active workspace (0-indexed)
   openAtLogin?: boolean; // New: Start app at login
+  enableMouseTrigger: boolean;
 }
 
 export interface RadialState {
@@ -163,6 +164,7 @@ export interface ElectronAPI {
   selectFile: () => Promise<string | null>;
   selectImage: () => Promise<string | null>;
   getInstalledApps: () => Promise<any[]>;
+  getOnboardingApps: () => Promise<any[]>;
   onExecutionError: (callback: (errorMsg: string) => void) => () => void;
   relaunchApp: () => void;
   // System Controls

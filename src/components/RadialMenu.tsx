@@ -460,8 +460,13 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                 <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-xs font-bold text-white">
                   {currentWorkspace.hotkey}
                 </div>
-                <div className="text-sm font-medium text-white/80 tracking-wide">
-                  {currentWorkspace.name.toUpperCase()}
+                <div className="flex flex-col">
+                  <div className="text-sm font-medium text-white/80 tracking-wide">
+                    {currentWorkspace.name.toUpperCase()}
+                  </div>
+                  <div className="text-[9px] font-bold text-white/20 uppercase tracking-widest mt-0.5">
+                    {currentWorkspace.apps.length} active modules
+                  </div>
                 </div>
               </div>
             </motion.div>

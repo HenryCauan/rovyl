@@ -15,7 +15,7 @@ const { exec, spawn } = require("child_process");
 const os = require("os");
 const fs = require("fs");
 
-const isDev = process.env.NODE_ENV === "development";
+const isDev = !app.isPackaged;
 // In production, log to userData folder which is writable, unlike the asar archive
 const logDir = isDev
   ? path.join(__dirname, "..")
@@ -34,6 +34,15 @@ const diagLog = (msg) => {
     console.error("Failed to write to diagnostic log:", e);
   }
 };
+const getAssetPath = (...paths) => {
+  if (isDev) return path.join(__dirname, ...paths);
+  // In production, backend is inside app.asar/backend. We need to point to app.asar.unpacked/backend for script execution.
+  return path.join(
+    __dirname.replace("app.asar", "app.asar.unpacked"),
+    ...paths,
+  );
+};
+
 diagLog("Zenith Main Process Started");
 
 // Stability: Fix cache errors & GPU crashes & Window management
@@ -89,10 +98,13 @@ async function createWindow() {
     skipTaskbar: false,
     show: false,
     fullscreen: false,
-    hasShadow: true,
-    icon: path.join(__dirname, "../public/icon.png"),
+    hasShadow: false, // Disable native shadow to prevent rectangular ghosting around rounded CSS corners
+    thickFrame: false, // Prevents native resizing border artifacts on Win 11
+    icon: isDev
+      ? path.join(__dirname, "../public/icon.png")
+      : path.join(__dirname, "../dist/icon.png"),
     backgroundColor: "#00000000",
-    backgroundMaterial: "acrylic", // Enable native Windows 10/11 blur
+    backgroundMaterial: "none", // Avoid acrylic blur leaking outside rounded corners
     webPreferences: {
       preload: path.join(__dirname, "electron-preload.js"),
       nodeIntegration: false,
@@ -420,12 +432,16 @@ app.whenReady().then(async () => {
   });
 
   // Configurar Ícone na Bandeja (Tray)
-  const iconPath = path.join(__dirname, "../public/icon.png");
+  const iconPath = isDev
+    ? path.join(__dirname, "../public/icon.png")
+    : path.join(__dirname, "../dist/icon.png");
   try {
-    const trayIcon = nativeImage
-      .createFromPath(iconPath)
-      .resize({ width: 16, height: 16 });
-    tray = new Tray(trayIcon);
+    const trayIcon = nativeImage.createFromPath(iconPath);
+    if (trayIcon.isEmpty()) {
+      console.warn("WARNING: Tray icon is empty. Path:", iconPath);
+    }
+    const resizedIcon = trayIcon.resize({ width: 16, height: 16 });
+    tray = new Tray(resizedIcon);
     const contextMenu = Menu.buildFromTemplate([
       {
         label: "Abrir Dashboard Zenith",
@@ -465,7 +481,10 @@ app.whenReady().then(async () => {
 
   // Settings Management
   const settingsPath = path.join(app.getPath("userData"), "settings.json");
-  let currentSettings = { globalShortcut: "Alt+Z" };
+  let currentSettings = {
+    globalShortcut: "Alt+Z",
+    enableMouseTrigger: true,
+  };
 
   const loadSettings = () => {
     try {
@@ -514,9 +533,22 @@ app.whenReady().then(async () => {
   ipcMain.handle("get-settings", () => currentSettings);
 
   ipcMain.on("set-settings", (event, settings) => {
+    const oldMouseTrigger = currentSettings.enableMouseTrigger;
     saveSettings(settings);
+
     if (settings.globalShortcut) {
       registerGlobalShortcut();
+    }
+
+    if (
+      settings.enableMouseTrigger !== undefined &&
+      settings.enableMouseTrigger !== oldMouseTrigger
+    ) {
+      if (settings.enableMouseTrigger) {
+        startMouseHook();
+      } else {
+        stopMouseHook();
+      }
     }
   });
 
@@ -548,38 +580,54 @@ app.whenReady().then(async () => {
   };
 
   // 2. PowerShell Mouse Hook (C# Low Level Hook) for Global Reliability
-  const psScriptPath = getAssetPath("mouse-hook.ps1");
-  diagLog(`Mouse Hook Path: ${psScriptPath}`);
-  const mouseHook = spawn("powershell", [
-    "-ExecutionPolicy",
-    "Bypass",
-    "-File",
-    psScriptPath,
-  ]);
+  let mouseHook = null;
 
-  mouseHook.stdout.on("data", async (data) => {
-    const lines = data.toString().split(/\r?\n/);
-    for (const line of lines) {
-      const msg = line.trim();
-      if (!msg) continue;
+  const startMouseHook = () => {
+    if (mouseHook) return;
+    const psScriptPath = getAssetPath("mouse-hook.ps1");
+    diagLog(`Starting Mouse Hook: ${psScriptPath}`);
+    mouseHook = spawn("powershell", [
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      psScriptPath,
+    ]);
 
-      if (msg === "MIDDLE_DOWN") {
-        showMenuAtCursor("mmb");
-      } else if (msg === "MIDDLE_UP") {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send("mmb-release");
+    mouseHook.stdout.on("data", async (data) => {
+      const lines = data.toString().split(/\r?\n/);
+      for (const line of lines) {
+        const msg = line.trim();
+        if (!msg) continue;
+
+        if (msg === "MIDDLE_DOWN") {
+          showMenuAtCursor("mmb");
+        } else if (msg === "MIDDLE_UP") {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send("mmb-release");
+          }
         }
       }
-    }
-  });
+    });
 
-  mouseHook.stderr.on("data", (data) => {
-    console.error(`MouseHook Error: ${data}`);
-  });
+    mouseHook.stderr.on("data", (data) => {
+      console.error(`MouseHook Error: ${data}`);
+    });
 
-  mouseHook.on("error", (err) =>
-    console.error("Mouse Hook Process Error:", err),
-  );
+    mouseHook.on("error", (err) =>
+      console.error("Mouse Hook Process Error:", err),
+    );
+  };
+
+  const stopMouseHook = () => {
+    if (!mouseHook) return;
+    diagLog("Stopping Mouse Hook");
+    mouseHook.kill();
+    mouseHook = null;
+  };
+
+  if (currentSettings.enableMouseTrigger) {
+    startMouseHook();
+  }
 });
 
 // IPC: Recebe atualização de configuração do Game Mode
@@ -773,9 +821,12 @@ ipcMain.on("execute-command", async (event, command, commandType) => {
     // GUID/AUMID detection (Shell Namespace / UWP apps)
     // Steam uses GUIDs like {7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\Steam\Steam.exe
     // WhatsApp uses AUMIDs like 5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App
+    // Some system apps use hex IDs like FODC299D809B9700
+    const isHexID = /^[A-F0-9]{8,64}$/i.test(resolvedCommand);
     const isShellApp =
       resolvedCommand.startsWith("{") ||
       resolvedCommand.includes("!") ||
+      isHexID ||
       (resolvedCommand.includes(".") &&
         !resolvedCommand.match(/\.(exe|lnk|bat|cmd)$/i) &&
         !resolvedCommand.includes("\\") &&
@@ -877,6 +928,60 @@ ipcMain.on("show-window", () => {
     mainWindow.show();
     mainWindow.focus();
   }
+});
+
+ipcMain.handle("get-onboarding-apps", async () => {
+  return new Promise((resolve) => {
+    // We search for a specific set of high-priority common apps for onboarding
+    const targetApps = [
+      "Chrome",
+      "Edge",
+      "Discord",
+      "Spotify",
+      "Steam",
+      "VS Code",
+      "Visual Studio Code",
+      "Notepad",
+      "Calculadora",
+      "Calculator",
+    ];
+    const psScript = `
+      $ErrorActionPreference = 'SilentlyContinue';
+      $targets = @(${targetApps.map((a) => `'${a}'`).join(", ")});
+      $apps = Get-StartApps | Where-Object { 
+        $name = $_.Name; 
+        $match = $targets | Where-Object { $name -like "*$_*" };
+        $match -and ($_.AppID -notmatch 'Help|Feedback|Contact|Support|Manual')
+      } | Select-Object Name, AppID | Select-Object -First 5;
+      
+      $results = @();
+      foreach ($app in $apps) {
+        $results += [PSCustomObject]@{ 
+          Name = [string]$app.Name; 
+          Path = [string]$app.AppID; 
+        };
+      }
+      $results | ConvertTo-Json -Compress
+    `;
+
+    const command = `powershell -NoProfile -ExecutionPolicy Bypass -Command "${psScript
+      .replace(/"/g, '\\"')
+      .replace(/[\r\n]+/g, " ")
+      .trim()}"`;
+
+    exec(command, (error, stdout) => {
+      if (error || !stdout) {
+        resolve([]);
+        return;
+      }
+      try {
+        const apps = JSON.parse(stdout);
+        resolve(Array.isArray(apps) ? apps : [apps]);
+      } catch (e) {
+        resolve([]);
+      }
+    });
+  });
 });
 
 // IPC: Toggle Window Size
@@ -1050,9 +1155,11 @@ ipcMain.handle("get-file-icon", async (event, filePath) => {
     }
 
     // 3. PowerShell Extraction Strategy
-    const psScript = path.join(__dirname, "extract-icon.ps1");
+    const psScript = getAssetPath("extract-icon.ps1");
     // Only pass necessary args. Note: PowerShell output needs to be captured.
     const command = `powershell -NoProfile -ExecutionPolicy Bypass -File "${psScript}" -Target "${resolvedPath}"`;
+
+    diagLog(`[IconRequest] PS Command: ${command}`);
 
     const iconData = await new Promise((resolve) => {
       exec(command, { maxBuffer: 1024 * 1024 * 5 }, (error, stdout, stderr) => {

@@ -90,6 +90,14 @@ export default function App() {
       finalWorkspaces = DEFAULT_WORKSPACES;
     }
 
+    // DEFAULT SETTINGS MIGRATION (New for production polish)
+    if (loaded.backdropBlur === 4) {
+      loaded.backdropBlur = 0;
+    }
+    if (loaded.centerButton?.type === 'system' && loaded.centerButton?.iconName === 'Settings2') {
+      loaded.centerButton.type = 'none';
+    }
+
     // FUNCTIONAL ICON MIGRATION: Ensure internal widgets use 'lucide' and correct icon names
     const updateIconsRecursive = (items: AppItem[]): AppItem[] => {
       return items.map(item => {
@@ -148,6 +156,118 @@ export default function App() {
       });
     }
   }, []);
+
+  // ICON HEALING: Automatically re-fetch missing native icons
+  useEffect(() => {
+    if (!window.electron?.getFileIcon) return;
+
+    const findMissingIcons = (items: AppItem[]): AppItem[] => {
+      let missing: AppItem[] = [];
+      const traverse = (list: AppItem[]) => {
+        list.forEach(item => {
+          if (item.iconSource === 'native' && !item.customIconUrl && item.command) {
+            missing.push(item);
+          }
+          if (item.children) traverse(item.children);
+        });
+      };
+      traverse(items);
+      return missing;
+    };
+
+    const appsToHeal = findMissingIcons(config.workspaces.flatMap(ws => ws.apps));
+    if (appsToHeal.length === 0) return;
+
+    console.log(`[Icon Healing] Attempting to fix ${appsToHeal.length} icons...`);
+
+    const heal = async () => {
+      let hasUpdates = false;
+      const updatedWorkspaces = await Promise.all(config.workspaces.map(async (ws) => {
+        const healRecursive = async (items: AppItem[]): Promise<AppItem[]> => {
+          return Promise.all(items.map(async (item) => {
+            let newItem = { ...item };
+            if (item.iconSource === 'native' && !item.customIconUrl && item.command) {
+              try {
+                const iconUrl = await window.electron.getFileIcon(item.command);
+                if (iconUrl) {
+                  newItem.customIconUrl = iconUrl;
+                  hasUpdates = true;
+                }
+              } catch (e) {
+                console.warn(`[Icon Healing] Failed for ${item.label}`);
+              }
+            }
+            if (newItem.children) {
+              newItem.children = await healRecursive(newItem.children);
+            }
+            return newItem;
+          }));
+        };
+
+        const newApps = await healRecursive(ws.apps);
+        return { ...ws, apps: newApps };
+      }));
+
+      if (hasUpdates) {
+        setConfig(prev => ({ ...prev, workspaces: updatedWorkspaces }));
+      }
+    };
+
+    heal();
+  }, [config.workspaces.length]); // Re-run mainly if workspaces are added/loaded
+
+
+  // Onboarding: Fetch Top 5 Apps on First Run
+  useEffect(() => {
+    const isInitialized = localStorage.getItem('zenith_initialized');
+    if (!isInitialized && window.electron && window.electron.getOnboardingApps) {
+      window.electron.getOnboardingApps().then(async (onboardingApps: any[]) => {
+        if (onboardingApps && onboardingApps.length > 0) {
+          // Fetch icons for onboarding apps to avoid empty icons in production
+          const appsWithIcons = await Promise.all(onboardingApps.map(async (app, idx) => {
+            let iconUrl = '';
+            try {
+              if (window.electron?.getFileIcon) {
+                iconUrl = await window.electron.getFileIcon(app.Path) || '';
+              }
+            } catch (e) {
+              console.warn(`Onboarding: Failed to fetch icon for ${app.Name}`);
+            }
+
+            return {
+              id: crypto.randomUUID(),
+              type: 'app' as const,
+              label: app.Name,
+              iconName: '',
+              iconSource: 'native' as const,
+              customIconUrl: iconUrl,
+              command: app.Path,
+              commandType: 'app' as const,
+              description: `System shortcut for ${app.Name}`,
+              // Map directions in a circular way
+              direction: ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][idx % 8]
+            };
+          }));
+
+          setConfig(prev => {
+            const newWorkspaces = [...prev.workspaces];
+            const mainWsIndex = newWorkspaces.findIndex(ws => ws.name === 'Main');
+
+            if (mainWsIndex !== -1) {
+              newWorkspaces[mainWsIndex] = {
+                ...newWorkspaces[mainWsIndex],
+                apps: appsWithIcons
+              };
+            }
+
+            return { ...prev, workspaces: newWorkspaces };
+          });
+        }
+        localStorage.setItem('zenith_initialized', 'true');
+      });
+    }
+  }, []);
+
 
   useEffect(() => {
     if (window.electron && window.electron.setSettings) {
@@ -511,7 +631,7 @@ export default function App() {
     <div
       className={`
         fixed inset-0 w-full h-full overflow-hidden cursor-default select-none group
-        ${isDesktopMode ? 'bg-transparent' : 'bg-[#0D0D0D]'}
+        ${isDesktopMode || isDashboardOpen || isSettingsOpen ? 'bg-transparent' : 'bg-[#0D0D0D]'}
         ${isDesktopMode && !isAnyModalOpen ? 'pointer-events-none' : ''}
       `}
       onMouseDown={handleMouseDown}
@@ -524,19 +644,19 @@ export default function App() {
 
       {/* Visibility Wrapper for the whole app content */}
       <div className={`
-        relative w-full h-full transition-opacity duration-300 overflow-hidden
+        relative w-full h-full transition-opacity duration-400 overflow-hidden
         ${isAnyModalOpen ? 'opacity-100' : 'opacity-0'}
-        ${(!isDashboardOpen && !isSettingsOpen) ? 'border-2 border-white/10 rounded-xl' : ''}
+        ${(isDashboardOpen || isSettingsOpen) ? 'border border-white/10 rounded-xl shadow-[0_0_50px_rgba(0,0,0,0.5)] bg-[#0A0A0A]' : ''}
       `}>
         {/* CUSTOM TITLE BAR OVERLAY (for drag region + app name) */}
         {(isDashboardOpen || isSettingsOpen) && !isMenuOpen && (
           <div
-            className="fixed top-0 left-0 right-0 h-[38px] z-[999] flex items-center justify-between px-4 bg-[#0A0A0A]/80 backdrop-blur-xl border-b border-white/[0.05]"
+            className="absolute top-0 left-0 right-0 h-[38px] z-[999] flex items-center justify-between px-4 bg-[#0A0A0A]/80 backdrop-blur-xl border-b border-white/[0.05]"
             style={{ WebkitAppRegion: 'drag' } as any}
           >
             <div className="flex items-center gap-3 pointer-events-none">
               <div className="w-5 h-5 bg-gradient-to-br from-white/10 to-transparent border border-white/10 rounded-md flex items-center justify-center bg-black shadow-inner">
-                <img src="/icon.png" alt="Zenith" className="w-3.5 h-3.5 opacity-90" />
+                <img src="icon.png" alt="Zenith" className="w-3.5 h-3.5 opacity-90" />
               </div>
             </div>
 
