@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Coordinates, AppItem, UIConfig, Workspace } from '../types';
 import { getIcon } from '../iconMap';
 import { Settings2, CornerUpLeft } from 'lucide-react';
+import { SmartIcon } from './SmartIcon';
 
 interface RadialMenuProps {
   isOpen: boolean;
@@ -497,13 +498,16 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                 rounded-full flex items-center justify-center z-20
                 transition-all duration-300 pointer-events-auto cursor-pointer
                 ${isCenterActive
-                  ? 'bg-white text-black border-2 border-white shadow-[0_0_50px_rgba(255,255,255,0.4)]'
+                  ? 'text-black border-2'
                   : 'bg-[#0D0D0D] border border-white/10 text-white/50 shadow-lg'
                 }
               `}
               style={{
                 width: `${Math.round(iconSizePx * 1.2)}px`,
                 height: `${Math.round(iconSizePx * 1.2)}px`,
+                backgroundColor: isCenterActive ? config.accentColor : undefined,
+                borderColor: isCenterActive ? config.accentColor : undefined,
+                boxShadow: isCenterActive ? `0 0 50px ${config.accentColor}66` : undefined,
               }}
               initial={{ x: '-50%', y: '-50%', scale: 1, opacity: 1 }}
               animate={{
@@ -687,24 +691,17 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                           {/* Icon Container: Show either native icon OR vector icon, not both */}
                           <div className="w-full h-full flex items-center justify-center relative">
                             {shouldUseCustomIcon ? (
-                              /* Native Icon (Larger to compensate for whitespace in extracted icons) */
-                              <img
-                                src={app.customIconUrl}
+                              /* Native Icon (Automatically normalized) */
+                              <SmartIcon
+                                src={app.customIconUrl!}
                                 alt={app.label}
                                 className="object-contain relative z-10"
-                                style={{
-                                  width: `${Math.round(iconSizePx * 0.65)}px`,
-                                  height: `${Math.round(iconSizePx * 0.65)}px`,
-                                  imageRendering: 'high-quality'
-                                } as any}
-                                onError={(e) => {
-                                  console.warn(`Radial Icon Error: Falling back for ${app.label}`);
-                                  (e.target as HTMLImageElement).classList.add('hidden');
-                                }}
+                                size={iconSizePx}
+                                referenceScale={0.88}
                               />
                             ) : (
                               /* Vector Icon (Only when no custom icon) */
-                              <Icon size={Math.round(iconSizePx * 0.45)} strokeWidth={1.5} />
+                              <Icon size={Math.round(iconSizePx * 0.55)} strokeWidth={1.5} />
                             )}
                           </div>
                         </div>

@@ -4,6 +4,7 @@ import { AppItem, UIConfig, UserProfile } from '../types';
 import { ICON_MAP, getIcon } from '../iconMap';
 import { AVAILABLE_WIDGETS } from '../defaults';
 import { AppSelector } from './AppSelector';
+import { SmartIcon } from './SmartIcon';
 import {
     X, Save, RotateCcw, Monitor, LayoutGrid, Palette,
     Plus, Trash2, Clock, Keyboard, AlertTriangle, RotateCw, AlarmClock,
@@ -36,167 +37,202 @@ const AppEditorModal = React.memo(({
     return (
         <AnimatePresence>
             {editingApp && (
-                <div className="absolute inset-0 z-[200] flex items-center justify-center p-8 overflow-hidden">
+                <div className="absolute inset-0 z-[200] flex items-center justify-center p-4 md:p-8 overflow-hidden">
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         onClick={() => setEditingApp(null)}
-                        className="absolute inset-0 bg-black/80 backdrop-blur-xl"
+                        className="absolute inset-0 bg-black/60 backdrop-blur-2xl"
                     />
                     <motion.div
-                        className="w-full max-w-md bg-gradient-to-br from-[#0A0A0A] to-[#010101] border border-white/10 rounded-xl shadow-[0_40px_100px_-20px_rgba(0,0,0,1)] relative overflow-hidden flex flex-col max-h-[90%]"
-                        initial={{ opacity: 0, scale: 0.9, y: 40 }}
+                        className="w-full max-w-3xl bg-[#080808]/90 border border-white/10 rounded-2xl shadow-[0_50px_100px_-20px_rgba(0,0,0,1)] relative overflow-hidden flex flex-col max-h-[90%]"
+                        initial={{ opacity: 0, scale: 0.9, y: 30 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 20 }}
                         transition={{ type: "spring", damping: 25, stiffness: 200 }}
                     >
                         {/* Modal Header */}
-                        <div className="p-5 pb-3 flex items-center justify-between border-b border-white/5 bg-white/[0.01]">
-                            <div>
-                                <label className="text-[9px] font-bold text-white/20 uppercase tracking-[0.3em] block ml-1 mb-0.5">App Configuration</label>
-                                <h3 className="text-base font-light text-white tracking-[0.1em] uppercase">Integration Profile</h3>
+                        <div className="px-6 py-4 flex items-center justify-between border-b border-white/5 bg-white/[0.01]">
+                            <div className="space-y-0.5">
+                                <label className="text-[9px] font-semibold text-white/30 uppercase tracking-[0.3em] block ml-0.5">Interface Modularization</label>
+                                <h3 className="text-sm font-bold text-white tracking-[0.15em] uppercase">Integration Parameters</h3>
                             </div>
                             <button
                                 onClick={() => setEditingApp(null)}
-                                className="w-11 h-11 flex items-center justify-center rounded-xl bg-white/5 hover:bg-white/10 text-white/40 hover:text-white transition-all duration-300 border border-white/5"
+                                className="w-9 h-9 flex items-center justify-center rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-white/40 hover:text-white transition-all duration-500 border border-white/5 active:scale-90"
                             >
-                                <X size={22} strokeWidth={1.5} />
+                                <X size={18} strokeWidth={2} />
                             </button>
                         </div>
 
-                        <div className="p-5 space-y-5 overflow-y-auto custom-scrollbar">
-                            {/* Label Input */}
-                            <div className="space-y-3">
-                                <label className="text-[9px] font-bold text-white/20 uppercase tracking-[0.2em] ml-1">App Identity</label>
-                                <div className="relative group">
-                                    <input
-                                        type="text"
-                                        value={editingApp.app.label}
-                                        onChange={e => handleAppChange('label', e.target.value)}
-                                        className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-3 text-base font-medium text-white focus:border-white/40 outline-none transition-all duration-300 shadow-inner group-hover:bg-black/60"
-                                        placeholder="Service Name..."
-                                    />
-                                </div>
+                        {/* Dual Pane Content */}
+                        <div className="flex flex-col lg:flex-row flex-1 overflow-hidden min-h-0">
+                            {/* Left Pane: Configuration */}
+                            <div className="flex-1 p-6 space-y-5 overflow-y-auto custom-scrollbar border-r border-white/5 bg-white/[0.01] min-h-0">
+                                {/* App Identity Section */}
+                                <section className="space-y-2.5">
+                                    <label className="text-[9px] font-bold text-white/20 uppercase tracking-[0.2em] ml-1">App Identity</label>
+                                    <div className="relative group">
+                                        <input
+                                            type="text"
+                                            value={editingApp.app.label}
+                                            onChange={e => handleAppChange('label', e.target.value)}
+                                            className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-3 text-sm font-normal text-white focus:border-white/20 focus:bg-black/60 outline-none transition-all duration-500 shadow-inner group-hover:border-white/10"
+                                            placeholder="Enter module name..."
+                                        />
+                                    </div>
+                                </section>
+
+                                {/* System Integration Section */}
+                                {editingApp.app.type === 'app' && (
+                                    <section className="space-y-2.5">
+                                        <label className="text-[9px] font-bold text-white/20 uppercase tracking-[0.2em] ml-1">
+                                            {editingApp.app.commandType === 'url' ? 'Network Target' : 'Execution Path'}
+                                        </label>
+                                        <div className="flex flex-col sm:flex-row gap-3">
+                                            <div className="flex-1 relative group">
+                                                <input
+                                                    type="text"
+                                                    value={editingApp.app.command}
+                                                    onChange={e => handleAppChange('command', e.target.value)}
+                                                    className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-3 text-sm font-mono text-white/60 focus:border-white/20 focus:bg-black/60 outline-none transition-all duration-500 shadow-inner group-hover:border-white/10"
+                                                    placeholder={editingApp.app.commandType === 'url' ? 'https://...' : 'C:/Path/to/binary...'}
+                                                />
+                                            </div>
+                                            <div className="flex gap-2 shrink-0">
+                                                {editingApp.app.commandType === 'url' ? (
+                                                    <div className="w-[46px] h-[46px] bg-white/[0.03] border border-white/5 flex items-center justify-center text-white/20 rounded-xl">
+                                                        <Globe size={18} strokeWidth={1} />
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <button
+                                                            onClick={handlePickCommand}
+                                                            className="px-5 h-[46px] bg-white text-black font-black text-[10px] uppercase tracking-[0.1em] rounded-xl hover:bg-gray-200 transition-all duration-300 shadow-xl active:scale-95 flex items-center justify-center gap-2 group"
+                                                        >
+                                                            <span>Scan</span>
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setShowAppSelector(true)}
+                                                            className="w-[46px] h-[46px] bg-white/[0.03] border border-white/5 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/[0.08] rounded-xl transition-all duration-300 active:scale-90"
+                                                            title="App Matrix"
+                                                        >
+                                                            <LayoutGrid size={18} strokeWidth={1.5} />
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </section>
+                                )}
+
+                                {/* Icon Source Strategy */}
+                                <section className="space-y-2.5">
+                                    <label className="text-[9px] font-bold text-white/20 uppercase tracking-[0.2em] ml-1">Icon Methodology</label>
+                                    <div className="flex bg-black p-1 rounded-xl border border-white/5 shadow-2xl relative overflow-hidden">
+                                        <div
+                                            className="absolute inset-y-1 rounded-lg bg-white shadow-lg transition-all duration-500 ease-out"
+                                            style={{
+                                                width: 'calc(50% - 4px)',
+                                                left: editingApp.app.iconSource === 'native' ? '4px' : 'calc(50%)',
+                                                zIndex: 0
+                                            }}
+                                        />
+                                        <button
+                                            onClick={() => handleAppChange('iconSource', 'native')}
+                                            className={`relative z-10 flex-1 py-2 text-[10px] font-black uppercase tracking-[0.1em] rounded-lg transition-colors duration-500 ${editingApp.app.iconSource === 'native' ? 'text-black' : 'text-white/30'}`}
+                                        >
+                                            System Native
+                                        </button>
+                                        <button
+                                            onClick={() => handleAppChange('iconSource', 'lucide')}
+                                            className={`relative z-10 flex-1 py-2 text-[10px] font-black uppercase tracking-[0.1em] rounded-lg transition-colors duration-500 ${editingApp.app.iconSource === 'lucide' ? 'text-black' : 'text-white/30'}`}
+                                        >
+                                            Symbol Matrix
+                                        </button>
+                                    </div>
+                                </section>
                             </div>
 
-                            {/* Command Input */}
-                            {editingApp.app.type === 'app' && (
-                                <div className="space-y-3">
-                                    <label className="text-[9px] font-bold text-white/20 uppercase tracking-[0.2em] ml-1">
-                                        {editingApp.app.commandType === 'url' ? 'Network Destination' : 'Execution Path'}
-                                    </label>
-                                    <div className="flex gap-3">
-                                        <div className="flex-1 relative group">
-                                            <input
-                                                type="text"
-                                                value={editingApp.app.command}
-                                                onChange={e => handleAppChange('command', e.target.value)}
-                                                className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-2.5 text-sm font-mono text-white/80 focus:border-white/40 outline-none transition-all duration-300 shadow-inner group-hover:bg-black/60 truncate"
-                                                placeholder={editingApp.app.commandType === 'url' ? 'https://...' : 'Binary Path...'}
+                            {/* Right Pane: Visual Signature Preview */}
+                            <div className="w-full lg:w-[260px] bg-black/40 p-6 flex flex-col items-center justify-center gap-5 relative min-h-0">
+                                <div className="absolute top-4 left-6 flex items-center gap-2">
+                                    <div className="w-1 h-1 rounded-full bg-white/40" />
+                                    <span className="text-[9px] font-bold text-white/20 uppercase tracking-[0.2em]">Visual Preview</span>
+                                </div>
+
+                                <div className="relative group mt-2">
+                                    <motion.div
+                                        className="w-24 h-24 rounded-xl bg-gradient-to-br from-white/[0.05] to-transparent flex items-center justify-center border border-white/10 group-hover:border-white/30 transition-all duration-700 cursor-pointer overflow-hidden shadow-[0_15px_30px_-10px_rgba(0,0,0,0.8)]"
+                                        whileHover={{ scale: 1.05, y: -4 }}
+                                        onClick={handlePickIcon}
+                                    >
+                                        {editingApp.app.customIconUrl ? (
+                                            <SmartIcon
+                                                src={editingApp.app.customIconUrl}
+                                                className="w-full h-full object-contain transition-transform duration-700 group-hover:scale-110"
+                                                size={96}
+                                                referenceScale={0.7}
                                             />
-                                        </div>
-                                        {editingApp.app.commandType === 'url' ? (
-                                            <div className="w-14 h-14 bg-white/5 border border-white/10 flex items-center justify-center text-white/40 rounded-xl shrink-0 transition-colors">
-                                                <Globe size={22} strokeWidth={1.5} />
-                                            </div>
                                         ) : (
-                                            <>
-                                                <button
-                                                    onClick={handlePickCommand}
-                                                    className="px-6 bg-white text-black font-semibold text-[10px] uppercase tracking-widest rounded-xl hover:bg-gray-100 transition-all duration-300 shadow-lg active:scale-95 shrink-0"
-                                                >
-                                                    Scan Disk
-                                                </button>
-                                                <button
-                                                    onClick={() => setShowAppSelector(true)}
-                                                    className="w-14 h-14 bg-white/5 border border-white/10 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/10 rounded-xl transition-all duration-300 shrink-0"
-                                                >
-                                                    <Search size={22} strokeWidth={1.5} />
-                                                </button>
-                                            </>
+                                            (() => {
+                                                const Icon = getIcon(editingApp.app.iconName);
+                                                return <Icon size={64} strokeWidth={1} className="text-white/30 group-hover:text-white transition-all duration-500" />;
+                                            })()
                                         )}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Icon Customization */}
-                            <div className="space-y-6">
-                                <label className="text-[10px] font-semibold text-white/20 uppercase tracking-[0.2em] ml-1">Visual Signature</label>
-                                <div className="flex bg-black/40 p-1 rounded-xl border border-white/5 shadow-inner">
-                                    <button
-                                        onClick={() => handleAppChange('iconSource', 'native')}
-                                        className={`flex-1 py-3 text-[10px] font-semibold uppercase tracking-widest rounded-lg transition-all duration-500 ${editingApp.app.iconSource === 'native' ? 'bg-white text-black shadow-lg translate-y-[-1px]' : 'text-white/20 hover:text-white/40'}`}
-                                    >
-                                        Neural Native
-                                    </button>
-                                    <button
-                                        onClick={() => handleAppChange('iconSource', 'lucide')}
-                                        className={`flex-1 py-3 text-[10px] font-semibold uppercase tracking-widest rounded-lg transition-all duration-500 ${editingApp.app.iconSource === 'lucide' ? 'bg-white text-black shadow-lg translate-y-[-1px]' : 'text-white/20 hover:text-white/40'}`}
-                                    >
-                                        Symbol Matrix
-                                    </button>
-                                </div>
-
-                                <div className="min-h-[200px] rounded-xl border border-white/5 bg-black/40 shadow-inner overflow-hidden">
-                                    {editingApp.app.iconSource === 'native' ? (
-                                        <div className="h-full flex flex-col items-center justify-center gap-6 p-8">
-                                            <div className="relative group">
-                                                <div className="w-20 h-20 rounded-xl bg-black/60 flex items-center justify-center border border-white/10 group-hover:border-white/30 transition-all duration-700 cursor-pointer overflow-hidden shadow-2xl"
-                                                    onClick={handlePickIcon}>
-                                                    {editingApp.app.customIconUrl ? (
-                                                        <img
-                                                            src={editingApp.app.customIconUrl}
-                                                            className="w-full h-full object-contain p-2 transition-transform duration-700 group-hover:scale-110"
-                                                            style={{ imageRendering: '-webkit-optimize-contrast' }}
-                                                            alt=""
-                                                        />
-                                                    ) : (
-                                                        (() => {
-                                                            const Icon = getIcon(editingApp.app.iconName);
-                                                            return <Icon size={40} strokeWidth={1} className="text-white/20 group-hover:text-white transition-colors duration-500" />;
-                                                        })()
-                                                    )}
-                                                    <div className="absolute inset-0 bg-white/5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                                                </div>
-                                                <div className="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-white text-black flex items-center justify-center shadow-lg transform scale-0 group-hover:scale-100 transition-transform duration-500 delay-100">
-                                                    <Edit3 size={14} />
-                                                </div>
-                                            </div>
-
-                                            <div className="flex flex-col gap-3 w-full max-w-[280px]">
-                                                <button
-                                                    onClick={handlePickIcon}
-                                                    className="w-full py-3.5 bg-white/5 hover:bg-white/10 text-white font-semibold text-[10px] uppercase tracking-widest rounded-xl border border-white/10 transition-all duration-300"
-                                                >
-                                                    Inject Custom Asset
-                                                </button>
-                                                <button
-                                                    onClick={() => handleAppChange('customIconUrl', undefined)}
-                                                    className="w-full py-2 text-white/20 hover:text-white/40 text-[10px] font-black uppercase tracking-widest transition-colors duration-300"
-                                                >
-                                                    Revert to Kernel default
-                                                </button>
+                                        <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 flex items-center justify-center">
+                                            <div className="w-8 h-8 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20">
+                                                <Upload size={14} className="text-white" />
                                             </div>
                                         </div>
-                                    ) : (
-                                        <div className="h-full p-2">
+                                    </motion.div>
+                                    <div className="absolute -inset-4 bg-white/[0.01] rounded-[2rem] blur-2xl -z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
+                                </div>
+
+                                <div className="text-center space-y-0.5">
+                                    <h4 className="text-sm font-bold text-white/90 tracking-tight truncate max-w-[180px]">{editingApp.app.label || 'Untitled Module'}</h4>
+                                    <p className="text-[8px] text-white/20 font-bold uppercase tracking-[0.2em]">Deployment Slot {editingApp.index + 1}</p>
+                                </div>
+
+                                {editingApp.app.iconSource === 'native' ? (
+                                    <div className="w-full space-y-2">
+                                        <button
+                                            onClick={handlePickIcon}
+                                            className="w-full py-2.5 bg-white/[0.03] hover:bg-white/[0.08] text-white/80 font-black text-[10px] uppercase tracking-[0.1em] rounded-xl border border-white/5 hover:border-white/20 transition-all duration-300 active:scale-95"
+                                        >
+                                            Update Asset
+                                        </button>
+                                        <button
+                                            onClick={() => handleAppChange('customIconUrl', undefined)}
+                                            className="w-full py-1.5 text-white/20 hover:text-white/40 text-[9px] font-bold uppercase tracking-widest transition-colors duration-300"
+                                        >
+                                            Reset to Default
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="w-full flex-1 max-h-[160px] rounded-xl overflow-hidden border border-white/5 shadow-2xl bg-black/40">
+                                        <div className="h-full overflow-y-auto custom-scrollbar-mini">
                                             <IconPicker
                                                 selectedIcon={editingApp.app.iconName}
                                                 onSelect={(name) => handleAppChange('iconName', name)}
                                             />
                                         </div>
-                                    )}
-                                </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
-                        <div className="p-5 border-t border-white/5 bg-white/[0.01] flex justify-end">
+                        {/* Modal Footer */}
+                        <div className="px-6 py-4 border-t border-white/5 bg-black/20 flex justify-between items-center">
+                            <div className="hidden sm:block text-[8px] text-white/10 font-bold uppercase tracking-[0.2em]">
+                                Persistent synchronization active
+                            </div>
                             <button
                                 onClick={() => setEditingApp(null)}
-                                className="px-7 py-3 bg-white text-black font-semibold text-xs uppercase tracking-[0.2em] rounded-lg hover:shadow-[0_8px_24px_rgba(255,255,255,0.2)] transition-all duration-300 active:scale-95"
+                                className="px-7 py-3 bg-white text-black font-black text-[10px] uppercase tracking-[0.1em] rounded-xl hover:shadow-[0_10px_30px_rgba(255,255,255,0.1)] hover:scale-[1.02] transition-all duration-500 active:scale-95 shadow-xl"
                             >
-                                Synchronize
+                                Synchronize Core
                             </button>
                         </div>
                     </motion.div>
@@ -217,7 +253,7 @@ const WidgetsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
             exit={{ opacity: 0, x: 10 }}
             transition={{ duration: 0.3 }}
         >
-            <div className="max-w-5xl mx-auto px-6 md:px-10 lg:px-12">
+            <div className="max-w-4xl mx-auto px-6 md:px-10 lg:px-12">
                 <motion.div
                     className="mb-12"
                     initial={{ opacity: 0, y: 10 }}
@@ -349,7 +385,7 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
             exit={{ opacity: 0, x: 10 }}
             transition={{ duration: 0.3 }}
         >
-            <div className="max-w-5xl mx-auto px-6 md:px-10 lg:px-12">
+            <div className="max-w-4xl mx-auto px-6 md:px-10 lg:px-12">
                 <motion.div
                     className="mb-12"
                     initial={{ opacity: 0, y: 10 }}
@@ -367,7 +403,7 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                         title="Radial Matrix"
                         icon={Layout}
                         description="Spatial Expansion"
-                        className="md:col-span-2"
+                        className="md:col-span-2 lg:col-span-2"
                     >
                         <div className="space-y-6">
                             <div className="flex justify-between items-center text-[10px] font-black text-white/20 uppercase tracking-widest">
@@ -391,7 +427,7 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                         </div>
                     </BentoCard>
 
-                    <BentoCard title="Module Density" icon={Box} description="Icon Dynamics">
+                    <BentoCard title="Module Density" icon={Box} description="Icon Dynamics" className="lg:col-span-1">
                         <div className="space-y-6">
                             <div className="flex items-end justify-between">
                                 <span className="text-3xl font-black text-white tabular-nums">{config.iconSize}</span>
@@ -409,7 +445,7 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                         </div>
                     </BentoCard>
 
-                    <BentoCard title="Atmospheric Depth" icon={Zap} description="Glassmorphism Calibration">
+                    <BentoCard title="Atmospheric Depth" icon={Zap} description="Glassmorphism Calibration" className="lg:col-span-1">
                         <div className="space-y-6">
                             <div className="space-y-4">
                                 <div className="flex items-end justify-between">
@@ -458,7 +494,7 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                         title="Accent Signature"
                         icon={Palette}
                         description="Color Synchronization"
-                        className="lg:col-span-2"
+                        className="md:col-span-2 lg:col-span-2"
                     >
                         <div className="flex gap-6 items-center">
                             <div className="relative group/color p-2 rounded-xl bg-black/40 border border-white/10">
@@ -486,7 +522,43 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                         </div>
                     </BentoCard>
 
-                    <BentoCard title="Nomenclature" icon={FileType} description="Semantic Labels">
+                    <BentoCard title="Expansion Protocol" icon={GripVertical} description="Structural Rhythm" className="lg:col-span-1">
+                        <div className="space-y-6">
+                            <div className="flex items-end justify-between">
+                                <span className="text-3xl font-black text-white tabular-nums">{config.appSpacing}</span>
+                                <span className="text-[10px] text-white/20 font-bold uppercase mb-1">Gap Px</span>
+                            </div>
+                            <input
+                                type="range"
+                                min="0"
+                                max="50"
+                                step="2"
+                                value={config.appSpacing}
+                                onChange={e => setConfig({ ...config, appSpacing: Number(e.target.value) })}
+                                className="w-full h-1 bg-white/10 rounded-full appearance-none accent-white cursor-pointer"
+                            />
+                        </div>
+                    </BentoCard>
+
+                    <BentoCard title="Activation Matrix" icon={Zap} description="Precision Threshold" className="lg:col-span-1">
+                        <div className="space-y-6">
+                            <div className="flex items-end justify-between">
+                                <span className="text-3xl font-black text-white tabular-nums">{config.activationThreshold}</span>
+                                <span className="text-[10px] text-white/20 font-bold uppercase mb-1">Trigger px</span>
+                            </div>
+                            <input
+                                type="range"
+                                min="10"
+                                max="150"
+                                step="5"
+                                value={config.activationThreshold}
+                                onChange={e => setConfig({ ...config, activationThreshold: Number(e.target.value) })}
+                                className="w-full h-1 bg-white/10 rounded-full appearance-none accent-white cursor-pointer"
+                            />
+                        </div>
+                    </BentoCard>
+
+                    <BentoCard title="Nomenclature" icon={FileType} description="Semantic Labels" className="lg:col-span-1">
                         <div className="flex flex-col gap-4">
                             <button
                                 onClick={() => setConfig({ ...config, showLabels: !config.showLabels })}
@@ -567,7 +639,7 @@ const WorkspaceCard = React.memo(({
             </div>
 
             {/* App Matrix (2x2 Grid) */}
-            <div className="relative z-10 flex-1 flex items-center justify-center mt-6 w-full px-6">
+            <div className="relative z-10 flex-1 flex items-center justify-center mt-5 mb-4 w-full px-6">
                 <div className="grid grid-cols-2 gap-2 w-fit">
                     {workspace.apps.slice(0, 4).map((app: any, appIdx: number) => {
                         const SmallIcon = getIcon(app.iconName);
@@ -580,9 +652,14 @@ const WorkspaceCard = React.memo(({
                                 className="w-9 h-9 rounded-xl bg-black/40 border border-white/5 backdrop-blur-md flex items-center justify-center shadow-lg group-hover:border-white/20 transition-all duration-500 hover:scale-110 hover:z-30 p-1.5"
                             >
                                 {app.iconSource === 'native' && app.customIconUrl ? (
-                                    <img src={app.customIconUrl} className="w-full h-full object-contain" alt="" />
+                                    <SmartIcon
+                                        src={app.customIconUrl}
+                                        className="w-full h-full object-contain"
+                                        size={36}
+                                        referenceScale={0.75}
+                                    />
                                 ) : (
-                                    <SmallIcon size={18} className="text-white/30 group-hover:text-white/60 transition-colors" />
+                                    <SmallIcon size={24} className="text-white/30 group-hover:text-white/60 transition-colors" />
                                 )}
                             </motion.div>
                         );
@@ -598,13 +675,13 @@ const WorkspaceCard = React.memo(({
             </div>
 
             {/* Bottom Labeling */}
-            <div className="relative z-20 mb-2 w-full px-4">
+            <div className="relative z-20 mb-3 w-full px-4">
                 <div className="flex flex-col items-center gap-0.5">
                     <h4 className="text-[10px] font-bold text-white tracking-[0.25em] uppercase transition-all duration-500 group-hover:tracking-[0.3em] line-clamp-1 truncate text-center w-full">
                         {workspace.name}
                     </h4>
                     <div className="h-[1px] w-4 bg-white/10 group-hover:w-8 group-hover:bg-white/30 transition-all duration-700" />
-                    <span className="text-[8px] text-white/20 font-bold uppercase tracking-[0.2em] mt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-500">
+                    <span className="text-[8px] text-white/20 font-bold uppercase tracking-[0.2em] mt-1 group-hover:text-white/40 transition-colors duration-500">
                         {workspace.apps.length} Modules
                     </span>
                 </div>
@@ -666,14 +743,14 @@ const WorkspaceAppItem = React.memo(({
             </div>
             <div className="w-12 h-12 rounded-xl bg-black/60 flex items-center justify-center text-white/40 overflow-hidden border border-white/[0.05] group-hover:border-white/20 group-hover:text-white transition-all duration-500 shadow-inner shrink-0 p-2">
                 {app.iconSource === 'native' && app.customIconUrl ? (
-                    <img
+                    <SmartIcon
                         src={app.customIconUrl}
                         className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-110"
-                        style={{ imageRendering: '-webkit-optimize-contrast' }}
-                        alt=""
+                        size={48}
+                        referenceScale={0.75}
                     />
                 ) : (
-                    <Icon size={24} strokeWidth={1.2} className={isFolder ? 'text-white/60' : ''} />
+                    <Icon size={32} strokeWidth={1.2} className={isFolder ? 'text-white/60' : ''} />
                 )}
             </div>
             <div className="flex-1 min-w-0">
@@ -752,19 +829,20 @@ const WorkspacesTab = React.memo(({
 }) => {
     return (
         <div className="h-full w-full flex flex-col overflow-hidden relative">
-            <div className={`flex-1 overflow-y-auto custom-scrollbar ${selectedWorkspaceIndex !== null ? 'pt-6 md:pt-10 lg:pt-12' : 'pt-10 md:pt-16 lg:pt-20'}`}>
-                <div className="max-w-5xl mx-auto flex flex-col px-6 md:px-10 lg:px-12">
+            <div className={`flex-1 overflow-y-auto custom-scrollbar ${selectedWorkspaceIndex !== null ? 'pt-12 md:pt-16 lg:pt-20' : 'pt-10 md:pt-16 lg:pt-20'}`}>
+                <div className="max-w-4xl mx-auto flex flex-col px-6 md:px-10 lg:px-12">
                     <div className={`flex items-center gap-6 ${selectedWorkspaceIndex !== null ? 'mb-6' : 'mb-12'} group/header`}>
                         {selectedWorkspaceIndex !== null && (
                             <motion.button
                                 onClick={() => setSelectedWorkspaceIndex(null)}
-                                className="w-10 h-10 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-white/40 hover:text-white rounded-xl transition-all duration-300 active:scale-95"
+                                className="h-10 px-4 flex items-center justify-center gap-2 bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-white/40 hover:text-white rounded-xl transition-all duration-300 active:scale-95 group/back"
                                 initial={{ opacity: 0, x: -20 }}
                                 animate={{ opacity: 1, x: 0 }}
                                 whileHover={{ x: -2 }}
                                 title="Back to Workspaces"
                             >
-                                <ChevronLeft size={20} />
+                                <ChevronLeft size={18} className="transition-transform group-hover/back:-translate-x-0.5" />
+                                <span className="text-[10px] font-bold uppercase tracking-widest">Workspaces</span>
                             </motion.button>
                         )}
 
@@ -872,7 +950,7 @@ const WorkspacesTab = React.memo(({
                                 )}
 
                                 {/* App Grid - Refined 2026 */}
-                                <div className="flex-1 overflow-y-auto custom-scrollbar bg-black/40 rounded-xl border border-white/5 p-5 pb-12 mb-4 shadow-inner">
+                                <div className="flex-1 overflow-y-auto custom-scrollbar bg-black/40 rounded-xl border border-white/5 p-5 pb-12 mb-4 shadow-inner min-h-[420px]">
                                     <div className="flex items-center gap-4 mb-5">
                                         {workspaceFolderPath.length > 0 && (
                                             <button
@@ -881,9 +959,10 @@ const WorkspacesTab = React.memo(({
                                                     newPath.pop();
                                                     setWorkspaceFolderPath(newPath);
                                                 }}
-                                                className="h-11 px-4 bg-white/5 hover:bg-white/10 text-white/40 hover:text-white rounded-xl border border-white/5 hover:border-white/20 transition-all duration-300 text-xs font-bold uppercase tracking-widest shrink-0"
+                                                className="h-11 px-5 bg-white/5 hover:bg-white/10 text-white/40 hover:text-white rounded-xl border border-white/5 hover:border-white/20 transition-all duration-300 flex items-center gap-2.5 shrink-0 group/folderback"
                                             >
-                                                <CornerUpLeft size={18} /> Back to Overview
+                                                <CornerUpLeft size={16} className="transition-transform group-hover/folderback:-translate-y-0.5 group-hover/folderback:-translate-x-0.5" />
+                                                <span className="text-[10px] font-bold uppercase tracking-[0.15em]">Back</span>
                                             </button>
                                         )}
                                         <div className="text-[10px] font-black text-white/20 uppercase tracking-[0.3em] px-1">
@@ -937,7 +1016,7 @@ const WorkspacesTab = React.memo(({
                             title="Deploy new Workspace Matrix"
                         >
                             <div className="w-8 h-8 rounded-full bg-black/10 flex items-center justify-center group-hover:bg-black/20 transition-colors">
-                                <Plus size={18} strokeWidth={3} />
+                                <Plus size={20} strokeWidth={3} />
                             </div>
                             <span>New Workspace</span>
                         </button>
@@ -949,7 +1028,7 @@ const WorkspacesTab = React.memo(({
                                 title="Deploy new application module"
                             >
                                 <div className="w-7 h-7 rounded-full bg-black/10 flex items-center justify-center">
-                                    <Plus size={16} strokeWidth={3} />
+                                    <Plus size={18} strokeWidth={3} />
                                 </div>
                                 <span>Add Module</span>
                             </button>
@@ -959,7 +1038,7 @@ const WorkspacesTab = React.memo(({
                                 title="Create new directory cluster"
                             >
                                 <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center">
-                                    <FolderPlus size={16} strokeWidth={2} />
+                                    <FolderPlus size={18} strokeWidth={2} />
                                 </div>
                                 <span>Create Group</span>
                             </button>
@@ -1003,7 +1082,7 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
             exit={{ opacity: 0, x: 10 }}
             transition={{ duration: 0.3 }}
         >
-            <div className="max-w-3xl mx-auto px-6 md:px-10 lg:px-12">
+            <div className="max-w-4xl mx-auto px-6 md:px-10 lg:px-12">
                 <motion.div
                     className="mb-12"
                     initial={{ opacity: 0, y: 10 }}
@@ -1270,7 +1349,7 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
             exit={{ opacity: 0, x: 10 }}
             transition={{ duration: 0.3 }}
         >
-            <div className="max-w-3xl mx-auto px-6 md:px-10 lg:px-12">
+            <div className="max-w-4xl mx-auto px-6 md:px-10 lg:px-12">
                 <motion.div
                     className="mb-12"
                     initial={{ opacity: 0, y: 10 }}
@@ -1293,7 +1372,7 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
                     >
                         <div className="flex items-center gap-4 mb-6">
                             <div className="w-9 h-9 rounded-lg bg-black/40 border border-white/5 flex items-center justify-center text-white/40 group-hover:text-white group-hover:border-white/10 transition-all duration-500">
-                                <Clock size={18} strokeWidth={1} />
+                                <Clock size={24} strokeWidth={1} />
                             </div>
                             <div>
                                 <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.2em] block ml-0.5 mb-0.5">Temporal Module</label>
@@ -1336,7 +1415,7 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
                     >
                         <div className="flex items-center gap-4 mb-8">
                             <div className="w-10 h-10 rounded-lg bg-black/40 border border-white/5 flex items-center justify-center text-white/40 group-hover:text-white/60 transition-all duration-500">
-                                <Monitor size={18} strokeWidth={1} />
+                                <Monitor size={26} strokeWidth={1} />
                             </div>
                             <div>
                                 <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.2em] block ml-0.5 mb-1">Vital Metrics</label>
@@ -1428,7 +1507,7 @@ const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setCo
             exit={{ opacity: 0, x: 10 }}
             transition={{ duration: 0.3 }}
         >
-            <div className="max-w-3xl mx-auto px-6 md:px-10 lg:px-12">
+            <div className="max-w-4xl mx-auto px-6 md:px-10 lg:px-12">
                 <motion.div
                     className="mb-12"
                     initial={{ opacity: 0, y: 10 }}
@@ -1558,7 +1637,7 @@ const UserTab = React.memo(({ user }: { user: UserProfile | null }) => {
             exit={{ opacity: 0, x: 10 }}
             transition={{ duration: 0.3 }}
         >
-            <div className="max-w-3xl mx-auto px-6 md:px-10 lg:px-12">
+            <div className="max-w-4xl mx-auto px-6 md:px-10 lg:px-12">
                 <motion.div
                     className="mb-12 text-center sm:text-left"
                     initial={{ opacity: 0, y: 10 }}
@@ -1860,7 +1939,7 @@ const SearchResultsView = React.memo(({
             transition={{ duration: 0.3 }}
         >
             <div className="max-w-4xl mx-auto px-6 md:px-10 lg:px-12 pb-20">
-                <div className="flex items-center justify-between mb-10">
+                <div className="flex items-center justify-between mb-12">
                     <div>
                         <h3 className="text-2xl font-semibold text-white mb-2 tracking-tight">Search Index</h3>
                         <p className="text-xs text-white/30 font-medium uppercase tracking-[0.2em]">Neural Match Results</p>
@@ -1885,7 +1964,7 @@ const SearchResultsView = React.memo(({
                                 <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
 
                                 <div className="w-12 h-12 rounded-xl bg-black/40 border border-white/10 flex items-center justify-center text-white/30 group-hover:text-white group-hover:scale-110 group-hover:rotate-3 transition-all duration-500 relative z-10 shrink-0">
-                                    <Icon size={24} strokeWidth={1.5} />
+                                    <Icon size={32} strokeWidth={1.5} />
                                 </div>
 
                                 <div className="flex-1 min-w-0 relative z-10">
@@ -2152,14 +2231,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             const filePath = await window.electron.selectFile();
             if (filePath && editingApp) {
                 const bestIcon = getBestLucideIcon(filePath.split(/[\\/]/).pop() || 'App', filePath);
-                handleAppUpdates({
-                    command: filePath,
-                    iconName: bestIcon,
-                    iconSource: 'lucide'
-                });
                 const nativeIconData = await extractIconFromPath(filePath);
+
                 if (nativeIconData) {
-                    handleAppUpdates(nativeIconData);
+                    handleAppUpdates({
+                        command: filePath,
+                        ...nativeIconData
+                    });
+                } else {
+                    handleAppUpdates({
+                        command: filePath,
+                        iconName: bestIcon,
+                        iconSource: 'lucide'
+                    });
                 }
             }
         } catch (e) {
@@ -2261,9 +2345,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             return;
         }
         if (!editingApp) return;
-        handleAppUpdates({ command: appData.path, label: appData.name, iconName: bestIcon, iconSource: 'lucide' });
+
         const nativeIconData = await extractIconFromPath(appData.path);
-        if (nativeIconData) handleAppUpdates(nativeIconData);
+        if (nativeIconData) {
+            handleAppUpdates({
+                command: appData.path,
+                label: appData.name,
+                ...nativeIconData
+            });
+        } else {
+            handleAppUpdates({
+                command: appData.path,
+                label: appData.name,
+                iconName: bestIcon,
+                iconSource: 'lucide'
+            });
+        }
     };
 
     const handleAddApp = (type: 'app' | 'folder') => {

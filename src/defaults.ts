@@ -13,9 +13,9 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   activationThreshold: 50,
   centerButton: {
     type: "none",
-    target: "system-center",
-    label: "SYSTEM",
-    iconName: "Settings2",
+    target: "",
+    label: "",
+    iconName: "Circle",
   },
   showLabels: true,
   showClock: true,

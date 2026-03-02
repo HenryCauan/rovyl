@@ -61,39 +61,110 @@ public class IconExtractor {
 "@
 Add-Type -TypeDefinition $Signature -ReferencedAssemblies System.Drawing
 
+function ConvertTo-NormalizedIconBitmap {
+    param ([System.Drawing.Bitmap]$Source)
+    
+    $canvasSize  = 256
+    $targetRatio = 0.75  # If the icon already fills 75%+ of its canvas, it's correctly sized — don't upscale
+    $padding     = [int]($canvasSize * 0.10)  # 10% padding (for small icons that need upscaling)
+    $innerSize   = $canvasSize - ($padding * 2)
+    
+    # Find the tight bounding box of visible pixels
+    $minX = $Source.Width;  $minY = $Source.Height
+    $maxX = 0;              $maxY = 0
+    $found = $false
+    
+    for ($y = 0; $y -lt $Source.Height; $y++) {
+        for ($x = 0; $x -lt $Source.Width; $x++) {
+            $px = $Source.GetPixel($x, $y)
+            if ($px.A -gt 15) {
+                if ($x -lt $minX) { $minX = $x }
+                if ($y -lt $minY) { $minY = $y }
+                if ($x -gt $maxX) { $maxX = $x }
+                if ($y -gt $maxY) { $maxY = $y }
+                $found = $true
+            }
+        }
+    }
+    
+    if (-not $found) {
+        $minX = 0; $minY = 0; $maxX = $Source.Width - 1; $maxY = $Source.Height - 1
+    }
+    
+    $contentW = $maxX - $minX + 1
+    $contentH = $maxY - $minY + 1
+    $maxDim   = [Math]::Max($Source.Width, $Source.Height)
+    $contentRatio = [Math]::Max($contentW, $contentH) / $maxDim
+    
+    # Create a clean 256x256 transparent canvas
+    $canvas = New-Object System.Drawing.Bitmap($canvasSize, $canvasSize, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $g = [System.Drawing.Graphics]::FromImage($canvas)
+    $g.Clear([System.Drawing.Color]::Transparent)
+    $g.InterpolationMode  = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $g.SmoothingMode      = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+    $g.PixelOffsetMode    = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+    $g.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
+    
+    if ($contentRatio -ge $targetRatio) {
+        # Icon is already well-sized (like Edge) — render at natural proportions, just resize to 256x256
+        # This preserves the icon's original visual weight without enlarging it
+        $scale = $canvasSize / $maxDim
+        $drawW = [int]($Source.Width * $scale)
+        $drawH = [int]($Source.Height * $scale)
+        $destX = [int](($canvasSize - $drawW) / 2)
+        $destY = [int](($canvasSize - $drawH) / 2)
+        $g.DrawImage($Source, $destX, $destY, $drawW, $drawH)
+    } else {
+        # Icon content is too small — upscale content to fill the inner target area (80% of canvas)
+        $scale = [Math]::Min($innerSize / $contentW, $innerSize / $contentH)
+        $drawW = [int]($contentW * $scale)
+        $drawH = [int]($contentH * $scale)
+        $destX = $padding + [int](($innerSize - $drawW) / 2)
+        $destY = $padding + [int](($innerSize - $drawH) / 2)
+        $srcRect = New-Object System.Drawing.Rectangle($minX, $minY, $contentW, $contentH)
+        $dstRect = New-Object System.Drawing.Rectangle($destX, $destY, $drawW, $drawH)
+        $g.DrawImage($Source, $dstRect, $srcRect, [System.Drawing.GraphicsUnit]::Pixel)
+    }
+    
+    $g.Dispose()
+    return $canvas
+}
+
 function Get-Base64Icon {
     param ([string]$Path)
     if (-not (Test-Path $Path)) { return $null }
     
     try {
+        $bitmap = $null
+        
         # Check if it's a PNG file - load directly
-        if ($Path -match '\.png$') {
-            $bytes = [System.IO.File]::ReadAllBytes($Path)
-            $base64 = [Convert]::ToBase64String($bytes)
-            return "data:image/png;base64,$base64"
-        }
-        
-        # Try High-Res Extraction first
-        $icon = [IconExtractor]::GetJumboIcon($Path)
-        
-        # Fallback if Jumbo fails
-        if (-not $icon) {
-            $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($Path)
-        }
-
-        if ($icon) {
-            $bitmap = $icon.ToBitmap()
+        if ($Path -match '\.(png|jpg|jpeg|bmp)$') {
+            $bitmap = [System.Drawing.Bitmap]::FromFile($Path)
+        } else {
+            # Try High-Res Extraction first (for .exe, .ico, .lnk)
+            $icon = [IconExtractor]::GetJumboIcon($Path)
             
-            # PROPORTION FIX: 
-            # To match Lucide icons (which are strokes and usually have internal padding),
-            # we can slightly pad the bitmap if it's a full square to make it feel the same size.
-            # However, standard high-res icons (256x256) usually have their own margins.
+            # Fallback if Jumbo fails
+            if (-not $icon) {
+                $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($Path)
+            }
+            
+            if ($icon) {
+                $bitmap = $icon.ToBitmap()
+                $icon.Dispose()
+            }
+        }
+        
+        if ($bitmap) {
+            # Normalize all icons to uniform size and padding
+            $normalized = ConvertTo-NormalizedIconBitmap -Source $bitmap
+            $bitmap.Dispose()
             
             $stream = New-Object System.IO.MemoryStream
-            $bitmap.Save($stream, [System.Drawing.Imaging.ImageFormat]::Png)
+            $normalized.Save($stream, [System.Drawing.Imaging.ImageFormat]::Png)
             $bytes = $stream.ToArray()
             $base64 = [Convert]::ToBase64String($bytes)
-            $stream.Close(); $stream.Dispose(); $bitmap.Dispose(); $icon.Dispose()
+            $stream.Close(); $stream.Dispose(); $normalized.Dispose()
             return "data:image/png;base64,$base64"
         }
     } catch {}

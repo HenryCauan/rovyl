@@ -96,6 +96,9 @@ export default function App() {
     }
     if (loaded.centerButton?.type === 'system' && loaded.centerButton?.iconName === 'Settings2') {
       loaded.centerButton.type = 'none';
+      loaded.centerButton.target = '';
+      loaded.centerButton.label = '';
+      loaded.centerButton.iconName = 'Circle';
     }
 
     // FUNCTIONAL ICON MIGRATION: Ensure internal widgets use 'lucide' and correct icon names
@@ -155,6 +158,36 @@ export default function App() {
         }
       });
     }
+  }, []);
+
+  // ICON NORMALIZATION CACHE-BUST:
+  // When the extract-icon.ps1 normalization algorithm changes, bump this version
+  // so all stored base64 icons get cleared and re-fetched with the new format.
+  const ICON_NORMALIZATION_VERSION = 'v3-onedirectional-75pct-threshold';
+  useEffect(() => {
+    if (!window.electron?.getFileIcon) return;
+    const storedVersion = localStorage.getItem('zenith_icon_normalization_version');
+    if (storedVersion === ICON_NORMALIZATION_VERSION) return; // Already using new format
+
+    // Version mismatch: clear all stored customIconUrl so healing re-fetches them
+    setConfig(prev => {
+      const clearIcons = (items: AppItem[]): AppItem[] =>
+        items.map(item => ({
+          ...item,
+          customIconUrl: item.iconSource === 'native' ? undefined : item.customIconUrl,
+          children: item.children ? clearIcons(item.children) : undefined,
+        }));
+      return {
+        ...prev,
+        workspaces: prev.workspaces.map(ws => ({
+          ...ws,
+          apps: clearIcons(ws.apps),
+        })),
+      };
+    });
+
+    localStorage.setItem('zenith_icon_normalization_version', ICON_NORMALIZATION_VERSION);
+    console.log('[Icons] Cache-busted: re-fetching icons with new normalization.');
   }, []);
 
   // ICON HEALING: Automatically re-fetch missing native icons
