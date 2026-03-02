@@ -463,7 +463,7 @@ app.whenReady().then(async () => {
             mainWindow.setOpacity(1); // Restore opacity
             mainWindow.show();
             mainWindow.focus();
-            mainWindow.webContents.send("on-open-dashboard");
+            mainWindow.webContents.send("open-settings");
           }
         },
       },
@@ -567,7 +567,7 @@ app.whenReady().then(async () => {
       mainWindow.setOpacity(1);
       mainWindow.show();
       mainWindow.focus();
-      mainWindow.webContents.send("on-open-dashboard");
+      mainWindow.webContents.send("open-settings");
     }
   });
 

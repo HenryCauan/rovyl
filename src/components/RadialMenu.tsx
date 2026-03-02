@@ -40,17 +40,17 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
 
   // Memoize menu radius calculation for performance
   const actualMenuRadius = React.useMemo(() => {
-    let radius = config.menuRadius;
+    // Make appSpacing additive for a more direct visual feedback in Settings
+    let radius = config.menuRadius + minGap;
 
     if (numberOfApps > 1) {
-      const effectiveIconDiameter = iconSizePx + minGap;
+      const effectiveIconDiameter = iconSizePx + (minGap / 2); // Half gap for tighter calc but additive base
       const anglePerSliceRad = (360 / numberOfApps) * (Math.PI / 180);
       const sinHalfAngle = Math.sin(anglePerSliceRad / 2);
       if (sinHalfAngle > 0) {
         const requiredRadiusForSpacing = (effectiveIconDiameter / 2) / sinHalfAngle;
-        radius = Math.max(config.menuRadius, requiredRadiusForSpacing);
-      } else {
-        radius = config.menuRadius + effectiveIconDiameter;
+        // Ensure we respect the required radius but the base is already expanded by minGap
+        radius = Math.max(radius, requiredRadiusForSpacing);
       }
     }
 

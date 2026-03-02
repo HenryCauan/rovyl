@@ -55,7 +55,7 @@ export const IconPicker: React.FC<IconPickerProps> = ({ selectedIcon, onSelect }
 
       {/* Grid container */}
       <div
-        className="flex-1 grid grid-cols-8 gap-1.5 overflow-y-auto overflow-x-hidden pr-1 custom-scrollbar content-start"
+        className="flex-1 grid grid-cols-6 gap-2 overflow-y-auto overflow-x-hidden pr-1 custom-scrollbar content-start pb-2"
         onScroll={handleScroll}
       >
         {visibleIcons.map(iconName => {
@@ -79,13 +79,13 @@ export const IconPicker: React.FC<IconPickerProps> = ({ selectedIcon, onSelect }
               `}
               title={iconName}
             >
-              <Icon size={18} strokeWidth={1.5} />
+              <Icon size={24} strokeWidth={1.5} />
             </button>
           );
         })}
 
         {filteredIcons.length === 0 && (
-          <div className="col-span-8 py-10 text-center">
+          <div className="col-span-6 py-10 text-center">
             <p className="text-white/15 text-sm font-medium">Nenhum ícone encontrado.</p>
           </div>
         )}

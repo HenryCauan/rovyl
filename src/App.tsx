@@ -516,6 +516,7 @@ export default function App() {
   const handleOpenSettings = () => {
     if (isMenuOpen) setIsMenuOpen(false);
     setIsSettingsOpen(true);
+    setIsDashboardOpen(true); // Ensure settings opens in "page" mode (full window)
     // When opening settings from dashboard, we keep track of it via existing props
     // or we can just let SettingsModal call onOpenDashboard when closed.
     if (isDesktopMode && window.electron) {

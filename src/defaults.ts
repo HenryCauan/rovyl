@@ -10,7 +10,7 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   menuOpacity: 0.8,
   menuBackgroundStyle: "circle",
   appSpacing: 10, // Default spacing between apps
-  activationThreshold: 50,
+  activationThreshold: 60,
   centerButton: {
     type: "none",
     target: "",

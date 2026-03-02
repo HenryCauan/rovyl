@@ -109,16 +109,19 @@ const AppEditorModal = React.memo(({
                                                     <>
                                                         <button
                                                             onClick={handlePickCommand}
-                                                            className="px-5 h-[46px] bg-white text-black font-black text-[10px] uppercase tracking-[0.1em] rounded-xl hover:bg-gray-200 transition-all duration-300 shadow-xl active:scale-95 flex items-center justify-center gap-2 group"
+                                                            className="px-4 h-[46px] bg-white text-black font-black text-[10px] uppercase tracking-[0.1em] rounded-xl hover:bg-gray-200 transition-all duration-300 shadow-xl active:scale-95 flex items-center justify-center gap-2 group"
+                                                            title="Abrir Explorador de Arquivos"
                                                         >
-                                                            <span>Scan</span>
+                                                            <Folder size={14} strokeWidth={2.5} />
+                                                            <span>Explorar</span>
                                                         </button>
                                                         <button
                                                             onClick={() => setShowAppSelector(true)}
-                                                            className="w-[46px] h-[46px] bg-white/[0.03] border border-white/5 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/[0.08] rounded-xl transition-all duration-300 active:scale-90"
-                                                            title="App Matrix"
+                                                            className="px-4 h-[46px] bg-white/[0.03] border border-white/5 flex items-center justify-center gap-2 text-white/40 hover:text-white hover:bg-white/[0.08] rounded-xl transition-all duration-300 active:scale-90"
+                                                            title="Abrir Seletor de Aplicativos do Sistema"
                                                         >
-                                                            <LayoutGrid size={18} strokeWidth={1.5} />
+                                                            <LayoutGrid size={16} strokeWidth={1.5} />
+                                                            <span className="font-black text-[10px] uppercase tracking-[0.1em]">Apps</span>
                                                         </button>
                                                     </>
                                                 )}
@@ -2235,18 +2238,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 const bestIcon = getBestLucideIcon(filePath.split(/[\\/]/).pop() || 'App', filePath);
                 const nativeIconData = await extractIconFromPath(filePath);
 
-                if (nativeIconData) {
-                    handleAppUpdates({
-                        command: filePath,
-                        ...nativeIconData
-                    });
-                } else {
-                    handleAppUpdates({
-                        command: filePath,
-                        iconName: bestIcon,
-                        iconSource: 'lucide'
-                    });
-                }
+                handleAppUpdates({
+                    command: filePath,
+                    iconName: bestIcon,
+                    iconSource: 'native', // Always prefer native
+                    ...(nativeIconData || {})
+                });
             }
         } catch (e) {
             console.error("Pick Command Error:", e);
@@ -2349,20 +2346,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         if (!editingApp) return;
 
         const nativeIconData = await extractIconFromPath(appData.path);
-        if (nativeIconData) {
-            handleAppUpdates({
-                command: appData.path,
-                label: appData.name,
-                ...nativeIconData
-            });
-        } else {
-            handleAppUpdates({
-                command: appData.path,
-                label: appData.name,
-                iconName: bestIcon,
-                iconSource: 'lucide'
-            });
-        }
+        handleAppUpdates({
+            command: appData.path,
+            label: appData.name,
+            iconName: bestIcon,
+            iconSource: 'native', // Always prefer native
+            ...(nativeIconData || {})
+        });
     };
 
     const handleAddApp = (type: 'app' | 'folder') => {
