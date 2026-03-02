@@ -247,7 +247,7 @@ const AppEditorModal = React.memo(({
 const WidgetsTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig: (c: any) => void }) => {
     return (
         <motion.div
-            className="pt-10 md:pt-16 lg:pt-20 h-full overflow-y-auto custom-scrollbar"
+            className="pt-10 md:pt-16 lg:pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
@@ -379,7 +379,7 @@ const BentoCard = React.memo(({ title, icon: Icon, children, description, classN
 const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig: (c: any) => void }) => {
     return (
         <motion.div
-            className="pt-10 md:pt-16 lg:pt-20 h-full overflow-y-auto custom-scrollbar"
+            className="pt-10 md:pt-16 lg:pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
@@ -1335,6 +1335,7 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
                     <div className="h-px bg-white/[0.08]" />
 
                 </div>
+                <div className="h-24" />
             </div>
         </motion.div>
     );
@@ -1343,7 +1344,7 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
 const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig: (c: any) => void }) => {
     return (
         <motion.div
-            className="pt-10 md:pt-16 lg:pt-20 h-full overflow-y-auto custom-scrollbar"
+            className="pt-10 md:pt-16 lg:pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
@@ -1501,7 +1502,7 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
 const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig: (c: any) => void }) => {
     return (
         <motion.div
-            className="pt-10 md:pt-16 lg:pt-20 h-full overflow-y-auto custom-scrollbar"
+            className="pt-10 md:pt-16 lg:pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
@@ -1631,7 +1632,7 @@ const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setCo
 const UserTab = React.memo(({ user }: { user: UserProfile | null }) => {
     return (
         <motion.div
-            className="pt-10 md:pt-16 lg:pt-20 h-full overflow-y-auto custom-scrollbar"
+            className="pt-10 md:pt-16 lg:pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
@@ -1932,7 +1933,7 @@ const SearchResultsView = React.memo(({
 }) => {
     return (
         <motion.div
-            className="pt-10 md:pt-16 lg:pt-20 h-full overflow-y-auto custom-scrollbar"
+            className="pt-10 md:pt-16 lg:pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.98 }}
@@ -2086,6 +2087,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const dragAppRef = useRef<number | null>(null);
     const [dragOverWorkspace, setDragOverWorkspace] = useState<number | null>(null);
     const [dragOverApp, setDragOverApp] = useState<number | null>(null);
+    const [showResetConfirm, setShowResetConfirm] = useState(false);
 
     // Reset view when tab changes or modal opens/closes
     useEffect(() => {
@@ -2618,6 +2620,91 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 onAppSelect={handleAppSelect}
             />
 
+            {/* Reset Confirmation Modal */}
+            <AnimatePresence>
+                {showResetConfirm && (
+                    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setShowResetConfirm(false)}
+                            className="absolute inset-0 bg-black/70 backdrop-blur-md"
+                        />
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.92, y: 16 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.94, y: 10 }}
+                            transition={{ type: 'spring', damping: 26, stiffness: 340, mass: 0.8 }}
+                            className="relative w-full max-w-sm overflow-hidden"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            {/* Glass card */}
+                            <div
+                                className="rounded-2xl p-7 flex flex-col gap-6"
+                                style={{
+                                    background: 'rgba(10, 10, 12, 0.82)',
+                                    backdropFilter: 'blur(32px)',
+                                    WebkitBackdropFilter: 'blur(32px)',
+                                    border: '1px solid rgba(255,255,255,0.07)',
+                                    boxShadow: '0 32px 80px rgba(0,0,0,0.7), 0 0 0 0.5px rgba(255,255,255,0.04) inset',
+                                }}
+                            >
+                                {/* Icon + header */}
+                                <div className="flex flex-col items-center gap-4 text-center">
+                                    <div
+                                        className="w-14 h-14 rounded-2xl flex items-center justify-center"
+                                        style={{
+                                            background: 'rgba(239,68,68,0.1)',
+                                            border: '1px solid rgba(239,68,68,0.2)',
+                                        }}
+                                    >
+                                        <RotateCcw size={26} strokeWidth={1.5} className="text-red-400" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-[15px] font-semibold text-white tracking-tight mb-1.5" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
+                                            Redefinir configurações
+                                        </h3>
+                                        <p className="text-[12px] text-white/40 leading-relaxed">
+                                            Todas as configurações serão apagadas e o app será reiniciado. Esta ação não pode ser desfeita.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Actions */}
+                                <div className="flex flex-col gap-2.5">
+                                    <button
+                                        onClick={() => {
+                                            setShowResetConfirm(false);
+                                            localStorage.clear();
+                                            if (window.electron?.resetConfig) {
+                                                window.electron.resetConfig();
+                                            } else {
+                                                window.location.reload();
+                                            }
+                                        }}
+                                        className="w-full py-3 rounded-xl text-[13px] font-semibold tracking-wide transition-all duration-200 hover:brightness-110 active:scale-[0.98]"
+                                        style={{
+                                            background: 'rgba(239,68,68,0.18)',
+                                            border: '1px solid rgba(239,68,68,0.3)',
+                                            color: '#f87171',
+                                        }}
+                                    >
+                                        Sim, redefinir
+                                    </button>
+                                    <button
+                                        onClick={() => setShowResetConfirm(false)}
+                                        className="w-full py-3 rounded-xl text-[13px] font-medium text-white/40 hover:text-white/70 tracking-wide transition-all duration-200 hover:bg-white/[0.04] border border-transparent hover:border-white/[0.06]"
+                                    >
+                                        Cancelar
+                                    </button>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
             {/* App/URL Selection Modal */}
             <AnimatePresence>
                 {showAppSelectionModal && (
@@ -2852,16 +2939,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             </button>
 
                             <button
-                                onClick={() => {
-                                    if (confirm("Você tem certeza que deseja resetar todas as configurações? O app será reiniciado.")) {
-                                        localStorage.clear();
-                                        if (window.electron && window.electron.resetConfig) {
-                                            window.electron.resetConfig();
-                                        } else {
-                                            window.location.reload();
-                                        }
-                                    }
-                                }}
+                                onClick={() => setShowResetConfirm(true)}
                                 className={`w-full flex items-center ${isSidebarExpanded ? 'gap-3 px-4' : 'justify-center'} py-2.5 text-red-400/50 hover:text-red-400 hover:bg-red-500/5 transition-all duration-300 group relative`}
                             >
                                 <div className="flex items-center justify-center transition-all duration-300 relative z-10">

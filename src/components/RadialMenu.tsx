@@ -610,11 +610,6 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                   x: actualMenuRadius * Math.cos(angleRad),
                   y: actualMenuRadius * Math.sin(angleRad),
                 };
-                const labelDist = (iconSizePx * 0.75) + 8;
-                const labelPos = {
-                  x: Math.cos(angleRad) * labelDist,
-                  y: Math.sin(angleRad) * labelDist
-                };
 
                 const shouldUseCustomIcon = (() => {
                   // Lista de apps que devem usar ícone Lucide em vez do nativo por serem problemáticos ou feios
@@ -717,25 +712,40 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
 
                       {config.showLabels && (
                         <motion.div
-                          className="absolute flex flex-col items-center justify-center w-48 pointer-events-none z-30"
+                          className="absolute pointer-events-none z-30"
                           style={{
-                            left: '50%', top: '50%',
-                            x: labelPos.x, y: labelPos.y,
-                            translateX: '-50%', translateY: '-50%'
+                            left: '50%',
+                            top: '50%',
+                            translateX: '-50%',
+                            translateY: '0%',
                           }}
-                          initial={{ opacity: 0, scale: 0.9 }}
-                          animate={{ opacity: isActive ? 1 : 0, scale: isActive ? 1 : 0.9 }}
-                          exit={{ opacity: 0, scale: 0.9 }}
+                          initial={{ opacity: 0, scale: 0.85, y: iconSizePx / 2 + 0 }}
+                          animate={{
+                            opacity: isActive ? 1 : 0,
+                            scale: isActive ? 1 : 0.9,
+                            x: 0,
+                            y: iconSizePx / 2 + 4,
+                          }}
+                          exit={{ opacity: 0, scale: 0.85, y: iconSizePx / 2 + 0 }}
+                          transition={{ type: 'spring', damping: 22, stiffness: 380, mass: 0.6 }}
                         >
-                          <div className="bg-[#050505] px-3 py-1.5 rounded-lg border border-white/10 shadow-xl flex flex-col items-center">
-                            <span className="text-white font-semibold text-sm tracking-wide whitespace-nowrap">
+                          <div
+                            className="flex items-center gap-2 px-3 py-1.5 rounded-xl whitespace-nowrap"
+                            style={{
+                              background: 'rgba(8, 8, 10, 0.72)',
+                              backdropFilter: 'blur(16px)',
+                              WebkitBackdropFilter: 'blur(16px)',
+                              border: `1px solid rgba(255,255,255,0.09)`,
+                              boxShadow: `0 8px 32px rgba(0,0,0,0.55), 0 0 0 0.5px rgba(255,255,255,0.04) inset`,
+                            }}
+                          >
+                            <span
+                              className="text-white/90 font-medium text-[13px] tracking-wide leading-none"
+                              style={{ fontFamily: 'Space Grotesk, sans-serif' }}
+                            >
                               {app.label}
                             </span>
-                            {isActive && (
-                              <span className="text-white/50 text-[10px] uppercase tracking-wider mt-0.5">
-                                {app.type === 'folder' ? `${app.children?.length || 0} Apps` : app.description}
-                              </span>
-                            )}
+
                           </div>
                         </motion.div>
                       )}
