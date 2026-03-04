@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Play, Pause, SkipForward, RotateCcw, CheckCircle2, Circle, Plus, Settings2, Trash2 } from 'lucide-react';
-import { PomodoroState, PomodoroConfig, PomodoroTask, PomodoroMode } from '../types';
+import { PomodoroState, PomodoroConfig, PomodoroTask, PomodoroMode, UIConfig } from '../types';
+import { getTranslation } from '../translations';
 
 interface PomodoroWidgetProps {
   isOpen: boolean;
@@ -16,14 +17,18 @@ interface PomodoroWidgetProps {
   updateConfig: (config: Partial<PomodoroConfig>) => void;
   setTasks: (tasks: PomodoroTask[]) => void;
   setActiveTaskId: (id: string | null) => void;
+  uiConfig: UIConfig;
 }
 
 export const PomodoroWidget: React.FC<PomodoroWidgetProps> = ({
   isOpen, onClose, state, config, tasks, activeTaskId,
-  toggleTimer, resetTimer, skipTimer, updateConfig, setTasks, setActiveTaskId
+  toggleTimer, resetTimer, skipTimer, updateConfig, setTasks, setActiveTaskId,
+  uiConfig
 }) => {
   const [view, setView] = useState<'timer' | 'tasks' | 'settings'>('timer');
   const [newTaskTitle, setNewTaskTitle] = useState('');
+
+  const t = (key: string) => getTranslation(uiConfig, key);
 
   if (!isOpen) return null;
 
@@ -43,9 +48,9 @@ export const PomodoroWidget: React.FC<PomodoroWidgetProps> = ({
 
   const getModeLabel = () => {
     switch (state.mode) {
-      case 'work': return 'Focus Time';
-      case 'shortBreak': return 'Short Break';
-      case 'longBreak': return 'Long Break';
+      case 'work': return t('pomodoro.focus_time');
+      case 'shortBreak': return t('pomodoro.short_break');
+      case 'longBreak': return t('pomodoro.long_break');
     }
   };
 
@@ -113,19 +118,19 @@ export const PomodoroWidget: React.FC<PomodoroWidgetProps> = ({
               onClick={() => setView('timer')}
               className={`text-sm font-medium uppercase tracking-wider transition-colors ${view === 'timer' ? 'text-white' : 'text-white/40 hover:text-white'}`}
             >
-              Timer
+              {t('pomodoro.timer_tab')}
             </button>
             <button
               onClick={() => setView('tasks')}
               className={`text-sm font-medium uppercase tracking-wider transition-colors ${view === 'tasks' ? 'text-white' : 'text-white/40 hover:text-white'}`}
             >
-              Tasks
+              {t('pomodoro.tasks_tab')}
             </button>
             <button
               onClick={() => setView('settings')}
               className={`text-sm font-medium uppercase tracking-wider transition-colors ${view === 'settings' ? 'text-white' : 'text-white/40 hover:text-white'}`}
             >
-              Config
+              {t('pomodoro.config_tab')}
             </button>
           </div>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
@@ -191,14 +196,14 @@ export const PomodoroWidget: React.FC<PomodoroWidgetProps> = ({
                     <div className="flex items-center gap-3 overflow-hidden">
                       <div className={`w-2 h-2 rounded-full ${state.isActive ? 'animate-pulse ' + getModeBg() : 'bg-white/20'}`} />
                       <div className="flex flex-col">
-                        <span className="text-xs text-white/40 uppercase tracking-wider font-semibold">Current Task</span>
+                        <span className="text-xs text-white/40 uppercase tracking-wider font-semibold">{t('pomodoro.current_task')}</span>
                         <span className="text-sm text-white truncate max-w-[200px]">
-                          {activeTaskId ? tasks.find(t => t.id === activeTaskId)?.title || 'Task Not Found' : 'No task selected'}
+                          {activeTaskId ? tasks.find(t => t.id === activeTaskId)?.title || t('pomodoro.task_not_found') : t('pomodoro.no_task_selected')}
                         </span>
                       </div>
                     </div>
                     <div className="flex flex-col items-end">
-                      <span className="text-xs text-white/40 uppercase tracking-wider font-semibold">Cycles</span>
+                      <span className="text-xs text-white/40 uppercase tracking-wider font-semibold">{t('pomodoro.cycles')}</span>
                       <span className="text-sm text-white font-mono">{state.cyclesCompleted} / {config.longBreakInterval}</span>
                     </div>
                   </div>
@@ -217,7 +222,7 @@ export const PomodoroWidget: React.FC<PomodoroWidgetProps> = ({
                 <form onSubmit={addTask} className="relative mb-6">
                   <input
                     type="text"
-                    placeholder="Add a new task..."
+                    placeholder={t('pomodoro.add_task_placeholder')}
                     value={newTaskTitle}
                     onChange={e => setNewTaskTitle(e.target.value)}
                     className="w-full bg-[#1a1a1a] text-white placeholder:text-white/20 text-sm p-4 rounded-xl border border-white/10 focus:border-white/30 outline-none pr-12 transition-colors"
@@ -230,7 +235,7 @@ export const PomodoroWidget: React.FC<PomodoroWidgetProps> = ({
                 <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2 pr-2">
                   {tasks.length === 0 && (
                     <div className="text-center text-white/20 py-12 text-sm italic">
-                      No tasks yet. Stay focused!
+                      {t('pomodoro.no_tasks')}
                     </div>
                   )}
                   {tasks.map(task => (
@@ -251,7 +256,7 @@ export const PomodoroWidget: React.FC<PomodoroWidgetProps> = ({
                           onClick={() => setActiveTaskId(task.id)}
                         >
                           <div className={`text-sm text-white font-medium truncate ${task.completed ? 'line-through text-white/40' : ''}`}>{task.title}</div>
-                          <div className="text-xs text-white/30 mt-0.5">{task.completedPomodoros} pomodoros</div>
+                          <div className="text-xs text-white/30 mt-0.5">{task.completedPomodoros} {t('pomodoro.pomodoros_count')}</div>
                         </div>
                       </div>
                       <button onClick={() => deleteTask(task.id)} className="text-white/20 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all ml-2">
@@ -272,11 +277,11 @@ export const PomodoroWidget: React.FC<PomodoroWidgetProps> = ({
                 className="h-full flex flex-col space-y-6"
               >
                 <div className="space-y-4">
-                  <h3 className="text-white/40 text-xs uppercase tracking-widest font-semibold mb-4">Timers (Minutes)</h3>
+                  <h3 className="text-white/40 text-xs uppercase tracking-widest font-semibold mb-4">{t('pomodoro.timers_title')}</h3>
 
                   <div className="space-y-2">
                     <label className="text-sm text-white/70 flex justify-between">
-                      Focus Time
+                      {t('pomodoro.focus_time')}
                       <span className="text-white font-mono">{config.workDuration}</span>
                     </label>
                     <input
@@ -289,7 +294,7 @@ export const PomodoroWidget: React.FC<PomodoroWidgetProps> = ({
 
                   <div className="space-y-2">
                     <label className="text-sm text-white/70 flex justify-between">
-                      Short Break
+                      {t('pomodoro.short_break')}
                       <span className="text-white font-mono">{config.shortBreakDuration}</span>
                     </label>
                     <input
@@ -302,7 +307,7 @@ export const PomodoroWidget: React.FC<PomodoroWidgetProps> = ({
 
                   <div className="space-y-2">
                     <label className="text-sm text-white/70 flex justify-between">
-                      Long Break
+                      {t('pomodoro.long_break')}
                       <span className="text-white font-mono">{config.longBreakDuration}</span>
                     </label>
                     <input
@@ -315,10 +320,10 @@ export const PomodoroWidget: React.FC<PomodoroWidgetProps> = ({
                 </div>
 
                 <div className="space-y-4 pt-4 border-t border-white/5">
-                  <h3 className="text-white/40 text-xs uppercase tracking-widest font-semibold mb-4">Behavior</h3>
+                  <h3 className="text-white/40 text-xs uppercase tracking-widest font-semibold mb-4">{t('pomodoro.behavior_title')}</h3>
 
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-white/80">Auto-start Breaks</span>
+                    <span className="text-sm text-white/80">{t('pomodoro.auto_start_breaks')}</span>
                     <button
                       onClick={() => updateConfig({ autoStart: !config.autoStart })}
                       className={`w-12 h-6 rounded-full relative transition-colors ${config.autoStart ? 'bg-green-500' : 'bg-white/10'}`}
@@ -331,13 +336,11 @@ export const PomodoroWidget: React.FC<PomodoroWidgetProps> = ({
                 <div className="mt-auto pt-6 text-center">
                   <div className="text-6xl font-semibold text-white/5 tracking-tighter">ZENITH</div>
                 </div>
-
               </motion.div>
             )}
           </AnimatePresence>
         </div>
       </motion.div>
-
     </div>
   );
 };

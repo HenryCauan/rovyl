@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { ZenithLogo } from './ZenithLogo';
 import { UIConfig, UserProfile } from '../types';
+import { getTranslation } from '../translations';
 
 interface WelcomeScreenProps {
     onOpenSettings: () => void;
@@ -39,10 +40,12 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
         if (user) {
             setShowFeedback(true);
         } else {
-            alert("Please sign in or register to send feedback.");
+            alert(getTranslation(config, 'welcome.sign_in_hint') || "Please sign in or register to send feedback.");
             setShowLogin(true);
         }
     };
+
+    const t = (key: string) => getTranslation(config, key);
 
     return (
         <div className={`absolute inset-0 w-full h-full z-0 grid place-items-center p-8 select-none overflow-hidden rounded-xl ${className || ''}`}>
@@ -82,7 +85,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                     {/* Version Badge */}
                     <div className="flex items-center gap-2 bg-white/5 border border-white/5 rounded-full px-3 py-1 mb-6">
                         <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-                        <span className="text-[10px] text-white/40 font-mono tracking-widest uppercase">System Operational v1.2</span>
+                        <span className="text-[10px] text-white/40 font-mono tracking-widest uppercase">{t('welcome.system_operational')}</span>
                     </div>
 
                     {/* Divider */}
@@ -95,14 +98,14 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                         <div className="w-8 h-10 border border-white/20 rounded-t-lg rounded-b-sm relative flex justify-center pt-1.5 transition-colors group-hover:border-white/50">
                             <div className="w-1 h-3 bg-white/40 rounded-full" />
                         </div>
-                        <span className="text-[9px] text-white/30 tracking-[0.2em] font-medium group-hover:text-white/60">LAUNCH</span>
+                        <span className="text-[9px] text-white/30 tracking-[0.2em] font-medium group-hover:text-white/60">{t('welcome.open_menu')}</span>
                     </div>
                     <div className="p-4 sm:p-6 flex flex-col items-center gap-3 group cursor-help transition-colors hover:bg-white/5">
                         <div className="w-8 h-10 border border-white/20 rounded-t-lg rounded-b-sm relative flex justify-center pt-1.5 transition-colors group-hover:border-white/50">
                             <div className="w-1 h-3 bg-white/40 rounded-full" />
                             <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 text-[7px] font-bold border border-white/20 px-1 rounded bg-black text-white/80">2x</div>
                         </div>
-                        <span className="text-[9px] text-white/30 tracking-[0.2em] font-medium group-hover:text-white/60">CONFIG</span>
+                        <span className="text-[9px] text-white/30 tracking-[0.2em] font-medium group-hover:text-white/60">{t('welcome.adjustments')}</span>
                     </div>
                     <div className="p-4 sm:p-6 flex flex-col items-center gap-3 group cursor-help transition-colors hover:bg-white/5">
                         <div className="h-10 flex items-center justify-center gap-1">
@@ -110,7 +113,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                                 <div key={i} className="w-6 h-6 rounded border border-white/20 flex items-center justify-center text-[10px] text-white/50 font-mono bg-white/5">{i}</div>
                             ))}
                         </div>
-                        <span className="text-[9px] text-white/30 tracking-[0.2em] font-medium group-hover:text-white/60">WORKSPACES</span>
+                        <span className="text-[9px] text-white/30 tracking-[0.2em] font-medium group-hover:text-white/60">{t('welcome.workspaces')}</span>
                     </div>
                 </div>
             </motion.div>
@@ -128,8 +131,8 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                     <DockButton
                         onClick={() => setShowLogin(true)}
                         active={!!user}
-                        label={user ? user.name : "Sign In"}
-                        subLabel={user ? (isPremiumOrTrial ? "Pro" : "Free") : "Get Trial"}
+                        label={user ? user.name : t('welcome.sign_in')}
+                        subLabel={user ? (isPremiumOrTrial ? t('welcome.pro') : t('welcome.free')) : t('welcome.free_trial')}
                     >
                         {user ? (
                             <User size={20} />
@@ -140,10 +143,10 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
 
                     <div className="w-px h-6 bg-white/10 mx-1" />
 
-                    <DockButton onClick={onOpenSettings} label="Settings" icon={Settings} />
-                    <DockButton onClick={onClose} label="Done" icon={Command} />
-                    <DockButton onClick={() => window.open('https://docs.zenith-os.com', '_blank')} label="Docs" icon={Book} />
-                    <DockButton onClick={handleFeedbackClick} label="Feedback" icon={MessageSquare} />
+                    <DockButton onClick={onOpenSettings} label={t('sidebar.interface')} icon={Settings} />
+                    <DockButton onClick={onClose} label={t('welcome.ready')} icon={Command} />
+                    <DockButton onClick={() => window.open('https://docs.zenith-os.com', '_blank')} label={t('welcome.help')} icon={Book} />
+                    <DockButton onClick={handleFeedbackClick} label={t('welcome.feedback')} icon={MessageSquare} />
 
                 </div>
             </motion.div>
@@ -166,7 +169,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500" />
 
                             <div className="flex justify-between items-center mb-6">
-                                <h3 className="text-xl font-light text-white">Zenith ID</h3>
+                                <h3 className="text-xl font-light text-white">{t('welcome.my_account')}</h3>
                                 <button onClick={() => setShowLogin(false)} className="text-white/40 hover:text-white"><X size={20} /></button>
                             </div>
 
@@ -183,31 +186,36 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                                         {isPremiumOrTrial ? (
                                             <div className="flex items-center justify-center gap-2 text-yellow-500">
                                                 <Crown size={16} fill="currentColor" />
-                                                <span className="text-xs font-bold uppercase">Zenith Pro Active</span>
+                                                <span className="text-xs font-bold uppercase">{t('welcome.zenith_pro_active')}</span>
                                             </div>
                                         ) : (
-                                            <div className="text-xs text-white/50">Free Plan</div>
+                                            <div className="text-xs text-white/50">{t('welcome.free')}</div>
                                         )}
                                     </div>
-                                    <button className="w-full py-2 text-sm text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">Sign Out</button>
+                                    <button className="w-full py-2 text-sm text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">{t('welcome.sign_out')}</button>
                                 </div>
                             ) : (
                                 <>
                                     <p className="text-white/50 text-sm mb-6 leading-relaxed">
-                                        Sign in to sync your layout across devices and unlock the <span className="text-white font-medium">7-day Pro Trial</span>.
+                                        {t('welcome.login_sync_desc').split('7 dias de Zenith Pro').map((part: string, i: number, arr: any[]) => (
+                                            <React.Fragment key={i}>
+                                                {part}
+                                                {i < arr.length - 1 && <span className="text-white font-medium">7 dias de Zenith Pro</span>}
+                                            </React.Fragment>
+                                        ))}
                                     </p>
                                     <div className="space-y-3">
                                         <button
                                             onClick={() => handleLoginClick('google')}
                                             className="w-full py-3 bg-white text-black font-medium rounded-lg flex items-center justify-center gap-3 hover:bg-gray-200 transition-colors"
                                         >
-                                            <img src="https://www.google.com/favicon.ico" className="w-4 h-4" /> Continue with Google
+                                            <img src="https://www.google.com/favicon.ico" className="w-4 h-4" /> {t('welcome.google_login')}
                                         </button>
                                         <button
                                             onClick={() => handleLoginClick('email')}
                                             className="w-full py-3 bg-[#222] text-white font-medium rounded-lg flex items-center justify-center gap-3 hover:bg-[#333] transition-colors border border-white/5"
                                         >
-                                            <LogIn size={16} /> Continue with Email
+                                            <LogIn size={16} /> {t('welcome.email_login')}
                                         </button>
                                     </div>
                                 </>
@@ -229,17 +237,17 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                             onClick={e => e.stopPropagation()}
                         >
                             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-400 to-blue-500" />
-                            <h3 className="text-xl text-white mb-1 font-light">Feedback</h3>
-                            <p className="text-white/40 text-xs mb-4">Help us improve Zenith. Bug reports and feature requests are welcome.</p>
+                            <h3 className="text-xl text-white mb-1 font-light">{t('welcome.feedback')}</h3>
+                            <p className="text-white/40 text-xs mb-4">{t('welcome.feedback_desc')}</p>
 
                             <textarea
                                 className="w-full h-32 bg-[#141414] border border-white/10 rounded-lg p-3 text-white text-sm mb-4 resize-none focus:border-white/30 outline-none placeholder:text-white/20"
-                                placeholder="Describe your experience..."
+                                placeholder={t('welcome.feedback_placeholder')}
                                 autoFocus
                             />
                             <div className="flex justify-end gap-3">
-                                <button onClick={() => setShowFeedback(false)} className="px-4 py-2 text-white/50 hover:text-white text-sm transition-colors">Cancel</button>
-                                <button onClick={() => { setShowFeedback(false); alert("Feedback sent!"); }} className="px-6 py-2 bg-white text-black rounded-lg text-sm font-bold hover:scale-105 transition-transform">Send</button>
+                                <button onClick={() => setShowFeedback(false)} className="px-4 py-2 text-white/50 hover:text-white text-sm transition-colors">{t('welcome.cancel')}</button>
+                                <button onClick={() => { setShowFeedback(false); alert(t('welcome.thanks_feedback')); }} className="px-6 py-2 bg-white text-black rounded-lg text-sm font-bold hover:scale-105 transition-transform">{t('welcome.send')}</button>
                             </div>
                         </motion.div>
                     </div>

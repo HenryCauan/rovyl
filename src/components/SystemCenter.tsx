@@ -4,14 +4,16 @@ import {
   Volume2, Sun, Wifi, Bluetooth, Moon,
   Battery, Music, SkipBack, SkipForward, Play, Pause, X
 } from 'lucide-react';
-import { Coordinates } from '../types';
+import { Coordinates, UIConfig } from '../types';
+import { getTranslation } from '../translations';
 
 interface SystemCenterProps {
   position: Coordinates;
   onClose: () => void;
+  config: UIConfig;
 }
 
-export const SystemCenter: React.FC<SystemCenterProps> = ({ position, onClose }) => {
+export const SystemCenter: React.FC<SystemCenterProps> = ({ position, onClose, config }) => {
   // Actual System State
   const [volume, setVolume] = useState(50);
   const [brightness, setBrightness] = useState(50);
@@ -22,6 +24,8 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({ position, onClose })
 
   // Real-time clock
   const [time, setTime] = useState(new Date());
+
+  const t = (key: string) => getTranslation(config, key);
 
   // Fetch initial states
   useEffect(() => {
@@ -102,10 +106,10 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({ position, onClose })
         <div className="flex justify-between items-center mb-8 text-white/80">
           <div className="flex flex-col">
             <span className="text-3xl font-light tracking-tight">
-              {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {time.toLocaleTimeString(config.language === 'pt' ? 'pt-BR' : 'en-US', { hour: '2-digit', minute: '2-digit' })}
             </span>
             <span className="text-xs text-white/40 uppercase tracking-widest font-medium">
-              {time.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })}
+              {time.toLocaleDateString(config.language === 'pt' ? 'pt-BR' : 'en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
             </span>
           </div>
           <div className="flex items-center gap-2 text-white/60 bg-white/5 px-3 py-1 rounded-full border border-white/5">
@@ -119,9 +123,9 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({ position, onClose })
           {/* Volume */}
           <div className="group">
             <div className="flex justify-between text-xs text-white/50 mb-2 uppercase tracking-wider">
-              <span className="flex items-center gap-2"><Volume2 size={12} /> System Volume</span>
+              <span className="flex items-center gap-2"><Volume2 size={12} /> {t('system.volume')}</span>
               <span className={volume < 0 ? 'text-red-400' : volume > 100 ? 'text-orange-400' : ''}>
-                {volume < 0 ? `${Math.abs(volume)}% Below Min` : volume > 100 ? `${volume}% Above Max` : `${volume}%`}
+                {volume < 0 ? `${Math.abs(volume)}% ${t('system.below_min')}` : volume > 100 ? `${volume}% ${t('system.above_max')}` : `${volume}%`}
               </span>
             </div>
             <div className="relative h-6 flex items-center">
@@ -134,7 +138,7 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({ position, onClose })
               />
               <div
                 className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-white rounded-full pointer-events-none"
-                style={{ 
+                style={{
                   width: `${Math.max(0, Math.min(100, volume))}%`,
                   backgroundColor: volume < 0 ? '#ef4444' : volume > 100 ? '#fb923c' : 'white'
                 }}
@@ -142,12 +146,12 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({ position, onClose })
             </div>
           </div>
 
-          {/* Brightness */}
+          {/* Brilho */}
           <div className="group">
             <div className="flex justify-between text-xs text-white/50 mb-2 uppercase tracking-wider">
-              <span className="flex items-center gap-2"><Sun size={12} /> Brightness</span>
+              <span className="flex items-center gap-2"><Sun size={12} /> {t('system.brightness')}</span>
               <span className={brightness < 0 ? 'text-red-400' : brightness > 100 ? 'text-orange-400' : ''}>
-                {brightness < 0 ? `${Math.abs(brightness)}% Below Min` : brightness > 100 ? `${brightness}% Above Max` : `${brightness}%`}
+                {brightness < 0 ? `${Math.abs(brightness)}% ${t('system.below_min')}` : brightness > 100 ? `${brightness}% ${t('system.above_max')}` : `${brightness}%`}
               </span>
             </div>
             <div className="relative h-6 flex items-center">
@@ -160,7 +164,7 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({ position, onClose })
               />
               <div
                 className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-white rounded-full pointer-events-none"
-                style={{ 
+                style={{
                   width: `${Math.max(0, Math.min(100, brightness))}%`,
                   backgroundColor: brightness < 0 ? '#ef4444' : brightness > 100 ? '#fb923c' : 'white'
                 }}
@@ -185,7 +189,7 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({ position, onClose })
           />
           <ToggleBtn
             icon={Moon}
-            label="Focus"
+            label={t('system.focus')}
             isActive={dnd}
             onClick={() => setDnd(!dnd)}
           />

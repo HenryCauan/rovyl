@@ -407,7 +407,7 @@ export default function App() {
       console.error('Execution error received:', errorMsg);
       setLastLaunched({
         id: 'error',
-        label: 'Erro de Execução',
+        label: 'Erro ao Abrir',
         command: '',
         iconName: 'AlertTriangle',
         description: errorMsg
@@ -575,7 +575,7 @@ export default function App() {
       setLastLaunched(itemForToast);
       setTimeout(() => setLastLaunched(null), 3000);
     } else {
-      setLastLaunched({ id: 'custom', label: 'Command', command: command, iconName: 'Terminal', description: 'Executing...' });
+      setLastLaunched({ id: 'custom', label: 'Comando', command: command, iconName: 'Terminal', description: 'Executando...' });
       setTimeout(() => setLastLaunched(null), 3000);
     }
 
@@ -699,21 +699,21 @@ export default function App() {
               <button
                 className="w-8 h-6 flex items-center justify-center text-white/30 hover:text-white hover:bg-white/10 rounded-md transition-all duration-200"
                 onClick={() => window.electron?.minimizeWindow()}
-                title="Minimize"
+                title="Minimizar"
               >
                 <Minus size={13} strokeWidth={2} />
               </button>
               <button
                 className="w-8 h-6 flex items-center justify-center text-white/30 hover:text-white hover:bg-white/10 rounded-md transition-all duration-200"
                 onClick={() => window.electron?.toggleMaximize()}
-                title={windowState === 'maximized' ? "Restore" : "Maximize"}
+                title={windowState === 'maximized' ? "Restaurar" : "Maximizar"}
               >
                 {windowState === 'maximized' ? <Square size={11} strokeWidth={2.5} /> : <Maximize size={11} strokeWidth={2.5} />}
               </button>
               <button
-                className="w-8 h-6 flex items-center justify-center text-white/30 hover:text-white hover:bg-red-500/80 rounded-md transition-all duration-200"
+                className="w-8 h-6 flex items-center justify-center text-white/30 hover:text-red-500/80 rounded-md transition-all duration-200"
                 onClick={() => window.electron?.quitApp()}
-                title="Quit Zenith"
+                title="Fechar Zenith"
               >
                 <X size={13} strokeWidth={2.5} />
               </button>
@@ -760,7 +760,7 @@ export default function App() {
               </motion.div>
               <h1 className="text-8xl font-thin text-white mb-4 tracking-tighter tabular-nums">{ringingAlarm.time}</h1>
               <h2 className="text-2xl font-light text-white/70 mb-12 uppercase tracking-widest">{ringingAlarm.label}</h2>
-              <button onClick={() => setRingingAlarm(null)} className="px-12 py-4 bg-white text-black text-lg font-bold rounded-full hover:scale-105 transition-transform">DISMISS</button>
+              <button onClick={() => setRingingAlarm(null)} className="px-12 py-4 bg-white text-black text-lg font-bold rounded-full hover:scale-105 transition-transform">FECHAR</button>
             </motion.div>
           )}
         </AnimatePresence>
@@ -776,11 +776,11 @@ export default function App() {
           currentWorkspace={config.workspaces[config.activeWorkspaceIndex]}
         />
 
-        {isSystemCenterOpen && <SystemCenter position={menuPosition} onClose={() => { setIsSystemCenterOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} />}
-        <NotesWidget isOpen={isNotesOpen} onClose={() => { setIsNotesOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} notes={notes} setNotes={setNotes} />
-        <AlarmWidget isOpen={isAlarmWidgetOpen} onClose={() => { setIsAlarmWidgetOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} alarms={alarms} setAlarms={setAlarms} />
-        <StopwatchWidget isOpen={isStopwatchOpen} onClose={() => { setIsStopwatchOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} />
-        <PomodoroWidget isOpen={isPomodoroOpen} onClose={() => { setIsPomodoroOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} {...pomodoro} />
+        {isSystemCenterOpen && <SystemCenter position={menuPosition} onClose={() => { setIsSystemCenterOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} config={config} />}
+        <NotesWidget isOpen={isNotesOpen} onClose={() => { setIsNotesOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} notes={notes} setNotes={setNotes} config={config} />
+        <AlarmWidget isOpen={isAlarmWidgetOpen} onClose={() => { setIsAlarmWidgetOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} alarms={alarms} setAlarms={setAlarms} config={config} />
+        <StopwatchWidget isOpen={isStopwatchOpen} onClose={() => { setIsStopwatchOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} config={config} />
+        <PomodoroWidget isOpen={isPomodoroOpen} onClose={() => { setIsPomodoroOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} {...pomodoro} uiConfig={config} />
 
         <SettingsModal
           isOpen={isSettingsOpen}

@@ -33,6 +33,7 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   workspaces: [], // Will be populated with DEFAULT_WORKSPACES
   activeWorkspaceIndex: 0,
   enableMouseTrigger: true,
+  language: "pt",
 };
 
 export const AVAILABLE_WIDGETS: WidgetDefinition[] = [

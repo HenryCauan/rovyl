@@ -1,19 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Play, Pause, RotateCcw, Flag } from 'lucide-react';
+import { UIConfig } from '../types';
+import { getTranslation } from '../translations';
 
 interface StopwatchWidgetProps {
   isOpen: boolean;
   onClose: () => void;
+  config: UIConfig;
 }
 
-export const StopwatchWidget: React.FC<StopwatchWidgetProps> = ({ isOpen, onClose }) => {
+export const StopwatchWidget: React.FC<StopwatchWidgetProps> = ({ isOpen, onClose, config }) => {
   const [isRunning, setIsRunning] = useState(false);
   const [time, setTime] = useState(0);
   const [laps, setLaps] = useState<number[]>([]);
   const startTimeRef = useRef<number>(0);
   const requestRef = useRef<number>(0);
   const previousTimeRef = useRef<number>(0);
+
+  const t = (key: string) => getTranslation(config, key);
 
   const animate = (timeNow: number) => {
     if (startTimeRef.current !== undefined) {
@@ -61,15 +66,15 @@ export const StopwatchWidget: React.FC<StopwatchWidgetProps> = ({ isOpen, onClos
     return (
       <div className="flex items-baseline font-mono tracking-tighter tabular-nums">
         <span className="text-7xl font-light text-white w-24 text-right">
-            {minutes.toString().padStart(2, '0')}
+          {minutes.toString().padStart(2, '0')}
         </span>
         <span className="text-7xl font-light text-white/40 px-1">:</span>
         <span className="text-7xl font-light text-white w-24 text-center">
-            {seconds.toString().padStart(2, '0')}
+          {seconds.toString().padStart(2, '0')}
         </span>
         <span className="text-4xl font-light text-white/40 ml-2">.</span>
         <span className="text-4xl font-light text-white w-16 text-left">
-            {milliseconds.toString().padStart(2, '0')}
+          {milliseconds.toString().padStart(2, '0')}
         </span>
       </div>
     );
@@ -86,7 +91,7 @@ export const StopwatchWidget: React.FC<StopwatchWidgetProps> = ({ isOpen, onClos
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -102,70 +107,70 @@ export const StopwatchWidget: React.FC<StopwatchWidgetProps> = ({ isOpen, onClos
         onClick={e => e.stopPropagation()}
       >
         <div className="flex justify-between w-full mb-8 items-center">
-            <h2 className="text-white/50 text-sm font-medium uppercase tracking-widest">Chronometer</h2>
-            <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
-                <X size={20} />
-            </button>
+          <h2 className="text-white/50 text-sm font-medium uppercase tracking-widest">{t('stopwatch.title')}</h2>
+          <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
+            <X size={20} />
+          </button>
         </div>
 
         {/* Display */}
         <div className="mb-12 relative">
-             {/* Glow effect */}
-             <div className="absolute inset-0 bg-white/5 blur-3xl rounded-full" />
-             {formatTime(time)}
+          {/* Glow effect */}
+          <div className="absolute inset-0 bg-white/5 blur-3xl rounded-full" />
+          {formatTime(time)}
         </div>
 
         {/* Controls */}
         <div className="flex items-center gap-6 mb-8">
-            <button 
-                onClick={handleReset}
-                className="w-14 h-14 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 flex items-center justify-center text-white/60 hover:text-white transition-all"
-            >
-                <RotateCcw size={20} />
-            </button>
+          <button
+            onClick={handleReset}
+            className="w-14 h-14 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 flex items-center justify-center text-white/60 hover:text-white transition-all"
+          >
+            <RotateCcw size={20} />
+          </button>
 
-            <button 
-                onClick={isRunning ? handlePause : handleStart}
-                className={`
+          <button
+            onClick={isRunning ? handlePause : handleStart}
+            className={`
                     w-20 h-20 rounded-full flex items-center justify-center transition-all shadow-lg
-                    ${isRunning 
-                        ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20 border border-red-500/50' 
-                        : 'bg-white text-black hover:scale-105 border border-white'
-                    }
+                    ${isRunning
+                ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20 border border-red-500/50'
+                : 'bg-white text-black hover:scale-105 border border-white'
+              }
                 `}
-            >
-                {isRunning ? <Pause size={32} fill="currentColor" /> : <Play size={32} fill="currentColor" className="ml-1" />}
-            </button>
+          >
+            {isRunning ? <Pause size={32} fill="currentColor" /> : <Play size={32} fill="currentColor" className="ml-1" />}
+          </button>
 
-            <button 
-                onClick={handleLap}
-                disabled={!isRunning}
-                className="w-14 h-14 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 flex items-center justify-center text-white/60 hover:text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-                <Flag size={20} />
-            </button>
+          <button
+            onClick={handleLap}
+            disabled={!isRunning}
+            className="w-14 h-14 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 flex items-center justify-center text-white/60 hover:text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <Flag size={20} />
+          </button>
         </div>
 
         {/* Laps */}
         <div className="w-full h-48 overflow-y-auto overflow-x-hidden custom-scrollbar border-t border-white/5 pt-4 pr-2">
-            <AnimatePresence mode="popLayout">
-                {laps.map((lapTime, index) => (
-                    <motion.div 
-                        key={laps.length - index}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        className="flex justify-between py-3 border-b border-white/5 last:border-0 text-sm"
-                    >
-                        <span className="text-white/40 font-mono">Lap {laps.length - index}</span>
-                        <span className="text-white font-mono">{formatLapTime(lapTime)}</span>
-                    </motion.div>
-                ))}
-                {laps.length === 0 && (
-                    <div className="text-center text-white/20 py-12 text-xs uppercase tracking-wider">
-                        No laps recorded
-                    </div>
-                )}
-            </AnimatePresence>
+          <AnimatePresence mode="popLayout">
+            {laps.map((lapTime, index) => (
+              <motion.div
+                key={laps.length - index}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="flex justify-between py-3 border-b border-white/5 last:border-0 text-sm"
+              >
+                <span className="text-white/40 font-mono">{t('stopwatch.lap')} {laps.length - index}</span>
+                <span className="text-white font-mono">{formatLapTime(lapTime)}</span>
+              </motion.div>
+            ))}
+            {laps.length === 0 && (
+              <div className="text-center text-white/20 py-12 text-xs uppercase tracking-wider">
+                {t('stopwatch.no_laps')}
+              </div>
+            )}
+          </AnimatePresence>
         </div>
 
       </motion.div>

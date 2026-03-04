@@ -128,6 +128,7 @@ export interface UIConfig {
   activeWorkspaceIndex: number; // New: Currently active workspace (0-indexed)
   openAtLogin?: boolean; // New: Start app at login
   enableMouseTrigger: boolean;
+  language: "pt" | "en" | "es" | "fr" | "de" | "it" | "ja" | "zh" | "ko" | "ru";
 }
 
 export interface RadialState {

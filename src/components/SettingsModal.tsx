@@ -11,13 +11,14 @@ import {
     Gamepad2, AppWindow, Settings2, Folder, ChevronRight, CornerUpLeft,
     Image as ImageIcon, Upload, Search, FileType,
     Lock, LayoutDashboard, Box, Command, Ban, ChevronDown, Play, CheckCircle2,
-    HelpCircle, User, MessageSquare, CreditCard, Globe, Eye, Zap, MousePointer2,
+    HelpCircle, User, MessageSquare, CreditCard, Globe, Eye, Zap, MousePointer2, Check,
     Hash, Download, ExternalLink, Moon, Sun, ArrowRight, ArrowLeft, TimerReset,
     FolderPlus, FileText, Edit3, Image, Calendar, Battery, CloudRain,
     Layout, Compass, Laptop, Smartphone, Bell, GripVertical, ChevronLeft
 } from 'lucide-react';
 import { ZenithLogo } from './ZenithLogo';
 import { IconPicker } from './IconPicker';
+import { getTranslation, LANGUAGES } from '../translations';
 
 const AppEditorModal = React.memo(({
     editingApp,
@@ -25,14 +26,16 @@ const AppEditorModal = React.memo(({
     handleAppChange,
     handlePickCommand,
     setShowAppSelector,
-    handlePickIcon
+    handlePickIcon,
+    config
 }: {
     editingApp: { app: AppItem, index: number, workspaceIndex?: number, path: number[] } | null,
     setEditingApp: (v: any) => void,
     handleAppChange: (f: keyof AppItem, v: any) => void,
     handlePickCommand: () => void,
     setShowAppSelector: (v: boolean) => void,
-    handlePickIcon: () => void
+    handlePickIcon: () => void,
+    config: UIConfig
 }) => {
     return (
         <AnimatePresence>
@@ -52,43 +55,43 @@ const AppEditorModal = React.memo(({
                         exit={{ opacity: 0, scale: 0.95, y: 20 }}
                         transition={{ type: "spring", damping: 25, stiffness: 200 }}
                     >
-                        {/* Modal Header */}
-                        <div className="px-6 py-4 flex items-center justify-between border-b border-white/5 bg-white/[0.01]">
-                            <div className="space-y-0.5">
-                                <label className="text-[9px] font-semibold text-white/30 uppercase tracking-[0.3em] block ml-0.5">Interface Modularization</label>
-                                <h3 className="text-sm font-bold text-white tracking-[0.15em] uppercase">Integration Parameters</h3>
+                        {/* Header do Modal */}
+                        <div className="px-6 py-5 flex items-center justify-between border-b border-white/5 bg-white/[0.01]">
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em] block ml-0.5">{getTranslation(config, 'editingApp.config_label')}</label>
+                                <h3 className="text-lg font-bold text-white tracking-tight">{getTranslation(config, 'editingApp.details_title')}</h3>
                             </div>
                             <button
                                 onClick={() => setEditingApp(null)}
-                                className="w-9 h-9 flex items-center justify-center rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-white/40 hover:text-white transition-all duration-500 border border-white/5 active:scale-90"
+                                className="w-10 h-10 flex items-center justify-center rounded-xl bg-white/[0.03] hover:bg-white/[0.08] text-white/40 hover:text-white transition-all duration-500 border border-white/5 active:scale-90"
                             >
-                                <X size={18} strokeWidth={2} />
+                                <X size={20} strokeWidth={2} />
                             </button>
                         </div>
 
-                        {/* Dual Pane Content */}
+                        {/* Conteúdo em Duas Colunas */}
                         <div className="flex flex-col lg:flex-row flex-1 overflow-hidden min-h-0">
-                            {/* Left Pane: Configuration */}
-                            <div className="flex-1 p-6 space-y-5 overflow-y-auto custom-scrollbar border-r border-white/5 bg-white/[0.01] min-h-0">
-                                {/* App Identity Section */}
-                                <section className="space-y-2.5">
-                                    <label className="text-[9px] font-bold text-white/20 uppercase tracking-[0.2em] ml-1">App Identity</label>
+                            {/* Coluna Esquerda: Configuração */}
+                            <div className="flex-1 p-8 space-y-7 overflow-y-auto custom-scrollbar border-r border-white/5 bg-white/[0.01] min-h-0">
+                                {/* Seção: Identificação */}
+                                <section className="space-y-3">
+                                    <label className="text-sm font-semibold text-white/60 ml-1">{getTranslation(config, 'editingApp.name_label')}</label>
                                     <div className="relative group">
                                         <input
                                             type="text"
                                             value={editingApp.app.label}
                                             onChange={e => handleAppChange('label', e.target.value)}
-                                            className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-3 text-sm font-normal text-white focus:border-white/20 focus:bg-black/60 outline-none transition-all duration-500 shadow-inner group-hover:border-white/10"
-                                            placeholder="Enter module name..."
+                                            className="w-full bg-black/40 border border-white/10 rounded-xl px-5 py-3.5 text-sm font-medium text-white focus:border-white/30 focus:bg-black/60 outline-none transition-all duration-500 shadow-inner group-hover:border-white/20"
+                                            placeholder={getTranslation(config, 'editingApp.placeholder_name')}
                                         />
                                     </div>
                                 </section>
 
-                                {/* System Integration Section */}
+                                {/* Seção: Alvo/Caminho */}
                                 {editingApp.app.type === 'app' && (
-                                    <section className="space-y-2.5">
-                                        <label className="text-[9px] font-bold text-white/20 uppercase tracking-[0.2em] ml-1">
-                                            {editingApp.app.commandType === 'url' ? 'Network Target' : 'Execution Path'}
+                                    <section className="space-y-3">
+                                        <label className="text-sm font-semibold text-white/60 ml-1">
+                                            {editingApp.app.commandType === 'url' ? getTranslation(config, 'editingApp.url_label') : getTranslation(config, 'editingApp.path_label')}
                                         </label>
                                         <div className="flex flex-col sm:flex-row gap-3">
                                             <div className="flex-1 relative group">
@@ -96,32 +99,32 @@ const AppEditorModal = React.memo(({
                                                     type="text"
                                                     value={editingApp.app.command}
                                                     onChange={e => handleAppChange('command', e.target.value)}
-                                                    className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-3 text-sm font-mono text-white/60 focus:border-white/20 focus:bg-black/60 outline-none transition-all duration-500 shadow-inner group-hover:border-white/10"
-                                                    placeholder={editingApp.app.commandType === 'url' ? 'https://...' : 'C:/Path/to/binary...'}
+                                                    className="w-full bg-black/40 border border-white/10 rounded-xl px-5 py-3.5 text-sm font-mono text-white/50 focus:border-white/30 focus:bg-black/60 outline-none transition-all duration-500 shadow-inner group-hover:border-white/20"
+                                                    placeholder={editingApp.app.commandType === 'url' ? getTranslation(config, 'editingApp.placeholder_url') : getTranslation(config, 'editingApp.placeholder_path')}
                                                 />
                                             </div>
                                             <div className="flex gap-2 shrink-0">
                                                 {editingApp.app.commandType === 'url' ? (
-                                                    <div className="w-[46px] h-[46px] bg-white/[0.03] border border-white/5 flex items-center justify-center text-white/20 rounded-xl">
-                                                        <Globe size={18} strokeWidth={1} />
+                                                    <div className="w-[52px] h-[52px] bg-white/[0.03] border border-white/5 flex items-center justify-center text-white/20 rounded-xl">
+                                                        <Globe size={20} strokeWidth={1} />
                                                     </div>
                                                 ) : (
                                                     <>
                                                         <button
                                                             onClick={handlePickCommand}
-                                                            className="px-4 h-[46px] bg-white text-black font-black text-[10px] uppercase tracking-[0.1em] rounded-xl hover:bg-gray-200 transition-all duration-300 shadow-xl active:scale-95 flex items-center justify-center gap-2 group"
-                                                            title="Abrir Explorador de Arquivos"
+                                                            className="px-5 h-[52px] bg-white text-black font-bold text-xs rounded-xl hover:bg-gray-200 transition-all duration-300 shadow-xl active:scale-95 flex items-center justify-center gap-2 group"
+                                                            title={getTranslation(config, 'editingApp.explore_title')}
                                                         >
-                                                            <Folder size={14} strokeWidth={2.5} />
-                                                            <span>Explorar</span>
+                                                            <Folder size={16} strokeWidth={2.5} />
+                                                            <span>{getTranslation(config, 'action.explore')}</span>
                                                         </button>
                                                         <button
                                                             onClick={() => setShowAppSelector(true)}
-                                                            className="px-4 h-[46px] bg-white/[0.03] border border-white/5 flex items-center justify-center gap-2 text-white/40 hover:text-white hover:bg-white/[0.08] rounded-xl transition-all duration-300 active:scale-90"
-                                                            title="Abrir Seletor de Aplicativos do Sistema"
+                                                            className="px-4 h-[52px] bg-white/[0.03] border border-white/10 flex items-center justify-center gap-2 text-white/40 hover:text-white hover:bg-white/[0.08] rounded-xl transition-all duration-300 active:scale-90"
+                                                            title={getTranslation(config, 'editingApp.installed_apps_title')}
                                                         >
-                                                            <LayoutGrid size={16} strokeWidth={1.5} />
-                                                            <span className="font-black text-[10px] uppercase tracking-[0.1em]">Apps</span>
+                                                            <LayoutGrid size={18} strokeWidth={1.5} />
+                                                            <span className="font-bold text-[10px] uppercase tracking-wider">{getTranslation(config, 'editingApp.installed_apps_label')}</span>
                                                         </button>
                                                     </>
                                                 )}
@@ -130,91 +133,95 @@ const AppEditorModal = React.memo(({
                                     </section>
                                 )}
 
-                                {/* Icon Source Strategy */}
-                                <section className="space-y-2.5">
-                                    <label className="text-[9px] font-bold text-white/20 uppercase tracking-[0.2em] ml-1">Icon Methodology</label>
-                                    <div className="flex bg-black p-1 rounded-xl border border-white/5 shadow-2xl relative overflow-hidden">
+                                {/* Seção: Estilo do Ícone */}
+                                <section className="space-y-3">
+                                    <label className="text-sm font-semibold text-white/60 ml-1">{getTranslation(config, 'visuals.icon_style')}</label>
+                                    <div className="flex bg-black/60 p-1.5 rounded-2xl border border-white/10 shadow-inner relative overflow-hidden">
                                         <div
-                                            className="absolute inset-y-1 rounded-lg bg-white shadow-lg transition-all duration-500 ease-out"
+                                            className="absolute inset-y-1.5 rounded-xl bg-white shadow-xl transition-all duration-500 ease-out"
                                             style={{
-                                                width: 'calc(50% - 4px)',
-                                                left: editingApp.app.iconSource === 'native' ? '4px' : 'calc(50%)',
+                                                width: 'calc(50% - 6px)',
+                                                left: editingApp.app.iconSource === 'native' ? '6px' : 'calc(50%)',
                                                 zIndex: 0
                                             }}
                                         />
                                         <button
                                             onClick={() => handleAppChange('iconSource', 'native')}
-                                            className={`relative z-10 flex-1 py-2 text-[10px] font-black uppercase tracking-[0.1em] rounded-lg transition-colors duration-500 ${editingApp.app.iconSource === 'native' ? 'text-black' : 'text-white/30'}`}
+                                            className={`relative z-10 flex-1 py-3 text-[10px] font-bold uppercase tracking-widest rounded-xl transition-colors duration-500 ${editingApp.app.iconSource === 'native' ? 'text-black' : 'text-white/30 hover:text-white/50'}`}
                                         >
-                                            System Native
+                                            {getTranslation(config, 'editingApp.native_icon') || 'Ícone do Sistema'}
                                         </button>
                                         <button
                                             onClick={() => handleAppChange('iconSource', 'lucide')}
-                                            className={`relative z-10 flex-1 py-2 text-[10px] font-black uppercase tracking-[0.1em] rounded-lg transition-colors duration-500 ${editingApp.app.iconSource === 'lucide' ? 'text-black' : 'text-white/30'}`}
+                                            className={`relative z-10 flex-1 py-3 text-[10px] font-bold uppercase tracking-widest rounded-xl transition-colors duration-500 ${editingApp.app.iconSource === 'lucide' ? 'text-black' : 'text-white/30 hover:text-white/50'}`}
                                         >
-                                            Symbol Matrix
+                                            {getTranslation(config, 'editingApp.icon_library') || 'Biblioteca de Ícones'}
                                         </button>
                                     </div>
                                 </section>
                             </div>
 
-                            {/* Right Pane: Visual Signature Preview */}
-                            <div className="w-full lg:w-[260px] bg-black/40 p-6 flex flex-col items-center justify-center gap-5 relative min-h-0">
-                                <div className="absolute top-4 left-6 flex items-center gap-2">
-                                    <div className="w-1 h-1 rounded-full bg-white/40" />
-                                    <span className="text-[9px] font-bold text-white/20 uppercase tracking-[0.2em]">Visual Preview</span>
-                                </div>
+                            {/* Coluna Direita: Pré-visualização */}
+                            <div className="w-full lg:w-[300px] bg-black/40 p-8 flex flex-col items-center justify-between gap-6 relative min-h-0 border-l border-white/5">
+                                <div className="w-full space-y-10 flex flex-col items-center">
+                                    <div className="flex items-center gap-2 w-full">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-white/20" />
+                                        <span className="text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">{getTranslation(config, 'editingApp.preview') || 'Pré-visualização'}</span>
+                                    </div>
 
-                                <div className="relative group mt-2">
-                                    <motion.div
-                                        className="w-24 h-24 rounded-xl bg-gradient-to-br from-white/[0.05] to-transparent flex items-center justify-center border border-white/10 group-hover:border-white/30 transition-all duration-700 cursor-pointer overflow-hidden shadow-[0_15px_30px_-10px_rgba(0,0,0,0.8)]"
-                                        whileHover={{ scale: 1.05, y: -4 }}
-                                        onClick={handlePickIcon}
-                                    >
-                                        {editingApp.app.customIconUrl ? (
-                                            <SmartIcon
-                                                src={editingApp.app.customIconUrl}
-                                                className="w-full h-full object-contain transition-transform duration-700 group-hover:scale-110"
-                                                size={96}
-                                                referenceScale={0.7}
-                                            />
-                                        ) : (
-                                            (() => {
-                                                const Icon = getIcon(editingApp.app.iconName);
-                                                return <Icon size={64} strokeWidth={1} className="text-white/30 group-hover:text-white transition-all duration-500" />;
-                                            })()
-                                        )}
-                                        <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 flex items-center justify-center">
-                                            <div className="w-8 h-8 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20">
-                                                <Upload size={14} className="text-white" />
+                                    <div className="relative group">
+                                        <motion.div
+                                            className="w-28 h-28 rounded-2xl bg-gradient-to-br from-white/[0.05] to-transparent flex items-center justify-center border border-white/10 group-hover:border-white/30 transition-all duration-700 cursor-pointer overflow-hidden shadow-2xl"
+                                            whileHover={{ scale: 1.05, y: -4 }}
+                                            onClick={handlePickIcon}
+                                        >
+                                            {editingApp.app.customIconUrl ? (
+                                                <SmartIcon
+                                                    src={editingApp.app.customIconUrl}
+                                                    className="w-full h-full object-contain p-4 transition-transform duration-700 group-hover:scale-110"
+                                                    size={112}
+                                                    referenceScale={0.7}
+                                                />
+                                            ) : (
+                                                (() => {
+                                                    const Icon = getIcon(editingApp.app.iconName);
+                                                    return <Icon size={56} strokeWidth={1} className="text-white/20 group-hover:text-white transition-all duration-500" />;
+                                                })()
+                                            )}
+                                            <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 flex items-center justify-center">
+                                                <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20">
+                                                    <Upload size={16} className="text-white" />
+                                                </div>
                                             </div>
-                                        </div>
-                                    </motion.div>
-                                    <div className="absolute -inset-4 bg-white/[0.01] rounded-[2rem] blur-2xl -z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
-                                </div>
+                                        </motion.div>
+                                        <div className="absolute inset-0 bg-white/[0.01] rounded-[2rem] blur-2xl -z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
+                                    </div>
 
-                                <div className="text-center space-y-0.5">
-                                    <h4 className="text-sm font-bold text-white/90 tracking-tight truncate max-w-[180px]">{editingApp.app.label || 'Untitled Module'}</h4>
-                                    <p className="text-[8px] text-white/20 font-bold uppercase tracking-[0.2em]">Deployment Slot {editingApp.index + 1}</p>
+                                    <div className="text-center space-y-1.5">
+                                        <h4 className="text-base font-bold text-white tracking-tight truncate max-w-[220px]">
+                                            {editingApp.app.label || getTranslation(config, 'editingApp.no_name') || 'Sem Nome'}
+                                        </h4>
+                                        <p className="text-[10px] text-white/20 font-bold uppercase tracking-[0.15em]">{getTranslation(config, 'editingApp.menu_pos') || 'Posição no Menu'}: {editingApp.index + 1}</p>
+                                    </div>
                                 </div>
 
                                 {editingApp.app.iconSource === 'native' ? (
-                                    <div className="w-full space-y-2">
+                                    <div className="w-full space-y-3">
                                         <button
                                             onClick={handlePickIcon}
-                                            className="w-full py-2.5 bg-white/[0.03] hover:bg-white/[0.08] text-white/80 font-black text-[10px] uppercase tracking-[0.1em] rounded-xl border border-white/5 hover:border-white/20 transition-all duration-300 active:scale-95"
+                                            className="w-full py-3.5 bg-white/[0.04] hover:bg-white/[0.08] text-white/80 font-bold text-[11px] uppercase tracking-widest rounded-xl border border-white/5 hover:border-white/20 transition-all duration-300 active:scale-[0.98]"
                                         >
-                                            Update Asset
+                                            {getTranslation(config, 'editingApp.choose_image') || 'Escolher Imagem'}
                                         </button>
                                         <button
                                             onClick={() => handleAppChange('customIconUrl', undefined)}
-                                            className="w-full py-1.5 text-white/20 hover:text-white/40 text-[9px] font-bold uppercase tracking-widest transition-colors duration-300"
+                                            className="w-full py-2 text-white/20 hover:text-white/40 text-[10px] font-bold uppercase tracking-widest transition-colors duration-300"
                                         >
-                                            Reset to Default
+                                            {getTranslation(config, 'editingApp.restore_default') || 'Restaurar Padrão'}
                                         </button>
                                     </div>
                                 ) : (
-                                    <div className="w-full flex-1 max-h-[160px] rounded-xl overflow-hidden border border-white/5 shadow-2xl bg-black/40">
+                                    <div className="w-full flex-1 max-h-[180px] rounded-xl overflow-hidden border border-white/10 shadow-2xl bg-black/40">
                                         <div className="h-full overflow-y-auto custom-scrollbar-mini">
                                             <IconPicker
                                                 selectedIcon={editingApp.app.iconName}
@@ -226,16 +233,17 @@ const AppEditorModal = React.memo(({
                             </div>
                         </div>
 
-                        {/* Modal Footer */}
-                        <div className="px-6 py-4 border-t border-white/5 bg-black/20 flex justify-between items-center">
-                            <div className="hidden sm:block text-[8px] text-white/10 font-bold uppercase tracking-[0.2em]">
-                                Persistent synchronization active
+                        {/* Rodapé do Modal */}
+                        <div className="px-8 py-5 border-t border-white/5 bg-black/20 flex justify-between items-center">
+                            <div className="hidden sm:flex items-center gap-2">
+                                <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                                <span className="text-[10px] text-white/30 font-bold uppercase tracking-widest">{getTranslation(config, 'editingApp.sync_active') || 'Sincronização Ativa'}</span>
                             </div>
                             <button
                                 onClick={() => setEditingApp(null)}
-                                className="px-7 py-3 bg-white text-black font-black text-[10px] uppercase tracking-[0.1em] rounded-xl hover:shadow-[0_10px_30px_rgba(255,255,255,0.1)] hover:scale-[1.02] transition-all duration-500 active:scale-95 shadow-xl"
+                                className="px-8 py-3.5 bg-white text-black font-bold text-xs uppercase tracking-widest rounded-xl hover:shadow-[0_15px_40px_rgba(255,255,255,0.15)] hover:scale-[1.02] transition-all duration-500 active:scale-[0.98] shadow-2xl"
                             >
-                                Synchronize Core
+                                {getTranslation(config, 'action.save') || 'Save and Close'}
                             </button>
                         </div>
                     </motion.div>
@@ -263,9 +271,9 @@ const WidgetsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.1 }}
                 >
-                    <h3 className="text-xl font-semibold text-white mb-1 tracking-tight">Zenith Widgets</h3>
+                    <h3 className="text-xl font-semibold text-white mb-1 tracking-tight">{getTranslation(config, 'tabs.widgets')}</h3>
                     <p className="text-[11px] text-white/30 font-medium tracking-wide leading-relaxed mt-1 max-w-2xl">
-                        Deploy autonomous system modules. Enhance your radial hub with real-time telemetry, productivity oscillators, and environmental sensors.
+                        {getTranslation(config, 'widgets.desc') || 'Adicione ferramentas independentes e utilitários ao seu hub radial. Melhore sua produtividade com cronômetros, alarmes e sensores de sistema integrados.'}
                     </p>
                 </motion.div>
 
@@ -286,7 +294,7 @@ const WidgetsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                                 {isDeployed && (
                                     <div className="absolute top-4 right-4 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-green-500/10 border border-green-500/20">
                                         <div className="w-1 h-1 rounded-full bg-green-500 animate-pulse" />
-                                        <span className="text-[9px] font-black text-green-500 uppercase tracking-[0.15em]">Active</span>
+                                        <span className="text-[9px] font-black text-green-500 uppercase tracking-[0.15em]">{getTranslation(config, 'status.active') || 'Active'}</span>
                                     </div>
                                 )}
 
@@ -295,18 +303,22 @@ const WidgetsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                                         <Icon size={18} strokeWidth={1.25} />
                                     </div>
                                     <div className="min-w-0">
-                                        <h4 className="font-medium text-white text-sm tracking-tight truncate leading-tight">{widget.name}</h4>
-                                        <p className="text-[9px] text-white/20 font-semibold uppercase tracking-[0.2em]">{widget.id.split('_')[0]} Module</p>
+                                        <h4 className="font-medium text-white text-sm tracking-tight truncate leading-tight">
+                                            {getTranslation(config, `widgets.${widget.id}.name`) || widget.name}
+                                        </h4>
+                                        <p className="text-[9px] text-white/20 font-semibold uppercase tracking-[0.2em]">{widget.id.split('_')[0]} {getTranslation(config, 'widgets.module') || 'Module'}</p>
                                     </div>
                                 </div>
 
                                 <div className="mb-6 relative z-10">
-                                    <p className="text-[11px] text-white/40 font-medium leading-relaxed line-clamp-2 min-h-[32px]">{widget.description}</p>
+                                    <p className="text-[11px] text-white/40 font-medium leading-relaxed line-clamp-2 min-h-[32px]">
+                                        {getTranslation(config, `widgets.${widget.id}.desc`) || widget.description}
+                                    </p>
                                 </div>
 
                                 <div className="mt-auto space-y-4 relative z-10">
                                     <div className="flex items-center justify-between">
-                                        <label className="text-[9px] font-black text-white/20 uppercase tracking-[0.25em]">Module Integration</label>
+                                        <label className="text-[9px] font-black text-white/20 uppercase tracking-[0.25em]">{getTranslation(config, 'widgets.integration') || 'Module Integration'}</label>
                                         <div className="h-px flex-1 bg-white/5 mx-3" />
                                     </div>
                                     <div className="flex flex-wrap gap-1.5 mt-2">
@@ -338,7 +350,7 @@ const WidgetsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                                                         ? 'bg-white text-black border-white'
                                                         : 'bg-white/5 text-white/30 border-white/5 hover:border-white/20 hover:text-white'
                                                         }`}
-                                                    title={`Toggle for ${ws.name}`}
+                                                    title={`${getTranslation(config, 'action.toggle') || 'Toggle'} for ${ws.name}`}
                                                 >
                                                     {ws.name}
                                                 </motion.button>
@@ -395,23 +407,23 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.1 }}
                 >
-                    <h3 className="text-xl font-semibold text-white mb-1 tracking-tight">Atmospheric Visuals</h3>
+                    <h3 className="text-xl font-semibold text-white mb-1 tracking-tight">{getTranslation(config, 'visuals.title')}</h3>
                     <p className="text-[11px] text-white/30 font-medium tracking-wide leading-relaxed mt-1 max-w-2xl">
-                        Sculpt the aesthetic field. Refine the radial matrix expansion, glassmorphic refraction, and atmospheric dark-matter intensity.
+                        {getTranslation(config, 'visuals.desc')}
                     </p>
                 </motion.div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     <BentoCard
-                        title="Radial Matrix"
+                        title={getTranslation(config, 'visuals.menu_size')}
                         icon={Layout}
-                        description="Spatial Expansion"
+                        description={getTranslation(config, 'visuals.hub_expansion') || 'Expansão do Hub'}
                         className="md:col-span-2 lg:col-span-2"
                     >
                         <div className="space-y-6">
                             <div className="flex justify-between items-center text-[10px] font-black text-white/20 uppercase tracking-widest">
-                                <span>Minimum Scope (150px)</span>
-                                <span>Maximum Reach (600px)</span>
+                                <span>{getTranslation(config, 'visuals.min_range') || 'Alcance Mínimo'} (150px)</span>
+                                <span>{getTranslation(config, 'visuals.max_range') || 'Alcance Máximo'} (600px)</span>
                             </div>
                             <div className="relative pt-1">
                                 <input
@@ -430,11 +442,11 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                         </div>
                     </BentoCard>
 
-                    <BentoCard title="Module Density" icon={Box} description="Icon Dynamics" className="lg:col-span-1">
+                    <BentoCard title={getTranslation(config, 'visuals.icon_density')} icon={Box} description={getTranslation(config, 'visuals.icon_scale') || 'Escala dos Atalhos'} className="lg:col-span-1">
                         <div className="space-y-6">
                             <div className="flex items-end justify-between">
                                 <span className="text-3xl font-black text-white tabular-nums">{config.iconSize}</span>
-                                <span className="text-[10px] text-white/20 font-bold uppercase mb-1">Standard Unit</span>
+                                <span className="text-[10px] text-white/20 font-bold uppercase mb-1">{getTranslation(config, 'visuals.default_size') || 'Tamanho Padrão'}</span>
                             </div>
                             <input
                                 type="range"
@@ -448,12 +460,12 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                         </div>
                     </BentoCard>
 
-                    <BentoCard title="Atmospheric Depth" icon={Zap} description="Glassmorphism Calibration" className="lg:col-span-1">
+                    <BentoCard title={getTranslation(config, 'visuals.transparency')} icon={Zap} description={getTranslation(config, 'visuals.glass_effect') || 'Efeito de Vidro'} className="lg:col-span-1">
                         <div className="space-y-6">
                             <div className="space-y-4">
                                 <div className="flex items-end justify-between">
                                     <span className="text-2xl font-black text-white tabular-nums">{Math.round(config.backdropOpacity * 100)}%</span>
-                                    <span className="text-[9px] text-white/20 font-bold uppercase mb-1 tracking-widest">Opacity</span>
+                                    <span className="text-[9px] text-white/20 font-bold uppercase mb-1 tracking-widest">{getTranslation(config, 'visuals.opacity') || 'Opacidade'}</span>
                                 </div>
                                 <input
                                     type="range"
@@ -469,7 +481,7 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                             <div className="space-y-4 pt-2 border-t border-white/5">
                                 <div className="flex items-end justify-between">
                                     <span className="text-2xl font-black text-white tabular-nums">{config.backdropBlur}px</span>
-                                    <span className="text-[9px] text-white/20 font-bold uppercase mb-1 tracking-widest">Backdrop Blur Radius</span>
+                                    <span className="text-[9px] text-white/20 font-bold uppercase mb-1 tracking-widest">{getTranslation(config, 'visuals.blur_radius') || 'Raio de Desfoque'}</span>
                                 </div>
                                 <input
                                     type="range"
@@ -481,12 +493,12 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                                     className="w-full h-1 bg-white/10 rounded-full appearance-none accent-white cursor-pointer"
                                 />
                                 <div className="flex items-center justify-between mt-2">
-                                    <span className="text-[8px] text-white/40 uppercase font-bold tracking-tighter">Native Windows Acrylic</span>
+                                    <span className="text-[8px] text-white/40 uppercase font-bold tracking-tighter">{getTranslation(config, 'visuals.native_acrylic') || 'Acrylic Nativo (Windows)'}</span>
                                     <button
                                         onClick={() => setConfig({ ...config, backdropBlur: config.backdropBlur > 0 ? 0 : 20 })}
                                         className={`px-2 py-1 rounded border text-[8px] font-bold uppercase transition-all ${config.backdropBlur > 0 ? 'bg-white text-black border-white' : 'bg-transparent text-white/20 border-white/5'}`}
                                     >
-                                        {config.backdropBlur > 0 ? 'Enhanced' : 'Standard'}
+                                        {config.backdropBlur > 0 ? getTranslation(config, 'status.activated') || 'Ativado' : getTranslation(config, 'status.default') || 'Padrão'}
                                     </button>
                                 </div>
                             </div>
@@ -494,9 +506,9 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                     </BentoCard>
 
                     <BentoCard
-                        title="Accent Signature"
+                        title={getTranslation(config, 'visuals.accent_color')}
                         icon={Palette}
-                        description="Color Synchronization"
+                        description={getTranslation(config, 'visuals.accent_custom') || 'Personalização de Tom'}
                         className="md:col-span-2 lg:col-span-2"
                     >
                         <div className="flex gap-6 items-center">
@@ -511,7 +523,7 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                             </div>
                             <div className="flex-1 space-y-3">
                                 <div className="flex items-center justify-between">
-                                    <span className="text-[9px] font-black text-white/20 uppercase tracking-[0.2em]">Hex Code</span>
+                                    <span className="text-[9px] font-black text-white/20 uppercase tracking-[0.2em]">{getTranslation(config, 'visuals.hex_code') || 'Hex Code'}</span>
                                     <CheckCircle2 size={14} className="text-white/20" />
                                 </div>
                                 <input
@@ -525,11 +537,11 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                         </div>
                     </BentoCard>
 
-                    <BentoCard title="Expansion Protocol" icon={GripVertical} description="Structural Rhythm" className="lg:col-span-1">
+                    <BentoCard title={getTranslation(config, 'visuals.spacing')} icon={GripVertical} description={getTranslation(config, 'visuals.visual_rhythm') || 'Ritmo Visual'} className="lg:col-span-1">
                         <div className="space-y-6">
                             <div className="flex items-end justify-between">
                                 <span className="text-3xl font-black text-white tabular-nums">{config.appSpacing}</span>
-                                <span className="text-[10px] text-white/20 font-bold uppercase mb-1">Gap Px</span>
+                                <span className="text-[10px] text-white/20 font-bold uppercase mb-1">{getTranslation(config, 'visuals.distance') || 'Distância (px)'}</span>
                             </div>
                             <input
                                 type="range"
@@ -543,11 +555,11 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                         </div>
                     </BentoCard>
 
-                    <BentoCard title="Activation Matrix" icon={Zap} description="Precision Threshold" className="lg:col-span-1">
+                    <BentoCard title={getTranslation(config, 'visuals.activation_limit')} icon={Zap} description={getTranslation(config, 'visuals.sensitivity') || 'Sensibilidade'} className="lg:col-span-1">
                         <div className="space-y-6">
                             <div className="flex items-end justify-between">
                                 <span className="text-3xl font-black text-white tabular-nums">{config.activationThreshold}</span>
-                                <span className="text-[10px] text-white/20 font-bold uppercase mb-1">Trigger px</span>
+                                <span className="text-[10px] text-white/20 font-bold uppercase mb-1">{getTranslation(config, 'visuals.trigger_pixels') || 'Pixels de Gatilho'}</span>
                             </div>
                             <input
                                 type="range"
@@ -561,14 +573,14 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                         </div>
                     </BentoCard>
 
-                    <BentoCard title="Nomenclature" icon={FileType} description="Semantic Labels" className="lg:col-span-1">
+                    <BentoCard title={getTranslation(config, 'visuals.labels') || 'Legendas'} icon={FileType} description={getTranslation(config, 'visuals.text_labels') || 'Rótulos de Texto'} className="lg:col-span-1">
                         <div className="flex flex-col gap-4">
                             <button
                                 onClick={() => setConfig({ ...config, showLabels: !config.showLabels })}
                                 className={`w-full flex items-center justify-between p-3.5 rounded-xl border transition-all duration-500 ${config.showLabels ? 'bg-white border-white' : 'bg-white/[0.02] border-white/10'}`}
                             >
                                 <span className={`text-[10px] font-bold uppercase tracking-widest ${config.showLabels ? 'text-black' : 'text-white/40'}`}>
-                                    {config.showLabels ? 'Visible' : 'Hidden'}
+                                    {config.showLabels ? getTranslation(config, 'status.visible') || 'Visível' : getTranslation(config, 'status.hidden') || 'Oculto'}
                                 </span>
                                 <div className={`w-2 h-2 rounded-full ${config.showLabels ? 'bg-black animate-pulse' : 'bg-white/10'}`} />
                             </button>
@@ -589,7 +601,8 @@ const WorkspaceCard = React.memo(({
     setDragOverWorkspace,
     reorderWorkspaces,
     setSelectedWorkspaceIndex,
-    getIcon
+    getIcon,
+    config
 }: any) => (
     <motion.div
         draggable
@@ -685,7 +698,7 @@ const WorkspaceCard = React.memo(({
                     </h4>
                     <div className="h-[1px] w-4 bg-white/10 group-hover:w-8 group-hover:bg-white/30 transition-all duration-700" />
                     <span className="text-[8px] text-white/20 font-bold uppercase tracking-[0.2em] mt-1 group-hover:text-white/40 transition-colors duration-500">
-                        {workspace.apps.length} Modules
+                        {workspace.apps.length} {getTranslation(config, 'workspaces.shortcuts') || 'Atalhos'}
                     </span>
                 </div>
             </div>
@@ -700,7 +713,7 @@ const WorkspaceCard = React.memo(({
 const WorkspaceAppItem = React.memo(({
     app, i, isFolder, getIcon, dragAppRef, setDragOverApp, dragOverApp,
     selectedWorkspaceIndex, workspaceFolderPath, reorderAppsInWorkspace,
-    setEditingApp, removeAppFromWorkspace, setWorkspaceFolderPath
+    setEditingApp, removeAppFromWorkspace, setWorkspaceFolderPath, config
 }: any) => {
     const Icon = getIcon(app.iconName);
     return (
@@ -758,7 +771,7 @@ const WorkspaceAppItem = React.memo(({
             </div>
             <div className="flex-1 min-w-0">
                 <div className="font-medium text-white truncate text-sm tracking-tight">{app.label}</div>
-                <div className="text-[9px] text-white/20 truncate font-semibold uppercase tracking-widest">{app.type}</div>
+                <div className="text-[9px] text-white/20 truncate font-semibold uppercase tracking-widest">{getTranslation(config, `workspaces.${app.type}`) || app.type}</div>
             </div>
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-2 group-hover:translate-x-0">
                 {!isFolder && (
@@ -842,10 +855,10 @@ const WorkspacesTab = React.memo(({
                                 initial={{ opacity: 0, x: -20 }}
                                 animate={{ opacity: 1, x: 0 }}
                                 whileHover={{ x: -2 }}
-                                title="Back to Workspaces"
+                                title={getTranslation(config, 'workspaces.back_to_workspaces') || 'Back to Workspaces'}
                             >
                                 <ChevronLeft size={18} className="transition-transform group-hover/back:-translate-x-0.5" />
-                                <span className="text-[10px] font-bold uppercase tracking-widest">Workspaces</span>
+                                <span className="text-[10px] font-bold uppercase tracking-widest">{getTranslation(config, 'workspaces.back_to_workspaces') || 'Espaços'}</span>
                             </motion.button>
                         )}
 
@@ -856,11 +869,11 @@ const WorkspacesTab = React.memo(({
                             className="flex-1"
                         >
                             <h3 className="text-xl font-medium text-white/90 mb-1 tracking-tight">
-                                {selectedWorkspaceIndex === null ? 'Workspaces' : null}
+                                {selectedWorkspaceIndex === null ? getTranslation(config, 'workspaces.title') || 'Meus Espaços' : null}
                             </h3>
                             {selectedWorkspaceIndex === null && (
                                 <p className="text-[11px] text-white/30 font-medium tracking-wide leading-relaxed mt-1 max-w-2xl">
-                                    Construct and manage high-intensity project hubs with custom neural pathways.
+                                    {getTranslation(config, 'workspaces.desc') || 'Crie e gerencie diferentes ambientes de trabalho com atalhos personalizados.'}
                                 </p>
                             )}
                         </motion.div>
@@ -889,6 +902,7 @@ const WorkspacesTab = React.memo(({
                                             reorderWorkspaces={reorderWorkspaces}
                                             setSelectedWorkspaceIndex={setSelectedWorkspaceIndex}
                                             getIcon={getIcon}
+                                            config={config}
                                         />
                                     ))}
 
@@ -907,7 +921,7 @@ const WorkspacesTab = React.memo(({
                                     <div className="flex items-center gap-6 mb-6 bg-white/[0.015] p-4 rounded-xl border border-white/5 backdrop-blur-3xl">
                                         <div className="flex-1">
                                             {workspaceFolderPath.length === 0 && (
-                                                <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.3em] block mb-3 ml-1">Workspace Identity</label>
+                                                <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.3em] block mb-3 ml-1">{getTranslation(config, 'workspaces.id') || 'Identificação do Espaço'}</label>
                                             )}
                                             <input
                                                 type="text"
@@ -936,11 +950,11 @@ const WorkspacesTab = React.memo(({
                                                         }}
                                                         className={`h-10 px-5 rounded-xl text-[9px] font-semibold uppercase tracking-[0.2em] transition-all border duration-500 ${config.workspaces[selectedWorkspaceIndex].enabled ? 'bg-white text-black border-white shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-white/[0.02] text-white/30 border-white/5 hover:bg-white/10 hover:text-white'}`}
                                                     >
-                                                        {config.workspaces[selectedWorkspaceIndex].enabled ? 'Online' : 'Offline'}
+                                                        {config.workspaces[selectedWorkspaceIndex].enabled ? getTranslation(config, 'status.online') || 'Online' : getTranslation(config, 'status.offline') || 'Offline'}
                                                     </button>
                                                     <button
                                                         onClick={() => {
-                                                            if (confirm('Decommission this workspace?')) deleteWorkspace(selectedWorkspaceIndex);
+                                                            if (confirm(getTranslation(config, 'workspaces.confirm_delete') || 'Decommission this workspace permanently?')) deleteWorkspace(selectedWorkspaceIndex);
                                                         }}
                                                         className="h-10 w-10 flex items-center justify-center bg-red-500/5 hover:bg-red-500/10 text-red-500/60 hover:text-red-500 rounded-xl border border-red-500/10 hover:border-red-500/20 transition-all duration-300 shrink-0"
                                                     >
@@ -965,19 +979,19 @@ const WorkspacesTab = React.memo(({
                                                 className="h-11 px-5 bg-white/5 hover:bg-white/10 text-white/40 hover:text-white rounded-xl border border-white/5 hover:border-white/20 transition-all duration-300 flex items-center gap-2.5 shrink-0 group/folderback"
                                             >
                                                 <CornerUpLeft size={16} className="transition-transform group-hover/folderback:-translate-y-0.5 group-hover/folderback:-translate-x-0.5" />
-                                                <span className="text-[10px] font-bold uppercase tracking-[0.15em]">Back</span>
+                                                <span className="text-[10px] font-bold uppercase tracking-[0.15em]">{getTranslation(config, 'menu.back') || 'Back'}</span>
                                             </button>
                                         )}
                                         <div className="text-[10px] font-black text-white/20 uppercase tracking-[0.3em] px-1">
-                                            {workspaceFolderPath.length === 0 ? 'Root Cluster' : null}
+                                            {workspaceFolderPath.length === 0 ? getTranslation(config, 'workspaces.root_cluster') || 'Root Cluster' : null}
                                         </div>
                                     </div>
 
                                     {getCurrentLevel(config.workspaces[selectedWorkspaceIndex!].apps, workspaceFolderPath).length === 0 ? (
                                         <div className="h-4/5 flex flex-col items-center justify-center text-white/10 animate-pulse">
                                             <Box size={64} strokeWidth={0.5} className="mb-6" />
-                                            <p className="text-xl font-bold tracking-tight text-white/20">Empty Matrix</p>
-                                            <p className="text-xs uppercase tracking-[0.2em] opacity-30">Deploy modules below</p>
+                                            <p className="text-xl font-bold tracking-tight text-white/20">{getTranslation(config, 'workspaces.no_shortcuts') || 'Sem Atalhos'}</p>
+                                            <p className="text-xs uppercase tracking-[0.2em] opacity-30">{getTranslation(config, 'workspaces.add_modules_hint') || 'Adicione módulos abaixo'}</p>
                                         </div>
                                     ) : (
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -997,6 +1011,7 @@ const WorkspacesTab = React.memo(({
                                                     setEditingApp={setEditingApp}
                                                     removeAppFromWorkspace={removeAppFromWorkspace}
                                                     setWorkspaceFolderPath={setWorkspaceFolderPath}
+                                                    config={config}
                                                 />
                                             ))}
                                         </div>
@@ -1016,34 +1031,34 @@ const WorkspacesTab = React.memo(({
                         <button
                             onClick={createWorkspace}
                             className="h-12 pl-4 pr-7 bg-white/[0.9] hover:bg-white text-black rounded-full text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-3 shadow-2xl hover:scale-[1.02] active:scale-[0.98] duration-300 group"
-                            title="Deploy new Workspace Matrix"
+                            title={getTranslation(config, 'workspaces.deploy_new_app_module') || 'Deploy new Workspace Matrix'}
                         >
                             <div className="w-8 h-8 rounded-full bg-black/10 flex items-center justify-center group-hover:bg-black/20 transition-colors">
                                 <Plus size={20} strokeWidth={3} />
                             </div>
-                            <span>New Workspace</span>
+                            <span>{getTranslation(config, 'workspaces.new_workspace') || 'Novo Espaço'}</span>
                         </button>
                     ) : (
                         <>
                             <button
                                 onClick={() => handleAddApp('app')}
                                 className="h-11 pl-4 pr-6 bg-white/[0.9] hover:bg-white text-black rounded-full text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-2.5 shadow-lg hover:scale-[1.02] active:scale-[0.98] duration-300"
-                                title="Deploy new application module"
+                                title={getTranslation(config, 'workspaces.deploy_new_app_module')}
                             >
                                 <div className="w-7 h-7 rounded-full bg-black/10 flex items-center justify-center">
                                     <Plus size={18} strokeWidth={3} />
                                 </div>
-                                <span>Add Module</span>
+                                <span>{getTranslation(config, 'workspaces.add_shortcut')}</span>
                             </button>
                             <button
                                 onClick={() => handleAddApp('folder')}
                                 className="h-11 pl-4 pr-6 bg-white/[0.05] hover:bg-white/[0.1] text-white/90 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-2.5 border border-white/5 hover:border-white/10 duration-300"
-                                title="Create new directory cluster"
+                                title={getTranslation(config, 'workspaces.create_new_directory')}
                             >
                                 <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center">
                                     <FolderPlus size={18} strokeWidth={2} />
                                 </div>
-                                <span>Create Group</span>
+                                <span>{getTranslation(config, 'workspaces.create_group')}</span>
                             </button>
                         </>
                     )}
@@ -1092,9 +1107,9 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.1 }}
                 >
-                    <h3 className="text-xl font-semibold text-white mb-1 tracking-tight">Interface</h3>
+                    <h3 className="text-xl font-semibold text-white mb-1 tracking-tight">{getTranslation(config, 'settings.interface_title')}</h3>
                     <p className="text-[11px] text-white/30 font-medium tracking-wide leading-relaxed mt-1 max-w-2xl">
-                        Tune the human-machine interface. Calibrate interaction dynamics, activation shortcuts, and somatic feedback to align with your neural workflow.
+                        {getTranslation(config, 'settings.interface_desc')}
                     </p>
                 </motion.div>
 
@@ -1106,8 +1121,8 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.3, delay: 0.2 }}
                     >
-                        <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.25em] block ml-0.5 mb-0.5">Activation Matrix</label>
-                        <h4 className="text-[13px] font-medium text-white">Global Shortcut</h4>
+                        <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.25em] block ml-0.5 mb-0.5">{getTranslation(config, 'interface.activation_matrix')}</label>
+                        <h4 className="text-[13px] font-medium text-white">{getTranslation(config, 'interface.global_shortcut')}</h4>
                         <div className="flex gap-6 items-center">
                             <div className="flex-1 relative group">
                                 <input
@@ -1121,7 +1136,7 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
                             <button
                                 className="px-6 py-3 bg-white text-black font-semibold text-xs uppercase tracking-[0.2em] rounded-lg hover:bg-white hover:shadow-[0_8px_24px_rgba(255,255,255,0.2)] transition-all duration-300 shrink-0"
                             >
-                                Re-Sync
+                                {getTranslation(config, 'interface.resync')}
                             </button>
                         </div>
                     </motion.div>
@@ -1134,8 +1149,8 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
                         transition={{ duration: 0.3, delay: 0.25 }}
                     >
                         <div className="relative z-10">
-                            <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.25em] block ml-0.5 mb-0.5">System Integration</label>
-                            <h4 className="text-[13px] font-medium text-white">Autostart Protocol</h4>
+                            <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.25em] block ml-0.5 mb-0.5">{getTranslation(config, 'interface.system_integration')}</label>
+                            <h4 className="text-[13px] font-medium text-white">{getTranslation(config, 'interface.autostart')}</h4>
                         </div>
                         <motion.button
                             onClick={() => {
@@ -1165,8 +1180,8 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
                         transition={{ duration: 0.3, delay: 0.28 }}
                     >
                         <div className="relative z-10">
-                            <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.25em] block ml-0.5 mb-0.5">Somatic Input</label>
-                            <h4 className="text-[13px] font-medium text-white">Middle Mouse Trigger</h4>
+                            <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.25em] block ml-0.5 mb-0.5">{getTranslation(config, 'interface.somatic_input')}</label>
+                            <h4 className="text-[13px] font-medium text-white">{getTranslation(config, 'interface.mouse_trigger')}</h4>
                         </div>
                         <motion.button
                             onClick={() => {
@@ -1198,8 +1213,8 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
                         transition={{ duration: 0.3, delay: 0.3 }}
                     >
                         <div>
-                            <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.25em] block ml-0.5 mb-4">Center Button Functionality</label>
-                            <h4 className="text-sm font-medium text-white tracking-tight">The Neural Center</h4>
+                            <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.25em] block ml-0.5 mb-4">{getTranslation(config, 'interface.center_button_func')}</label>
+                            <h4 className="text-sm font-medium text-white tracking-tight">{getTranslation(config, 'interface.neural_center')}</h4>
                         </div>
 
                         <div className="flex bg-black/40 p-1 rounded-xl border border-white/5 shadow-inner">
@@ -1239,7 +1254,7 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
                                                 </div>
                                             </>
                                         ) : (
-                                            <div className="flex-1 text-sm text-white/40 italic pl-1">No app selected</div>
+                                            <div className="flex-1 text-sm text-white/40 italic pl-1">{getTranslation(config, 'status.no_app_selected')}</div>
                                         )}
                                         <button
                                             onClick={() => {
@@ -1248,7 +1263,7 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
                                             }}
                                             className="px-4 py-2 bg-white text-black text-xs font-bold rounded-lg hover:scale-105 transition-transform shadow-lg"
                                         >
-                                            Select App...
+                                            {getTranslation(config, 'action.select_app')}
                                         </button>
                                     </div>
                                 </motion.div>
@@ -1266,7 +1281,7 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
                                         onChange={(e) => handleCenterTargetChange(e.target.value, 'widget')}
                                         className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white focus:border-white/30 outline-none hover:bg-white/[0.08] transition-colors cursor-pointer"
                                     >
-                                        <option value="" disabled className="bg-[#111] text-white/50">Select a widget...</option>
+                                        <option value="" disabled className="bg-[#111] text-white/50">{getTranslation(config, 'interface.select_module')}</option>
                                         {AVAILABLE_WIDGETS.map(w => (
                                             <option key={w.id} value={w.id} className="bg-[#111] text-white">{w.name}</option>
                                         ))}
@@ -1282,22 +1297,22 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
                                     className="pt-4 space-y-3"
                                 >
                                     <div>
-                                        <label className="text-xs font-bold text-white/40 uppercase tracking-wider mb-1 block ml-1">Command / Path</label>
+                                        <label className="text-xs font-bold text-white/40 uppercase tracking-wider mb-1 block ml-1">{getTranslation(config, 'interface.command_path')}</label>
                                         <input
                                             type="text"
                                             value={config.centerButton.target}
                                             onChange={(e) => setConfig(prev => ({ ...prev, centerButton: { ...prev.centerButton, target: e.target.value, label: prev.centerButton.label === 'CMD' || prev.centerButton.label === '' ? (e.target.value.split(/[\\/]/).pop()?.substring(0, 8).toUpperCase() || 'CMD') : prev.centerButton.label } }))}
-                                            placeholder="e.g. C:\Windows\System32\calc.exe"
+                                            placeholder={getTranslation(config, 'interface.command_path_placeholder')}
                                             className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white focus:border-white/30 outline-none font-mono"
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-xs font-bold text-white/40 uppercase tracking-wider mb-1 block ml-1">Button Label</label>
+                                        <label className="text-xs font-bold text-white/40 uppercase tracking-wider mb-1 block ml-1">{getTranslation(config, 'interface.button_label')}</label>
                                         <input
                                             type="text"
                                             value={config.centerButton.label}
                                             onChange={(e) => setConfig(prev => ({ ...prev, centerButton: { ...prev.centerButton, label: e.target.value } }))}
-                                            placeholder="Short Label"
+                                            placeholder={getTranslation(config, 'interface.button_label_placeholder')}
                                             maxLength={10}
                                             className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white focus:border-white/30 outline-none"
                                         />
@@ -1318,7 +1333,7 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
                     >
                         <div className="flex items-center justify-between">
                             <div>
-                                <label className="text-sm font-normal text-white">Center on Screen</label>
+                                <label className="text-sm font-normal text-white">{getTranslation(config, 'interface.center_screen')}</label>
                             </div>
                             <motion.button
                                 onClick={() => setConfig({ ...config, fixedPosition: !config.fixedPosition })}
@@ -1337,8 +1352,62 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
 
                     <div className="h-px bg-white/[0.08]" />
 
+                    {/* LANGUAGE SELECTION - Professional Dropdown Redesign 2026 */}
+                    <motion.div
+                        className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6 hover:bg-white/[0.03] transition-all duration-500 overflow-hidden relative group"
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3, delay: 0.4 }}
+                    >
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-white/[0.02] rounded-full blur-3xl -mr-16 -mt-16 group-hover:bg-white/[0.04] transition-colors duration-700" />
+
+                        <div className="flex items-center gap-4 mb-8 relative z-10">
+                            <div className="w-10 h-10 rounded-xl bg-black/40 border border-white/10 flex items-center justify-center text-white/40 group-hover:text-white group-hover:border-white/20 transition-all duration-500">
+                                <Globe size={22} strokeWidth={1.5} />
+                            </div>
+                            <div>
+                                <label className="text-[9px] font-bold text-white/20 uppercase tracking-[0.25em] block mb-0.5">{getTranslation(config, 'interface.language_selection')}</label>
+                                <h4 className="text-sm font-semibold text-white/90 tracking-tight">{getTranslation(config, 'interface.language_desc')}</h4>
+                            </div>
+                        </div>
+
+                        <div className="relative z-10">
+                            <div className="relative">
+                                <select
+                                    value={config.language || 'pt'}
+                                    onChange={(e) => setConfig({ ...config, language: e.target.value as any })}
+                                    className="w-full bg-black/40 border border-white/10 rounded-xl p-4 text-sm text-white focus:border-white/30 outline-none hover:bg-black/60 transition-all cursor-pointer appearance-none pr-12 font-medium"
+                                >
+                                    {LANGUAGES.map((lang) => (
+                                        <option key={lang.code} value={lang.code} className="bg-[#111] text-white py-2">
+                                            {lang.nativeName} ({lang.name})
+                                        </option>
+                                    ))}
+                                </select>
+                                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-white/20">
+                                    <ChevronDown size={18} />
+                                </div>
+                            </div>
+
+                            <div className="mt-4 flex flex-wrap gap-2">
+                                {LANGUAGES.map((lang) => (
+                                    <button
+                                        key={lang.code}
+                                        onClick={() => setConfig({ ...config, language: lang.code })}
+                                        className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border ${config.language === lang.code
+                                            ? 'bg-white text-black border-white shadow-lg scale-105'
+                                            : 'bg-white/5 border-white/5 text-white/30 hover:bg-white/10 hover:text-white/60'
+                                            }`}
+                                    >
+                                        {lang.code}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </motion.div>
+
+                    <div className="h-24" />
                 </div>
-                <div className="h-24" />
             </div>
         </motion.div>
     );
@@ -1360,9 +1429,9 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.1 }}
                 >
-                    <h3 className="text-xl font-semibold text-white mb-1 tracking-tight">HUD Elements</h3>
+                    <h3 className="text-xl font-semibold text-white mb-1 tracking-tight">{getTranslation(config, 'settings.hud_title')}</h3>
                     <p className="text-[11px] text-white/30 font-medium tracking-wide leading-relaxed mt-1 max-w-2xl">
-                        Configure the persistent awareness layer. Position system metadata and temporal markers within your peripheral visual field.
+                        {getTranslation(config, 'settings.hud_desc')}
                     </p>
                 </motion.div>
 
@@ -1379,17 +1448,17 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
                                 <Clock size={24} strokeWidth={1} />
                             </div>
                             <div>
-                                <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.2em] block ml-0.5 mb-0.5">Temporal Module</label>
-                                <h4 className="text-sm font-medium text-white/90 tracking-tight">Time & Flow</h4>
+                                <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.2em] block ml-0.5 mb-0.5">{getTranslation(config, 'hud.temporal_module')}</label>
+                                <h4 className="text-sm font-medium text-white/90 tracking-tight">{getTranslation(config, 'hud.time_flow')}</h4>
                             </div>
                         </div>
 
                         <div className="space-y-4">
                             <div className="flex items-center justify-between p-4 bg-black/20 rounded-xl border border-white/[0.02]">
-                                <div className="text-[13px] font-medium text-white/80">Chronometer</div>
+                                <div className="text-[13px] font-medium text-white/80">{getTranslation(config, 'hud.chronometer')}</div>
                                 <motion.button
                                     onClick={() => setConfig({ ...config, showClock: !config.showClock })}
-                                    className={`relative w-14 h-8 rounded-xl transition-all duration-500 p-1.5 ${config.showClock ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
+                                    className={`relative w-14 h-8 rounded-xl transition-all duration-500 p-1.5 shadow-lg ${config.showClock ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
                                     whileHover={{ scale: 1.05 }}
                                     whileTap={{ scale: 0.95 }}
                                 >
@@ -1398,10 +1467,10 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
                             </div>
 
                             <div className="flex items-center justify-between p-4 bg-black/20 rounded-xl border border-white/[0.02]">
-                                <div className="text-[13px] font-medium text-white/80">Calendar Meta</div>
+                                <div className="text-[13px] font-medium text-white/80">{getTranslation(config, 'hud.calendar')}</div>
                                 <motion.button
                                     onClick={() => setConfig({ ...config, showDate: !config.showDate })}
-                                    className={`relative w-14 h-8 rounded-xl transition-all duration-500 p-1.5 ${config.showDate ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
+                                    className={`relative w-14 h-8 rounded-xl transition-all duration-500 p-1.5 shadow-lg ${config.showDate ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
                                     whileHover={{ scale: 1.05 }}
                                     whileTap={{ scale: 0.95 }}
                                 >
@@ -1422,17 +1491,17 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
                                 <Monitor size={26} strokeWidth={1} />
                             </div>
                             <div>
-                                <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.2em] block ml-0.5 mb-1">Vital Metrics</label>
-                                <h4 className="text-sm font-medium text-white/90 tracking-tight">System Awareness</h4>
+                                <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.2em] block ml-0.5 mb-1">{getTranslation(config, 'hud.vital_metrics')}</label>
+                                <h4 className="text-sm font-medium text-white/90 tracking-tight">{getTranslation(config, 'hud.system_awareness')}</h4>
                             </div>
                         </div>
 
                         <div className="space-y-4">
                             <div className="flex items-center justify-between p-4 bg-black/20 rounded-xl border border-white/[0.02]">
-                                <div className="text-[13px] font-medium text-white/80">Energy Status</div>
+                                <div className="text-[13px] font-medium text-white/80">{getTranslation(config, 'hud.energy_status')}</div>
                                 <motion.button
                                     onClick={() => setConfig({ ...config, showBattery: !config.showBattery })}
-                                    className={`relative w-14 h-8 rounded-xl transition-all duration-500 p-1.5 ${config.showBattery ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
+                                    className={`relative w-14 h-8 rounded-xl transition-all duration-500 p-1.5 shadow-lg ${config.showBattery ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
                                     whileHover={{ scale: 1.05 }}
                                     whileTap={{ scale: 0.95 }}
                                 >
@@ -1441,10 +1510,10 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
                             </div>
 
                             <div className="flex items-center justify-between p-4 bg-black/20 rounded-xl border border-white/[0.02]">
-                                <div className="text-[13px] font-medium text-white/80">Ambient Intel</div>
+                                <div className="text-[13px] font-medium text-white/80">{getTranslation(config, 'hud.ambient_intel')}</div>
                                 <motion.button
                                     onClick={() => setConfig({ ...config, showWeather: !config.showWeather })}
-                                    className={`relative w-14 h-8 rounded-xl transition-all duration-500 p-1.5 ${config.showWeather ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
+                                    className={`relative w-14 h-8 rounded-xl transition-all duration-500 p-1.5 shadow-lg ${config.showWeather ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
                                     whileHover={{ scale: 1.05 }}
                                     whileTap={{ scale: 0.95 }}
                                 >
@@ -1460,12 +1529,12 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
                                         exit={{ opacity: 0, height: 0 }}
                                         className="space-y-2 pt-2"
                                     >
-                                        <label className="text-[9px] font-medium text-white/20 uppercase tracking-[0.1em] ml-1">Location Identifier</label>
+                                        <label className="text-[9px] font-medium text-white/20 uppercase tracking-[0.1em] ml-1">{getTranslation(config, 'hud.location_id')}</label>
                                         <input
                                             type="text"
                                             value={config.weatherLocation || ''}
                                             onChange={(e) => setConfig({ ...config, weatherLocation: e.target.value })}
-                                            placeholder="e.g. San Francisco..."
+                                            placeholder={getTranslation(config, 'hud.location_placeholder')}
                                             className="w-full bg-black/40 border border-white/5 rounded-lg px-4 py-3 text-sm text-white/80 focus:border-white/20 outline-none hover:bg-black/60 transition-all font-mono"
                                         />
                                     </motion.div>
@@ -1480,7 +1549,7 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.3 }}
                     >
-                        <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.3em] block ml-1 mb-6">Spatial Quadrant</label>
+                        <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.3em] block ml-1 mb-6">{getTranslation(config, 'hud.spatial_quadrant')}</label>
                         <div className="grid grid-cols-2 gap-3">
                             {['top-left', 'top-right', 'bottom-left', 'bottom-right'].map((pos) => (
                                 <button
@@ -1491,7 +1560,9 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
                                         : 'bg-black/40 border-white/5 text-white/30 hover:border-white/10 hover:text-white/60'}`}
                                 >
                                     <div className={`w-1.5 h-1.5 rounded-full transition-all duration-500 ${config.clockPosition === pos ? 'bg-black scale-125' : 'bg-white/10'}`} />
-                                    <span className="font-medium text-[9px] uppercase tracking-[0.2em]">{pos.replace('-', ' ')}</span>
+                                    <span className="font-medium text-[9px] uppercase tracking-[0.2em]">
+                                        {getTranslation(config, `hud.quadrant_${pos.replace('-', '_')}`)}
+                                    </span>
                                 </button>
                             ))}
                         </div>
@@ -1518,9 +1589,9 @@ const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setCo
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.1 }}
                 >
-                    <h3 className="text-xl font-semibold text-white mb-1 tracking-tight">Game Mode</h3>
+                    <h3 className="text-xl font-semibold text-white mb-1 tracking-tight">{getTranslation(config, 'settings.gamemode_title')}</h3>
                     <p className="text-[11px] text-white/30 font-medium tracking-wide leading-relaxed mt-1 max-w-2xl">
-                        Engage operational focus. Implement recursive shielding and process blacklisting to eliminate extrinsic interruptions during high-stakes execution.
+                        {getTranslation(config, 'settings.gamemode_desc')}
                     </p>
                 </motion.div>
 
@@ -1535,8 +1606,8 @@ const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setCo
                         transition={{ duration: 0.5, delay: 0.2 }}
                     >
                         <div className="relative z-10">
-                            <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.3em] block ml-0.5 mb-1.5">Operational Logic</label>
-                            <h4 className="text-base font-medium text-white/90 tracking-tight">Stealth Mode</h4>
+                            <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.3em] block ml-0.5 mb-1.5">{getTranslation(config, 'gamemode.operational_logic')}</label>
+                            <h4 className="text-base font-medium text-white/90 tracking-tight">{getTranslation(config, 'gamemode.stealth_mode')}</h4>
                         </div>
 
                         <button
@@ -1562,7 +1633,7 @@ const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setCo
                             >
                                 <div className="bg-white/[0.03] border border-white/[0.08] p-5 rounded-xl space-y-5">
                                     <div>
-                                        <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.3em] block ml-0.5 mb-5">Isolation Strategy</label>
+                                        <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.3em] block ml-0.5 mb-5">{getTranslation(config, 'gamemode.isolation_strategy')}</label>
                                         <div className="grid grid-cols-2 gap-3">
                                             <button
                                                 onClick={() => setConfig({ ...config, gameMode: { ...config.gameMode, mode: 'all' } })}
@@ -1572,7 +1643,7 @@ const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setCo
                                             >
                                                 <Ban size={22} strokeWidth={1} />
                                                 <div className="text-center">
-                                                    <div className="font-medium text-xs uppercase tracking-[0.1em]">Absolute</div>
+                                                    <div className="font-medium text-xs uppercase tracking-[0.1em]">{getTranslation(config, 'gamemode.always_absolute')}</div>
                                                 </div>
                                             </button>
                                             <button
@@ -1583,7 +1654,7 @@ const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setCo
                                             >
                                                 <Hash size={22} strokeWidth={1} />
                                                 <div className="text-center">
-                                                    <div className="font-medium text-xs uppercase tracking-[0.1em]">Targeted</div>
+                                                    <div className="font-medium text-xs uppercase tracking-[0.1em]">{getTranslation(config, 'gamemode.targeted_list')}</div>
                                                 </div>
                                             </button>
                                         </div>
@@ -1596,12 +1667,12 @@ const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setCo
                                             className="space-y-4 pt-6 border-t border-white/5"
                                         >
                                             <div className="flex items-center justify-between">
-                                                <label className="text-[10px] font-semibold text-white/20 uppercase tracking-[0.15em] ml-1">Blacklist Protocol</label>
+                                                <label className="text-[10px] font-semibold text-white/20 uppercase tracking-[0.15em] ml-1">{getTranslation(config, 'gamemode.blocking_rules')}</label>
                                                 <button
                                                     onClick={() => setConfig({ ...config, gameMode: { ...config.gameMode, blockFullscreen: !config.gameMode?.blockFullscreen } })}
                                                     className={`text-[10px] font-semibold uppercase tracking-widest px-4 py-2 rounded-lg transition-all border ${config.gameMode?.blockFullscreen ? 'bg-white/10 border-white/20 text-white' : 'bg-transparent border-white/5 text-white/20'}`}
                                                 >
-                                                    Auto-Detect Fullscreen: {config.gameMode?.blockFullscreen ? 'ON' : 'OFF'}
+                                                    {getTranslation(config, 'gamemode.detect_fullscreen')}: {config.gameMode?.blockFullscreen ? getTranslation(config, 'gamemode.on') : getTranslation(config, 'gamemode.off')}
                                                 </button>
                                             </div>
 
@@ -1611,11 +1682,11 @@ const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setCo
                                                     animate={{ opacity: 1, height: 'auto' }}
                                                     className="mt-6 pt-6 border-t border-white/5 space-y-3"
                                                 >
-                                                    <label className="text-[10px] font-semibold text-white/20 uppercase tracking-[0.2em] block ml-1">Process Matrix</label>
+                                                    <label className="text-[10px] font-semibold text-white/20 uppercase tracking-[0.2em] block ml-1">{getTranslation(config, 'gamemode.process_list')}</label>
                                                     <textarea
                                                         value={config.gameMode?.blockedApps || ''}
                                                         onChange={(e) => setConfig(prev => ({ ...prev, gameMode: { ...prev.gameMode, blockedApps: e.target.value } }))}
-                                                        placeholder="e.g. valorant.exe, cs2.exe, elden_ring.exe"
+                                                        placeholder={getTranslation(config, 'gamemode.process_list_placeholder')}
                                                         className="w-full bg-black/60 border border-white/10 rounded-lg p-3 text-sm text-white focus:border-white/30 outline-none font-mono resize-none h-32 shadow-inner hover:bg-black/80 transition-all placeholder-white/5"
                                                     />
                                                 </motion.div>
@@ -1632,7 +1703,7 @@ const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setCo
     );
 });
 
-const UserTab = React.memo(({ user }: { user: UserProfile | null }) => {
+const UserTab = React.memo(({ user, config }: { user: UserProfile | null, config: UIConfig }) => {
     return (
         <motion.div
             className="pt-10 md:pt-16 lg:pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
@@ -1648,9 +1719,9 @@ const UserTab = React.memo(({ user }: { user: UserProfile | null }) => {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.1 }}
                 >
-                    <h3 className="text-xl font-semibold text-white mb-1 tracking-tight">Neural Profile</h3>
+                    <h3 className="text-xl font-semibold text-white mb-1 tracking-tight">{getTranslation(config, 'user.profile_title')}</h3>
                     <p className="text-[11px] text-white/30 font-medium tracking-wide leading-relaxed mt-1 max-w-2xl">
-                        Manage your neural identity. Synchronize personal metadata and biometric profiles across the Zenith ecosystem.
+                        {getTranslation(config, 'user.profile_desc')}
                     </p>
                 </motion.div>
 
@@ -1682,7 +1753,7 @@ const UserTab = React.memo(({ user }: { user: UserProfile | null }) => {
                                 <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-2">
                                     <h4 className="text-xl font-semibold text-white tracking-tight">{user?.name || 'Zenith User'}</h4>
                                     <div className={`inline-flex px-3 py-1 rounded-md text-[9px] font-semibold tracking-[0.15em] border self-center sm:self-auto ${user?.isPremium ? 'bg-white text-black border-white' : 'bg-white/5 text-white/40 border-white/10'}`}>
-                                        {user?.isPremium ? 'ZENITH PRIME' : 'STANDARD NEXUS'}
+                                        {user?.isPremium ? getTranslation(config, 'user.zenith_pro') : getTranslation(config, 'user.free_plan')}
                                     </div>
                                 </div>
                                 <p className="text-white/40 font-normal mb-6">{user?.email || 'unlinked_identity@zenith.os'}</p>
@@ -1691,15 +1762,15 @@ const UserTab = React.memo(({ user }: { user: UserProfile | null }) => {
                                     <div className="px-4 py-2.5 rounded-xl bg-black/40 border border-white/5 flex items-center gap-3">
                                         <Zap size={16} className="text-yellow-400" />
                                         <div className="text-left">
-                                            <div className="text-[10px] font-semibold text-white/20 uppercase tracking-widest leading-none mb-1">Performance</div>
-                                            <div className="text-sm font-medium text-white">High Density</div>
+                                            <div className="text-[10px] font-semibold text-white/20 uppercase tracking-widest leading-none mb-1">{getTranslation(config, 'user.performance')}</div>
+                                            <div className="text-sm font-medium text-white">{getTranslation(config, 'user.high_priority')}</div>
                                         </div>
                                     </div>
                                     <div className="px-4 py-2.5 rounded-xl bg-black/40 border border-white/5 flex items-center gap-3">
                                         <Globe size={16} className="text-blue-400" />
                                         <div className="text-left">
-                                            <div className="text-[10px] font-semibold text-white/20 uppercase tracking-widest leading-none mb-1">Node</div>
-                                            <div className="text-sm font-medium text-white">Local Kernel</div>
+                                            <div className="text-[10px] font-semibold text-white/20 uppercase tracking-widest leading-none mb-1">{getTranslation(config, 'user.server')}</div>
+                                            <div className="text-sm font-medium text-white">{getTranslation(config, 'user.local_kernel')}</div>
                                         </div>
                                     </div>
                                 </div>
@@ -1720,11 +1791,11 @@ const UserTab = React.memo(({ user }: { user: UserProfile | null }) => {
                                     <Lock size={20} strokeWidth={1.5} />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-semibold text-white/20 uppercase tracking-widest block mb-0.5">Authentication</label>
-                                    <h4 className="font-semibold text-white">Security Keys</h4>
+                                    <label className="text-[10px] font-semibold text-white/20 uppercase tracking-widest block mb-0.5">{getTranslation(config, 'user.authentication')}</label>
+                                    <h4 className="font-semibold text-white">{getTranslation(config, 'user.access_security')}</h4>
                                 </div>
                             </div>
-                            <button className="w-full py-3.5 bg-white/5 border border-white/10 rounded-xl text-[11px] font-semibold uppercase tracking-widest text-white/60 hover:text-white hover:bg-white/10 transition-all">Manage Credentials</button>
+                            <button className="w-full py-3.5 bg-white/5 border border-white/10 rounded-xl text-[11px] font-semibold uppercase tracking-widest text-white/60 hover:text-white hover:bg-white/10 transition-all">{getTranslation(config, 'user.manage_credentials')}</button>
                         </motion.div>
 
                         <motion.div
@@ -1738,11 +1809,11 @@ const UserTab = React.memo(({ user }: { user: UserProfile | null }) => {
                                     <TimerReset size={20} strokeWidth={1.5} />
                                 </div>
                                 <div>
-                                    <label className="text-[9px] font-semibold text-white/20 uppercase tracking-widest block mb-0.5">Chronometric Display</label>
-                                    <h4 className="font-semibold text-white text-base">System Clock</h4>
+                                    <label className="text-[9px] font-semibold text-white/20 uppercase tracking-widest block mb-0.5">{getTranslation(config, 'user.time_display')}</label>
+                                    <h4 className="font-semibold text-white text-base">{getTranslation(config, 'user.system_clock')}</h4>
                                 </div>
                             </div>
-                            <button className="w-full py-3.5 bg-white/5 border border-white/10 rounded-xl text-[11px] font-semibold uppercase tracking-widest text-white/60 hover:text-white hover:bg-white/10 transition-all">Sync Cloud Matrix</button>
+                            <button className="w-full py-3.5 bg-white/5 border border-white/10 rounded-xl text-[11px] font-semibold uppercase tracking-widest text-white/60 hover:text-white hover:bg-white/10 transition-all">{getTranslation(config, 'user.sync_cloud')}</button>
                         </motion.div>
                     </div>
 
@@ -1758,12 +1829,12 @@ const UserTab = React.memo(({ user }: { user: UserProfile | null }) => {
                                 <AlertTriangle size={20} strokeWidth={1.5} />
                             </div>
                             <div>
-                                <h4 className="text-sm font-semibold text-white tracking-tight mb-1">Critical Operations</h4>
-                                <p className="text-[11px] leading-relaxed text-white/30 font-normal">De-linking your profile will purge all local cached credentials and nexus configurations.</p>
+                                <h4 className="text-sm font-semibold text-white tracking-tight mb-1">{getTranslation(config, 'user.critical_operations')}</h4>
+                                <p className="text-[11px] leading-relaxed text-white/30 font-normal">{getTranslation(config, 'user.critical_operations_desc')}</p>
                             </div>
                         </div>
                         <button className="w-full py-3 bg-red-500/10 text-red-500 font-semibold text-xs uppercase tracking-[0.2em] rounded-lg border border-red-500/20 hover:bg-red-500 hover:text-white transition-all duration-300">
-                            Terminate Session Profile
+                            {getTranslation(config, 'user.terminate_session')}
                         </button>
                     </motion.div>
                 </div>
@@ -1914,25 +1985,27 @@ type SearchResult = {
 };
 
 const SEARCHABLE_SETTINGS: Omit<SearchResult, 'id'>[] = [
-    { type: 'setting', label: 'Global Shortcut', description: 'Activation Matrix Keybind', tab: 'interface', icon: Keyboard },
-    { type: 'setting', label: 'Autostart Protocol', description: 'System Boot Integration', tab: 'interface', icon: Zap },
-    { type: 'setting', label: 'Middle Mouse Trigger', description: 'Somatic Input Hook', tab: 'interface', icon: MousePointer2 },
-    { type: 'setting', label: 'Center Button', description: 'Radial Menu Core Function', tab: 'interface', icon: Box },
-    { type: 'setting', label: 'Menu Position', description: 'Screen Centering Toggles', tab: 'interface', icon: Layout },
-    { type: 'setting', label: 'Backdrop Bloom', description: 'Atmospheric Visual Effects', tab: 'visuals', icon: Palette },
-    { type: 'setting', label: 'Glassmorphism', description: 'Transparency & Blur Density', tab: 'visuals', icon: ImageIcon },
-    { type: 'setting', label: 'Sidebar Rhythm', description: 'Navigation Layout Settings', tab: 'visuals', icon: Layout },
-    { type: 'setting', label: 'HUD Elements', description: 'Clock, Date, Battery, Weather', tab: 'widgets', icon: Clock },
-    { type: 'setting', label: 'Game Mode', description: 'Performance & Latency Shields', tab: 'gamemode', icon: Gamepad2 },
-    { type: 'setting', label: 'User Profile', description: 'Identity & Cloud Sync', tab: 'user', icon: User },
+    { type: 'setting', label: 'interface.global_shortcut', description: 'interface.activation_matrix', tab: 'interface', icon: Keyboard },
+    { type: 'setting', label: 'interface.autostart', description: 'interface.system_integration', tab: 'interface', icon: Zap },
+    { type: 'setting', label: 'interface.mouse_trigger', description: 'interface.somatic_input', tab: 'interface', icon: MousePointer2 },
+    { type: 'setting', label: 'interface.center_button_func', description: 'interface.neural_center', tab: 'interface', icon: Box },
+    { type: 'setting', label: 'interface.center_screen', description: 'interface.neural_center', tab: 'interface', icon: Layout },
+    { type: 'setting', label: 'visuals.glass_effect', description: 'visuals.transparency', tab: 'visuals', icon: Palette },
+    { type: 'setting', label: 'visuals.transparency', description: 'visuals.blur_radius', tab: 'visuals', icon: ImageIcon },
+    { type: 'setting', label: 'visuals.visual_rhythm', description: 'visuals.spacing', tab: 'visuals', icon: Layout },
+    { type: 'setting', label: 'hud.temporal_module', description: 'hud.time_flow', tab: 'widgets', icon: Clock },
+    { type: 'setting', label: 'gamemode.operational_logic', description: 'gamemode.blocking_rules', tab: 'gamemode', icon: Gamepad2 },
+    { type: 'setting', label: 'user.profile_title', description: 'user.profile_desc', tab: 'user', icon: User },
 ];
 
 const SearchResultsView = React.memo(({
     results,
-    onResultClick
+    onResultClick,
+    config
 }: {
     results: SearchResult[],
-    onResultClick: (result: SearchResult) => void
+    onResultClick: (result: SearchResult) => void,
+    config: UIConfig
 }) => {
     return (
         <motion.div
@@ -1945,11 +2018,11 @@ const SearchResultsView = React.memo(({
             <div className="max-w-4xl mx-auto px-6 md:px-10 lg:px-12 pb-20">
                 <div className="flex items-center justify-between mb-12">
                     <div>
-                        <h3 className="text-2xl font-semibold text-white mb-2 tracking-tight">Search Index</h3>
-                        <p className="text-xs text-white/30 font-medium uppercase tracking-[0.2em]">Neural Match Results</p>
+                        <h3 className="text-2xl font-semibold text-white mb-2 tracking-tight">{getTranslation(config, 'search.index') || 'Search Index'}</h3>
+                        <p className="text-xs text-white/30 font-medium uppercase tracking-[0.2em]">{getTranslation(config, 'search.match_results') || 'Neural Match Results'}</p>
                     </div>
                     <div className="px-3 py-1 bg-white/5 border border-white/10 rounded-full text-[10px] text-white/40 font-bold uppercase tracking-widest">
-                        {results.length} Matches found
+                        {results.length} {getTranslation(config, 'status.matches_found') || 'Matches found'}
                     </div>
                 </div>
 
@@ -1974,17 +2047,19 @@ const SearchResultsView = React.memo(({
                                 <div className="flex-1 min-w-0 relative z-10">
                                     <div className="flex items-center gap-2 mb-1">
                                         <span className="text-[9px] font-black text-white/20 uppercase tracking-widest group-hover:text-white/40 transition-colors">
-                                            {result.type}
+                                            {getTranslation(config, `workspaces.${result.type}`) || result.type}
                                         </span>
                                         <span className="text-[10px] text-white/10">•</span>
                                         <span className="text-[9px] font-bold text-white/30 uppercase tracking-tight truncate">
-                                            {result.tab.replace('_', ' ')}
+                                            {getTranslation(config, `tabs.${result.tab}`) || result.tab.replace('_', ' ')}
                                         </span>
                                     </div>
-                                    <div className="text-base font-medium text-white group-hover:translate-x-1 transition-transform duration-300">{result.label}</div>
+                                    <div className="text-base font-medium text-white group-hover:translate-x-1 transition-transform duration-300">
+                                        {result.type === 'setting' ? (getTranslation(config, result.label) || result.label) : result.label}
+                                    </div>
                                     {result.description && (
                                         <div className="text-[11px] text-white/20 truncate mt-0.5 group-hover:text-white/40 transition-colors">
-                                            {result.description}
+                                            {result.type === 'setting' ? (getTranslation(config, result.description) || result.description) : result.description}
                                         </div>
                                     )}
                                 </div>
@@ -2006,8 +2081,8 @@ const SearchResultsView = React.memo(({
                         <div className="w-20 h-20 rounded-full bg-white/[0.02] border border-white/[0.05] flex items-center justify-center text-white/5 mb-6">
                             <Search size={40} strokeWidth={1} />
                         </div>
-                        <h4 className="text-lg font-medium text-white/40 mb-2">No matches found in the matrix</h4>
-                        <p className="text-xs text-white/20 uppercase tracking-[0.2em]">Try broadening your temporal search parameters</p>
+                        <h4 className="text-lg font-medium text-white/40 mb-2">{getTranslation(config, 'status.no_matches') || 'No matches found in the matrix'}</h4>
+                        <p className="text-xs text-white/20 uppercase tracking-[0.2em]">{getTranslation(config, 'status.try_broadening') || 'Try broadening your temporal search parameters'}</p>
                     </motion.div>
                 )}
             </div>
@@ -2137,7 +2212,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }, [apps]);
 
     const currentApps = getCurrentLevel(apps, folderPath);
-    const currentFolderName = folderPath.length > 0 ? getCurrentLevel(apps, folderPath.slice(0, -1))[folderPath[folderPath.length - 1]]?.label : 'Main Menu';
+    const currentFolderName = folderPath.length > 0 ? getCurrentLevel(apps, folderPath.slice(0, -1))[folderPath[folderPath.length - 1]]?.label : (getTranslation(config, 'workspaces.main_menu') || 'Main Menu');
 
     const filteredIcons = useMemo(() => {
         const term = iconSearchTerm.toLowerCase();
@@ -2198,7 +2273,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             id: `app-${app.id}`,
                             type: 'app',
                             label: app.label,
-                            description: `Location: ${ws.name}${path.length > 0 ? ' • In Folder' : ''}`,
+                            description: `${getTranslation(config, 'workspaces.location') || 'Location'}: ${ws.name}${path.length > 0 ? ` • ${getTranslation(config, 'workspaces.in_folder') || 'In Folder'}` : ''}`,
                             tab: 'workspaces',
                             icon: app.iconSource === 'lucide' ? getIcon(app.iconName) : Box,
                             workspaceIndex: wsIdx,
@@ -2358,9 +2433,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const handleAddApp = (type: 'app' | 'folder') => {
         if (type === 'folder') {
             const newFolder: AppItem = {
-                id: generateId(), type: 'folder', label: 'New Folder',
+                id: generateId(), type: 'folder', label: getTranslation(config, 'action.new_folder') || 'New Folder',
                 iconName: 'Folder', iconSource: 'lucide', command: '',
-                commandType: 'app', description: 'Folder Group',
+                commandType: 'app', description: getTranslation(config, 'workspaces.folder_group') || 'Folder Group',
                 children: []
             };
             if (selectedWorkspaceIndex !== null) {
@@ -2376,9 +2451,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 setShowAppSelectionModal(true);
             } else {
                 const newApp: AppItem = {
-                    id: generateId(), type: 'app', label: 'New App',
+                    id: generateId(), type: 'app', label: getTranslation(config, 'action.new_app') || 'New App',
                     iconName: 'Layout', iconSource: 'lucide', command: '',
-                    commandType: 'app', description: 'Application'
+                    commandType: 'app', description: getTranslation(config, 'workspaces.app') || 'Application'
                 };
                 setApps(prev => updateAppTree(prev, folderPath, (list) => [...list, newApp]));
             }
@@ -2480,12 +2555,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         const newApp: AppItem = {
             id: generateId(),
             type: type,
-            label: type === 'folder' ? 'New Folder' : (commandType === 'url' ? 'New URL' : 'New App'),
+            label: type === 'folder' ? (getTranslation(config, 'action.new_folder') || 'New Folder') : (commandType === 'url' ? (getTranslation(config, 'appSelection.new_url') || 'New URL') : (getTranslation(config, 'action.new_app') || 'New App')),
             iconName: type === 'folder' ? 'Folder' : (commandType === 'url' ? 'Globe' : 'Layout'),
             iconSource: 'lucide',
             command: '',
             commandType: commandType,
-            description: type === 'folder' ? 'Folder Group' : (commandType === 'url' ? 'Web Link' : 'Application'),
+            description: type === 'folder' ? (getTranslation(config, 'workspaces.folder_group') || 'Folder Group') : (commandType === 'url' ? (getTranslation(config, 'appSelection.web_url_desc') || 'Web Link') : (getTranslation(config, 'workspaces.app') || 'Application')),
             children: type === 'folder' ? [] : undefined
         };
 
@@ -2653,10 +2728,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                     </div>
                                     <div>
                                         <h3 className="text-[15px] font-semibold text-white tracking-tight mb-1.5" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-                                            Redefinir configurações
+                                            {getTranslation(config, 'reset.title')}
                                         </h3>
                                         <p className="text-[12px] text-white/40 leading-relaxed">
-                                            Todas as configurações serão apagadas e o app será reiniciado. Esta ação não pode ser desfeita.
+                                            {getTranslation(config, 'reset.description')}
                                         </p>
                                     </div>
                                 </div>
@@ -2680,13 +2755,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                             color: '#f87171',
                                         }}
                                     >
-                                        Sim, redefinir
+                                        {getTranslation(config, 'reset.confirm')}
                                     </button>
                                     <button
                                         onClick={() => setShowResetConfirm(false)}
                                         className="w-full py-3 rounded-xl text-[13px] font-medium text-white/40 hover:text-white/70 tracking-wide transition-all duration-200 hover:bg-white/[0.04] border border-transparent hover:border-white/[0.06]"
                                     >
-                                        Cancelar
+                                        {getTranslation(config, 'reset.cancel')}
                                     </button>
                                 </div>
                             </div>
@@ -2720,8 +2795,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             <div className="absolute -top-24 -right-24 w-48 h-48 bg-white/[0.02] rounded-full blur-3xl pointer-events-none" />
 
                             <div className="text-center mb-7 relative z-10">
-                                <h3 className="text-lg font-semibold text-white mb-2">Add to Workspace</h3>
-                                <p className="text-[10px] text-white/30 font-medium uppercase tracking-widest">Select entry type</p>
+                                <h3 className="text-lg font-semibold text-white mb-2">{getTranslation(config, 'appSelection.title')}</h3>
+                                <p className="text-[10px] text-white/30 font-medium uppercase tracking-widest">{getTranslation(config, 'appSelection.description')}</p>
                             </div>
 
                             <div className="grid grid-cols-1 gap-4 relative z-10">
@@ -2739,8 +2814,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                         <Monitor size={22} strokeWidth={1.5} />
                                     </div>
                                     <div className="text-center">
-                                        <div className="font-semibold text-white text-sm">Local Application</div>
-                                        <p className="text-[9px] text-white/20 mt-1 uppercase tracking-tight">System executables</p>
+                                        <div className="font-semibold text-white text-sm">{getTranslation(config, 'appSelection.local_app')}</div>
+                                        <p className="text-[9px] text-white/20 mt-1 uppercase tracking-tight">{getTranslation(config, 'appSelection.local_app_desc')}</p>
                                     </div>
                                 </button>
 
@@ -2758,8 +2833,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                         <Globe size={22} strokeWidth={1.5} />
                                     </div>
                                     <div className="text-center">
-                                        <div className="font-semibold text-white text-sm">Web URL</div>
-                                        <p className="text-[9px] text-white/20 mt-1 uppercase tracking-tight">Websites & bookmarks</p>
+                                        <div className="font-semibold text-white text-sm">{getTranslation(config, 'appSelection.web_url')}</div>
+                                        <p className="text-[9px] text-white/20 mt-1 uppercase tracking-tight">{getTranslation(config, 'appSelection.web_url_desc')}</p>
                                     </div>
                                 </button>
                             </div>
@@ -2771,7 +2846,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 }}
                                 className="mt-5 w-full py-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/20 hover:text-white/40 transition-colors"
                             >
-                                Cancel
+                                {getTranslation(config, 'action.cancel')}
                             </button>
                         </motion.div>
                     </div>
@@ -2790,7 +2865,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 )}
                 <motion.div
                     className={`relative z-[101] bg-white/[0.015] backdrop-blur-3xl overflow-hidden flex ${!isPage ? 'mx-auto rounded-xl shadow-[0_0_0_1px_rgba(255,255,255,0.05),0_40px_100px_-20px_rgba(0,0,0,0.8)] border border-white/5' : 'w-full h-full border-none'}`}
-                    style={!isPage ? { width: '95%', maxWidth: 1400, marginTop: 32, height: 'calc(100% - 64px)' } : { width: '100%', height: '100%', paddingTop: 0 }}
+                    style={!isPage ? { width: '90%', maxWidth: 1200, marginTop: 32, height: 'calc(100% - 64px)' } : { width: '100%', height: '100%', paddingTop: 0 }}
                     onClick={(e) => e.stopPropagation()}
                     initial={!isPage ? { opacity: 0, scale: 0.96, y: 40, filter: 'blur(10px)' } : { opacity: 0, x: 20 }}
                     animate={{ opacity: 1, scale: 1, y: 0, x: 0, filter: 'blur(0px)' }}
@@ -2867,7 +2942,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                         <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/10 group-focus-within:text-white/40 transition-colors" size={14} />
                                         <input
                                             type="text"
-                                            placeholder="Find preferences..."
+                                            placeholder={getTranslation(config, 'sidebar.find_prefs')}
                                             value={searchTerm}
                                             onChange={(e) => setSearchTerm(e.target.value)}
                                             className="w-full bg-white/[0.02] border border-white/5 rounded-xl py-2.5 pl-10 pr-4 text-[11px] text-white/90 placeholder:text-white/10 outline-none focus:bg-white/[0.04] focus:border-white/10 transition-all font-medium"
@@ -2879,22 +2954,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                         {/* Navigation Groups */}
                         <div className="flex flex-col gap-0.5">
-                            <SectionHeader label="Core" isExpanded={isSidebarExpanded} />
-                            <NavButton tab="workspaces" label="Apps & Workspaces" icon={LayoutGrid} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} />
-                            <NavButton tab="zenith_apps" label="Zenith Widgets" icon={AppWindow} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} />
+                            <SectionHeader label={getTranslation(config, 'sidebar.core')} isExpanded={isSidebarExpanded} />
+                            <NavButton tab="workspaces" label={getTranslation(config, 'sidebar.workspaces')} icon={LayoutGrid} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} />
+                            <NavButton tab="zenith_apps" label={getTranslation(config, 'sidebar.zenith_widgets')} icon={AppWindow} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} />
 
-                            <SectionHeader label="Personalization" isExpanded={isSidebarExpanded} />
-                            <NavButton tab="interface" label="Interface" icon={Settings2} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} />
-                            <NavButton tab="visuals" label="Visuals" icon={Palette} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} />
+                            <SectionHeader label={getTranslation(config, 'sidebar.personalization')} isExpanded={isSidebarExpanded} />
+                            <NavButton tab="interface" label={getTranslation(config, 'sidebar.interface')} icon={Settings2} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} />
+                            <NavButton tab="visuals" label={getTranslation(config, 'sidebar.visuals')} icon={Palette} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} />
 
-                            <SectionHeader label="System" isExpanded={isSidebarExpanded} />
-                            <NavButton tab="widgets" label="HUD Elements" icon={Clock} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} />
-                            <NavButton tab="gamemode" label="Game Mode" icon={Gamepad2} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} />
-                            <NavButton tab="user" label="Profile" icon={User} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} />
+                            <SectionHeader label={getTranslation(config, 'sidebar.system')} isExpanded={isSidebarExpanded} />
+                            <NavButton tab="widgets" label={getTranslation(config, 'sidebar.hud')} icon={Clock} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} />
+                            <NavButton tab="gamemode" label={getTranslation(config, 'sidebar.gamemode')} icon={Gamepad2} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} />
+                            <NavButton tab="user" label={getTranslation(config, 'sidebar.profile')} icon={User} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} />
                         </div>
 
                         <div className="mt-auto pt-6 border-t border-white/[0.08] space-y-2.5">
-                            <NavButton tab="dashboard" label="Open Dashboard" icon={LayoutDashboard} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={() => onOpenDashboard()} />
+                            <NavButton tab="dashboard" label={getTranslation(config, 'sidebar.dashboard')} icon={LayoutDashboard} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={() => onOpenDashboard()} />
 
                             <button
                                 onClick={() => {
@@ -2922,7 +2997,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                             transition={{ duration: 0.2 }}
                                             className="text-[11px] font-medium tracking-wide whitespace-nowrap ml-px relative z-10"
                                         >
-                                            Config Folder
+                                            {getTranslation(config, 'sidebar.config_folder')}
                                         </motion.span>
                                     )}
                                 </AnimatePresence>
@@ -2950,7 +3025,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                             transition={{ duration: 0.2 }}
                                             className="text-[11px] font-medium tracking-wide whitespace-nowrap ml-px relative z-10"
                                         >
-                                            Reset System
+                                            {getTranslation(config, 'interface.resync')}
                                         </motion.span>
                                     ) : (
                                         <motion.div
@@ -2967,7 +3042,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                             className="absolute left-[64px] px-3.5 py-2 bg-black/80 border border-white/10 rounded-xl text-[10px] font-bold text-white pointer-events-none whitespace-nowrap z-[200] shadow-2xl backdrop-blur-xl ring-1 ring-white/5"
                                         >
                                             <div className="absolute inset-0 bg-white/[0.02] rounded-xl pointer-events-none" />
-                                            <span className="relative z-10 text-red-400">Reset</span>
+                                            <span className="relative z-10 text-red-400">{getTranslation(config, 'reset.button_label') || 'Reset'}</span>
                                         </motion.div>
                                     )}
                                 </AnimatePresence>
@@ -2983,6 +3058,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                     key="search"
                                     results={searchResults}
                                     onResultClick={handleResultClick}
+                                    config={config}
                                 />
                             ) : (
                                 <>
@@ -3026,7 +3102,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                     )}
                                     {activeTab === 'widgets' && <HUDTab key="hud" config={config} setConfig={setConfig} />}
                                     {activeTab === 'gamemode' && <GameModeTab key="gamemode" config={config} setConfig={setConfig} />}
-                                    {activeTab === 'user' && <UserTab key="user" user={user} />}
+                                    {activeTab === 'user' && <UserTab key="user" user={user} config={config} />}
                                 </>
                             )}
                         </AnimatePresence>
@@ -3040,6 +3116,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     handlePickCommand={handlePickCommand}
                     setShowAppSelector={setShowAppSelector}
                     handlePickIcon={handlePickIcon}
+                    config={config}
                 />
 
 

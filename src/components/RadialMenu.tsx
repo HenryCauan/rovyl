@@ -4,6 +4,7 @@ import { Coordinates, AppItem, UIConfig, Workspace } from '../types';
 import { getIcon } from '../iconMap';
 import { Settings2, CornerUpLeft } from 'lucide-react';
 import { SmartIcon } from './SmartIcon';
+import { getTranslation } from '../translations';
 
 interface RadialMenuProps {
   isOpen: boolean;
@@ -38,23 +39,50 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
   const minGap = config.appSpacing || 0;
   const numberOfApps = currentLevelApps.length;
 
-  // Memoize menu radius calculation for performance
-  const actualMenuRadius = React.useMemo(() => {
-    // Make appSpacing additive for a more direct visual feedback in Settings
-    let radius = config.menuRadius + minGap;
+  // Intelligent Layout Calibration
+  const { actualMenuRadius, actualIconSize } = React.useMemo(() => {
+    const baseRadius = config.menuRadius + minGap;
+    // Allow the menu to occupy up to 52% of the smallest screen dimension (Phase 3)
+    const maxScreenRadius = Math.min(window.innerWidth, window.innerHeight) * 0.52;
+
+    let currentIconSize = iconSizePx;
+    let targetRadius = baseRadius;
 
     if (numberOfApps > 1) {
-      const effectiveIconDiameter = iconSizePx + (minGap / 2); // Half gap for tighter calc but additive base
-      const anglePerSliceRad = (360 / numberOfApps) * (Math.PI / 180);
+      // Calculate radius needed to maintain the gap with current icon size
+      const anglePerSliceRad = (2 * Math.PI) / numberOfApps;
       const sinHalfAngle = Math.sin(anglePerSliceRad / 2);
-      if (sinHalfAngle > 0) {
-        const requiredRadiusForSpacing = (effectiveIconDiameter / 2) / sinHalfAngle;
-        // Ensure we respect the required radius but the base is already expanded by minGap
-        radius = Math.max(radius, requiredRadiusForSpacing);
+
+      // Phase 3: Extreme Gap Multiplier (2.0x + 16px safe zone)
+      const calculateRequiredRadius = (size: number) => {
+        const effectiveDiameter = size + (minGap * 2.0) + 16;
+        return (effectiveDiameter / 2) / sinHalfAngle;
+      };
+
+      let requiredRadius = calculateRequiredRadius(currentIconSize);
+      targetRadius = Math.max(baseRadius, requiredRadius);
+
+      // If the target radius exceeds screen bounds, we must scale down icons
+      if (targetRadius > maxScreenRadius) {
+        // Formula: scale = (2 * maxRadius * sinHalfAngle - (gap * 2.0 + 16)) / iconSize
+        const possibleScale = (2 * maxScreenRadius * sinHalfAngle - ((minGap * 2.0) + 16)) / iconSizePx;
+        // Clamp scale factor between 50% (Phase 3) and 100%
+        const scaleFactor = Math.max(0.5, Math.min(1.0, possibleScale));
+
+        currentIconSize = Math.round(iconSizePx * scaleFactor);
+        // Re-calculate radius with scaled icon
+        targetRadius = Math.max(baseRadius, calculateRequiredRadius(currentIconSize));
+
+        // CRITICAL FIX: To prevent lateral overlaps, we MUST prioritize the calculated radius 
+        // even if it slightly exceeds maxScreenRadius, as long as it fits the icons.
+        // We only cap if it's truly massive.
       }
     }
 
-    return radius;
+    return {
+      actualMenuRadius: targetRadius,
+      actualIconSize: currentIconSize
+    };
   }, [config.menuRadius, numberOfApps, iconSizePx, minGap]);
 
   // Sync props to internal state when menu opens or props change
@@ -64,11 +92,13 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
     }
   }, [apps, isOpen, folderStack.length]);
 
+  const t = (key: string) => getTranslation(config, key);
+
   // Determine Center Icon
   // If we are deep in a folder, show Back arrow. Otherwise show configured icon.
   const isRoot = folderStack.length === 0;
   const CenterIcon = !isRoot ? CornerUpLeft : (config.centerButton?.iconName ? getIcon(config.centerButton.iconName) : Settings2);
-  const centerLabel = !isRoot ? 'BACK' : (config.centerButton?.label || 'CENTER');
+  const centerLabel = !isRoot ? t('menu.back') : (config.centerButton?.label || t('menu.center'));
 
   // Timer for Clock
   useEffect(() => {
@@ -466,7 +496,7 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                     {currentWorkspace.name.toUpperCase()}
                   </div>
                   <div className="text-[9px] font-bold text-white/20 uppercase tracking-widest mt-0.5">
-                    {currentWorkspace.apps.length} active modules
+                    {currentWorkspace.apps.length} {t('workspaces.active_modules')}
                   </div>
                 </div>
               </div>
@@ -503,8 +533,8 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                 }
               `}
               style={{
-                width: `${Math.round(iconSizePx * 1.2)}px`,
-                height: `${Math.round(iconSizePx * 1.2)}px`,
+                width: `${Math.round(actualIconSize * 1.2)}px`,
+                height: `${Math.round(actualIconSize * 1.2)}px`,
                 backgroundColor: isCenterActive ? config.accentColor : undefined,
                 borderColor: isCenterActive ? config.accentColor : undefined,
                 boxShadow: isCenterActive ? `0 0 50px ${config.accentColor}66` : undefined,
@@ -539,14 +569,14 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
             >
               {isCenterActive ? (
                 <div className="flex flex-col items-center animate-in fade-in duration-300">
-                  <CenterIcon size={isRoot && config.centerButton?.type === 'none' ? Math.round(iconSizePx * 0.65) : Math.round(iconSizePx * 0.5)} strokeWidth={1.5} />
+                  <CenterIcon size={isRoot && config.centerButton?.type === 'none' ? Math.round(actualIconSize * 0.65) : Math.round(actualIconSize * 0.5)} strokeWidth={1.5} />
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center gap-1">
                   {folderStack.length > 0 ? (
                     // Inside folder: show back icon + depth dots
                     <>
-                      <CenterIcon size={Math.round(iconSizePx * 0.45)} strokeWidth={1.5} />
+                      <CenterIcon size={Math.round(actualIconSize * 0.45)} strokeWidth={1.5} />
                       <div className="flex gap-0.5 mt-0.5">
                         {folderStack.map((_, i) => (
                           <div key={i} className="w-1 h-1 rounded-full bg-white/40" />
@@ -555,7 +585,7 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                     </>
                   ) : (
                     // Root: same icon as hover, dimmed
-                    <CenterIcon size={isRoot && config.centerButton?.type === 'none' ? Math.round(iconSizePx * 0.65) : Math.round(iconSizePx * 0.5)} strokeWidth={1.5} className="text-white/40" />
+                    <CenterIcon size={isRoot && config.centerButton?.type === 'none' ? Math.round(actualIconSize * 0.65) : Math.round(actualIconSize * 0.5)} strokeWidth={1.5} className="text-white/40" />
                   )}
                 </div>
               )}
@@ -644,7 +674,7 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                     exit={{ scale: 0, opacity: 0 }}
                     transition={{ type: 'spring', stiffness: 500, damping: 30, mass: 0.8 }}
                     className="absolute top-0 left-0 pointer-events-auto cursor-pointer"
-                    style={{ zIndex: 100, willChange: 'transform, opacity' }}
+                    style={{ zIndex: isActive ? 200 : 100, willChange: 'transform, opacity' }}
                     onMouseDown={(e) => e.stopPropagation()}
                     onMouseUp={(e) => e.stopPropagation()}
                     onClick={(e) => {
@@ -665,8 +695,8 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                       <div
                         className="relative z-20"
                         style={{
-                          width: `${iconSizePx}px`,
-                          height: `${iconSizePx}px`,
+                          width: `${actualIconSize}px`,
+                          height: `${actualIconSize}px`,
                           filter: !isActive ? `drop-shadow(0 0 ${Math.round(config.backdropOpacity * 12)}px rgba(255,255,255,${config.backdropOpacity * 0.15}))` : 'none'
                         }}
                       >
@@ -691,12 +721,12 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                                 src={app.customIconUrl!}
                                 alt={app.label}
                                 className="object-contain relative z-10"
-                                size={iconSizePx}
+                                size={actualIconSize}
                                 referenceScale={0.88}
                               />
                             ) : (
                               /* Vector Icon (Only when no custom icon) */
-                              <Icon size={Math.round(iconSizePx * 0.55)} strokeWidth={1.5} />
+                              <Icon size={Math.round(actualIconSize * 0.55)} strokeWidth={1.5} />
                             )}
                           </div>
                         </div>
@@ -719,14 +749,14 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                             translateX: '-50%',
                             translateY: '0%',
                           }}
-                          initial={{ opacity: 0, scale: 0.85, y: iconSizePx / 2 + 0 }}
+                          initial={{ opacity: 0, scale: 0.85, y: actualIconSize / 2 + 0 }}
                           animate={{
                             opacity: isActive ? 1 : 0,
                             scale: isActive ? 1 : 0.9,
                             x: 0,
-                            y: iconSizePx / 2 + 4,
+                            y: actualIconSize / 2 + 4,
                           }}
-                          exit={{ opacity: 0, scale: 0.85, y: iconSizePx / 2 + 0 }}
+                          exit={{ opacity: 0, scale: 0.85, y: actualIconSize / 2 + 0 }}
                           transition={{ type: 'spring', damping: 22, stiffness: 380, mass: 0.6 }}
                         >
                           <div
