@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { RadialMenu } from './components/RadialMenu';
 import { Toast } from './components/Toast';
 import { SettingsModal } from './components/SettingsModal';
-import { SystemCenter } from './components/SystemCenter';
 import { NotesWidget } from './components/NotesWidget';
 import { AlarmWidget } from './components/AlarmWidget';
 import { StopwatchWidget } from './components/StopwatchWidget';
@@ -29,7 +28,6 @@ const findAppRecursive = (items: AppItem[], id: string): AppItem | undefined => 
 export default function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isSystemCenterOpen, setIsSystemCenterOpen] = useState(false);
 
   // Standalone Settings Window Mode - REMOVED
   // const isSettingsWindow = window.location.hash === '#settings' || window.location.search.includes('window=settings');
@@ -45,11 +43,11 @@ export default function App() {
   // Dashboard/Welcome Screen State
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
 
-  // User / Auth State
-  const [user, setUser] = useState<UserProfile | null>(() => {
-    const saved = localStorage.getItem('zenith_user');
-    return saved ? JSON.parse(saved) : null;
-  });
+  const [windowState, setWindowState] = useState<'maximized' | 'windowed'>('windowed');
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  // User / Auth State (Defaults to null)
+  const [user, setUser] = useState<UserProfile | null>(null);
 
   // Alarm Ringing State
   const [ringingAlarm, setRingingAlarm] = useState<Alarm | null>(null);
@@ -59,95 +57,15 @@ export default function App() {
   const [lastLaunched, setLastLaunched] = useState<AppItem | null>(null);
   const [isDesktopMode, setIsDesktopMode] = useState(false);
 
-  /* Tutorial State Removed */
-  const [windowState, setWindowState] = useState<'maximized' | 'windowed'>('windowed');
+  // State for Apps and Config (Defaults to initial constants)
+  const [apps, setApps] = useState<AppItem[]>(DEFAULT_APPS);
 
-  // State for Apps and Config (Persisted in localStorage)
-  const [apps, setApps] = useState<AppItem[]>(() => {
-    const saved = localStorage.getItem('zenith_apps');
-    return saved ? JSON.parse(saved) : DEFAULT_APPS;
-  });
-
-  const [config, setConfig] = useState<UIConfig>(() => {
-    const saved = localStorage.getItem('zenith_config');
-    const loaded = saved ? JSON.parse(saved) : DEFAULT_UI_CONFIG;
-
-    // AUTO-MIGRATION: If user has the old "Work/Gaming" workspaces, or missing commandType in Streaming, force update
-    let finalWorkspaces = loaded.workspaces && loaded.workspaces.length > 0 ? loaded.workspaces : DEFAULT_WORKSPACES;
-
-    const isOldDefault = loaded.workspaces &&
-      loaded.workspaces.length === 3 &&
-      loaded.workspaces[1]?.name === 'Work';
-
-    const isMissingCommandType = loaded.workspaces &&
-      loaded.workspaces.some((ws: Workspace) =>
-        ws.name === 'Streaming' &&
-        ws.apps.some(app => app.command.startsWith('http') && !app.commandType)
-      );
-
-    if (isOldDefault || isMissingCommandType || !loaded.workspaces || loaded.workspaces.length === 0) {
-      console.log('Zenith: Migrating to new default workspaces (URL fix)...');
-      finalWorkspaces = DEFAULT_WORKSPACES;
-    }
-
-    // DEFAULT SETTINGS MIGRATION (New for production polish)
-    if (loaded.backdropBlur === 4) {
-      loaded.backdropBlur = 0;
-    }
-    if (loaded.centerButton?.type === 'system' && loaded.centerButton?.iconName === 'Settings2') {
-      loaded.centerButton.type = 'none';
-      loaded.centerButton.target = '';
-      loaded.centerButton.label = '';
-      loaded.centerButton.iconName = 'Circle';
-    }
-
-    // FUNCTIONAL ICON MIGRATION: Ensure internal widgets use 'lucide' and correct icon names
-    const updateIconsRecursive = (items: AppItem[]): AppItem[] => {
-      return items.map(item => {
-        let newItem = { ...item };
-        if (item.command?.startsWith('internal:')) {
-          newItem.iconSource = 'lucide';
-          // Also force update icon names to the new ones if they are the old ones
-          if (item.command === 'internal:notes' && item.iconName === 'StickyNote') newItem.iconName = 'FileText';
-          if (item.command === 'internal:alarm' && item.iconName === 'Bell') newItem.iconName = 'AlarmClock';
-          if (item.command === 'internal:pomodoro' && item.iconName === 'Hourglass') newItem.iconName = 'TimerReset';
-        }
-        if (newItem.children) {
-          newItem.children = updateIconsRecursive(newItem.children);
-        }
-        return newItem;
-      });
-    };
-
-    finalWorkspaces = finalWorkspaces.map((ws: Workspace) => ({
-      ...ws,
-      apps: updateIconsRecursive(ws.apps)
-    }));
-
-    const finalApps = updateIconsRecursive(loaded.apps || DEFAULT_APPS);
-
-    return {
-      ...DEFAULT_UI_CONFIG,
-      ...loaded,
-      centerButton: loaded.centerButton || DEFAULT_UI_CONFIG.centerButton,
-      gameMode: { ...DEFAULT_UI_CONFIG.gameMode, ...(loaded.gameMode || {}) },
-      workspaces: finalWorkspaces,
-      activeWorkspaceIndex: loaded.activeWorkspaceIndex ?? 0,
-      apps: finalApps
-    };
-  });
+  const [config, setConfig] = useState<UIConfig>(DEFAULT_UI_CONFIG);
   const configRef = useRef(config);
   useEffect(() => { configRef.current = config; }, [config]);
 
-  const [notes, setNotes] = useState<Note[]>(() => {
-    const saved = localStorage.getItem('zenith_notes');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [alarms, setAlarms] = useState<Alarm[]>(() => {
-    const saved = localStorage.getItem('zenith_alarms');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [alarms, setAlarms] = useState<Alarm[]>([]);
 
   // Sync Settings with Backend
   useEffect(() => {
@@ -187,7 +105,7 @@ export default function App() {
     });
 
     localStorage.setItem('zenith_icon_normalization_version', ICON_NORMALIZATION_VERSION);
-    console.log('[Icons] Cache-busted: re-fetching icons with new normalization.');
+    // console.log('[Icons] Cache-busted: re-fetching icons with new normalization.');
   }, []);
 
   // ICON HEALING: Automatically re-fetch missing native icons
@@ -211,7 +129,7 @@ export default function App() {
     const appsToHeal = findMissingIcons(config.workspaces.flatMap(ws => ws.apps));
     if (appsToHeal.length === 0) return;
 
-    console.log(`[Icon Healing] Attempting to fix ${appsToHeal.length} icons...`);
+    // console.log(`[Icon Healing] Attempting to fix ${appsToHeal.length} icons...`);
 
     const heal = async () => {
       let hasUpdates = false;
@@ -302,32 +220,71 @@ export default function App() {
   }, []);
 
 
+  // 1. PRIMARY PERSISTENCE: Load from Electron Main or Migrate from LocalStorage
   useEffect(() => {
-    if (window.electron && window.electron.setSettings) {
-      window.electron.setSettings({ globalShortcut: config.globalShortcut });
-    }
-  }, [config.globalShortcut]);
+    const loadPersistence = async () => {
+      let finalData: any = null;
 
-  useEffect(() => { localStorage.setItem('zenith_apps', JSON.stringify(apps)); }, [apps]);
-
-  useEffect(() => {
-    localStorage.setItem('zenith_config', JSON.stringify(config));
-    if (window.electron) {
-      if (config.gameMode) window.electron.setGameMode(config.gameMode);
-      // Sync native blur on Windows 10/11
-      if (window.electron.setBackgroundMaterial) {
-        window.electron.setBackgroundMaterial(config.backdropBlur > 0 ? 'acrylic' : 'none');
+      if (window.electron?.getFullConfig) {
+        finalData = await window.electron.getFullConfig();
       }
-    }
-  }, [config]);
 
+      // Migration Fallback
+      if (!finalData) {
+        const userStr = localStorage.getItem('zenith_user');
+        const appsStr = localStorage.getItem('zenith_apps');
+        const configStr = localStorage.getItem('zenith_config');
+        const notesStr = localStorage.getItem('zenith_notes');
+        const alarmsStr = localStorage.getItem('zenith_alarms');
+
+        if (userStr || appsStr || configStr || notesStr || alarmsStr) {
+          finalData = {
+            user: userStr ? JSON.parse(userStr) : null,
+            apps: appsStr ? JSON.parse(appsStr) : DEFAULT_APPS,
+            config: configStr ? JSON.parse(configStr) : DEFAULT_UI_CONFIG,
+            notes: notesStr ? JSON.parse(notesStr) : [],
+            alarms: alarmsStr ? JSON.parse(alarmsStr) : [],
+          };
+          // Save to main process immediately
+          window.electron?.saveFullConfig(finalData);
+        }
+      }
+
+      if (finalData) {
+        if (finalData.user) setUser(finalData.user);
+        if (finalData.apps) setApps(finalData.apps);
+        if (finalData.config) setConfig(finalData.config);
+        if (finalData.notes) setNotes(finalData.notes);
+        if (finalData.alarms) setAlarms(finalData.alarms);
+      }
+      setIsLoaded(true);
+    };
+
+    loadPersistence();
+  }, []);
+
+  // 2. UNIFIED SAVE EFFECT: Sync to Main Process and LocalStorage
   useEffect(() => {
-    if (user) localStorage.setItem('zenith_user', JSON.stringify(user));
-    else localStorage.removeItem('zenith_user');
-  }, [user]);
+    if (!isLoaded) return;
 
-  useEffect(() => { localStorage.setItem('zenith_notes', JSON.stringify(notes)); }, [notes]);
-  useEffect(() => { localStorage.setItem('zenith_alarms', JSON.stringify(alarms)); }, [alarms]);
+    const timer = setTimeout(() => {
+      const fullData = { user, apps, config, notes, alarms };
+      
+      // Secondary Fallback
+      localStorage.setItem('zenith_user', JSON.stringify(user));
+      localStorage.setItem('zenith_apps', JSON.stringify(apps));
+      localStorage.setItem('zenith_config', JSON.stringify(config));
+      localStorage.setItem('zenith_notes', JSON.stringify(notes));
+      localStorage.setItem('zenith_alarms', JSON.stringify(alarms));
+
+      // Primary Persistence
+      if (window.electron?.saveFullConfig) {
+        window.electron.saveFullConfig(fullData);
+      }
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [user, apps, config, notes, alarms, isLoaded]);
 
   // ALARM LOGIC
   useEffect(() => {
@@ -405,14 +362,16 @@ export default function App() {
 
     const cleanupExecutionError = window.electron?.onExecutionError((errorMsg: string) => {
       console.error('Execution error received:', errorMsg);
+      const isShortcutError = errorMsg.toLowerCase().includes('shortcut');
+
       setLastLaunched({
         id: 'error',
-        label: 'Erro ao Abrir',
+        label: isShortcutError ? 'Erro de Atalho' : 'Erro de Execução',
         command: '',
         iconName: 'AlertTriangle',
         description: errorMsg
       });
-      setTimeout(() => setLastLaunched(null), 5000);
+      setTimeout(() => setLastLaunched(null), 6000);
     });
 
     const cleanupSwitchWorkspace = window.electron?.onSwitchWorkspace((index: number) => {
@@ -445,21 +404,21 @@ export default function App() {
 
   useEffect(() => {
     if (window.electron && isDesktopMode) {
-      const isAnyInteractive = isMenuOpen || isSettingsOpen || isSystemCenterOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || !!ringingAlarm || isDashboardOpen;
-      const targetMode: 'fullscreen' | 'windowed' | 'small' = (isMenuOpen || isSystemCenterOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || !!ringingAlarm)
+      const isAnyInteractive = isMenuOpen || isSettingsOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || !!ringingAlarm || isDashboardOpen;
+      const targetMode: 'fullscreen' | 'windowed' | 'small' = (isMenuOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || !!ringingAlarm)
         ? 'fullscreen'
         : (isDashboardOpen || isSettingsOpen) ? 'windowed' : 'small';
 
-      console.log(`[Sync] Interactive: ${isAnyInteractive}, Mode: ${targetMode}, Menu: ${isMenuOpen}, Dash: ${isDashboardOpen}`);
-
       // 1. Only update window SIZE if mode actually changed
       if (lastWindowState.current !== targetMode) {
+        // console.log(`[App.tsx] Updating window size to: ${targetMode}`);
         window.electron.setWindowSize(targetMode);
         lastWindowState.current = targetMode;
       }
 
       // 2. Only update VISIBILITY if status changed
       if (lastVisibility.current !== isAnyInteractive) {
+        // console.log(`[App.tsx] Updating visibility to: ${isAnyInteractive}`);
         if (isAnyInteractive) {
           window.electron.showWindow();
         } else {
@@ -468,17 +427,21 @@ export default function App() {
         lastVisibility.current = isAnyInteractive;
       }
     }
-  }, [isMenuOpen, isSettingsOpen, isSystemCenterOpen, isNotesOpen, isAlarmWidgetOpen, isStopwatchOpen, isPomodoroOpen, ringingAlarm, isDashboardOpen, isDesktopMode]);
+  }, [isMenuOpen, isSettingsOpen, isNotesOpen, isAlarmWidgetOpen, isStopwatchOpen, isPomodoroOpen, ringingAlarm, isDashboardOpen, isDesktopMode]);
 
   const openMenu = (x: number, y: number, source: 'mmb' | 'shortcut' = 'shortcut') => {
-    console.log(`[App.tsx] openMenu called. Source: ${source}`);
+    // console.log(`[App.tsx] openMenu called. Source: ${source}`);
     console.log(`[App.tsx] Current config activeWorkspaceIndex: ${config.activeWorkspaceIndex}`);
     console.log(`[App.tsx] Config workspaces length: ${config.workspaces?.length}`);
     // IMPACT: Force fullscreen immediately to avoid "inside app" feel
     if (window.electron && isDesktopMode) {
-      window.electron.setWindowSize('fullscreen');
+      // Avoid redundant IPC if already in fullscreen
+      if (lastWindowState.current !== 'fullscreen') {
+        window.electron.setWindowSize('fullscreen');
+        lastWindowState.current = 'fullscreen';
+      }
+
       if (configRef.current.fixedPosition) {
-        // Center of the physical screen (More reliable than innerWidth during resize)
         setMenuPosition({ x: window.screen.width / 2, y: window.screen.height / 2 });
       } else {
         setMenuPosition({ x, y });
@@ -507,7 +470,7 @@ export default function App() {
           ...prev,
           activeWorkspaceIndex: workspaceIndex
         }));
-        console.log(`Switched to workspace ${workspaceIndex + 1}: ${workspace.name}`);
+        // console.log(`Switched to workspace ${workspaceIndex + 1}: ${workspace.name}`);
       }
     }
   };
@@ -534,9 +497,7 @@ export default function App() {
   // Double Click (Left) to Open Settings
   const handleDoubleClick = (e: React.MouseEvent) => {
     // Allow double click anywhere on the background to open settings
-    // Check if other modals are open (SystemCenter, Notes)
-    // Note: We allow this even if Dashboard is open, to escape it.
-    if (!isMenuOpen && !isSettingsOpen && !isSystemCenterOpen && !isNotesOpen && !isPomodoroOpen) {
+    if (!isMenuOpen && !isSettingsOpen && !isNotesOpen && !isPomodoroOpen) {
       handleOpenSettings();
     }
   };
@@ -558,8 +519,8 @@ export default function App() {
     }
   }, []);
 
-  const executeAction = (command: string, commandType: "app" | "url", itemForToast?: AppItem) => {
-    console.log("🚀 Zenith executing:", command, "Type:", commandType, itemForToast);
+  const executeAction = (command: string, commandType: "app" | "url" | "folder", itemForToast?: AppItem) => {
+    // console.log("🚀 Zenith executing:", command, "Type:", commandType, itemForToast);
     if (!command) {
       console.warn("Attempted to execute an empty command");
       return;
@@ -569,7 +530,6 @@ export default function App() {
     if (command === 'internal:alarm') { if (isDesktopMode) window.electron?.setWindowSize('fullscreen'); setIsAlarmWidgetOpen(true); return; }
     if (command === 'internal:stopwatch') { if (isDesktopMode) window.electron?.setWindowSize('fullscreen'); setIsStopwatchOpen(true); return; }
     if (command === 'internal:pomodoro') { if (isDesktopMode) window.electron?.setWindowSize('fullscreen'); setIsPomodoroOpen(true); return; }
-    if (command === 'system-center') { if (isDesktopMode) window.electron?.setWindowSize('fullscreen'); setIsSystemCenterOpen(true); return; }
 
     if (itemForToast) {
       setLastLaunched(itemForToast);
@@ -580,10 +540,10 @@ export default function App() {
     }
 
     if (isDesktopMode && window.electron) {
-      console.log("Calling electron.executeCommand...");
+      // console.log("Calling electron.executeCommand...");
       window.electron.executeCommand(command, commandType);
       setTimeout(() => {
-        if (!isSettingsOpen && !isSystemCenterOpen && !isNotesOpen && !isPomodoroOpen) {
+        if (!isSettingsOpen && !isNotesOpen && !isPomodoroOpen) {
           window.electron?.setWindowSize('small');
           window.electron?.hideWindow();
         }
@@ -592,11 +552,11 @@ export default function App() {
   }
 
   const handleMenuClose = (selectedId: string | null) => {
-    console.log("Menu closing, selectedId:", selectedId);
+    // console.log("Menu closing, selectedId:", selectedId);
     setIsMenuOpen(false);
     isHolding.current = false;
 
-    if (!selectedId && isDesktopMode && !isSettingsOpen && !isSystemCenterOpen && !isNotesOpen && !isPomodoroOpen && !ringingAlarm && !isDashboardOpen) {
+    if (!selectedId && isDesktopMode && !isSettingsOpen && !isNotesOpen && !isPomodoroOpen && !ringingAlarm && !isDashboardOpen) {
       window.electron?.setWindowSize('small');
       window.electron?.hideWindow();
       return;
@@ -611,8 +571,7 @@ export default function App() {
       const centerConfig = config.centerButton;
       const currentWorkspaceApps = config.workspaces[config.activeWorkspaceIndex]?.apps || apps;
 
-      if (centerConfig.type === 'system') { if (isDesktopMode) window.electron?.setWindowSize('fullscreen'); setIsSystemCenterOpen(true); return; }
-      else if (centerConfig.type === 'app' || centerConfig.type === 'widget') {
+      if (centerConfig.type === 'app' || centerConfig.type === 'widget') {
         const targetApp = findAppRecursive(currentWorkspaceApps, centerConfig.target);
         const command = targetApp ? targetApp.command : centerConfig.target;
         console.log("Center action, target command:", command);
@@ -659,13 +618,13 @@ export default function App() {
   };
 
   // Check if any modal is open
-  const isAnyModalOpen = isSettingsOpen || isSystemCenterOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || ringingAlarm || isMenuOpen || isDashboardOpen;
+  const isAnyModalOpen = isSettingsOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || ringingAlarm || isMenuOpen || isDashboardOpen;
 
   return (
     <div
       className={`
         fixed inset-0 w-full h-full overflow-hidden cursor-default select-none group
-        ${isDesktopMode || isDashboardOpen || isSettingsOpen ? 'bg-transparent' : 'bg-[#0D0D0D]'}
+        ${isDesktopMode ? 'bg-transparent' : 'bg-[#0D0D0D]'}
         ${isDesktopMode && !isAnyModalOpen ? 'pointer-events-none' : ''}
       `}
       onMouseDown={handleMouseDown}
@@ -678,7 +637,7 @@ export default function App() {
 
       {/* Visibility Wrapper for the whole app content */}
       <div className={`
-        relative w-full h-full transition-opacity duration-400 overflow-hidden
+        relative w-full h-full transition-opacity duration-200 overflow-hidden
         ${isAnyModalOpen ? 'opacity-100' : 'opacity-0'}
         ${(isDashboardOpen || isSettingsOpen) ? 'border border-white/10 rounded-xl shadow-[0_0_50px_rgba(0,0,0,0.5)] bg-[#0A0A0A]' : ''}
       `}>
@@ -729,11 +688,13 @@ export default function App() {
 
         {/* WELCOME SCREEN / DASHBOARD */}
         <AnimatePresence>
-          {isDashboardOpen && !isSettingsOpen && !isMenuOpen && !isSystemCenterOpen && !isNotesOpen && !isAlarmWidgetOpen && !isStopwatchOpen && !isPomodoroOpen && !ringingAlarm && (
+          {isDashboardOpen && !isSettingsOpen && !isMenuOpen && !isNotesOpen && !isAlarmWidgetOpen && !isStopwatchOpen && !isPomodoroOpen && !ringingAlarm && (
             <motion.div
               key="welcome"
+              initial={{ opacity: 0, filter: 'blur(10px)' }}
+              animate={{ opacity: 1, filter: 'blur(0px)' }}
               exit={{ opacity: 0, scale: 0.95, filter: 'blur(10px)' }}
-              transition={{ duration: 0.5 }}
+              transition={{ duration: 0.4 }}
               className={`absolute inset-0 z-10 ${isMenuOpen ? 'hidden' : ''}`} // Double safety: CSS hide
               id="dashboard-container"
             >
@@ -776,7 +737,6 @@ export default function App() {
           currentWorkspace={config.workspaces[config.activeWorkspaceIndex]}
         />
 
-        {isSystemCenterOpen && <SystemCenter position={menuPosition} onClose={() => { setIsSystemCenterOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} config={config} />}
         <NotesWidget isOpen={isNotesOpen} onClose={() => { setIsNotesOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} notes={notes} setNotes={setNotes} config={config} />
         <AlarmWidget isOpen={isAlarmWidgetOpen} onClose={() => { setIsAlarmWidgetOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} alarms={alarms} setAlarms={setAlarms} config={config} />
         <StopwatchWidget isOpen={isStopwatchOpen} onClose={() => { setIsStopwatchOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} config={config} />

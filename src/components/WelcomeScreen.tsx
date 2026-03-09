@@ -64,10 +64,10 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
 
             {/* CENTRAL APP WIDGET (LAUNCHER CARD) */}
             <motion.div
-                initial={{ scale: 0.9, opacity: 0, y: 30 }}
-                animate={{ scale: 1, opacity: 1, y: 0 }}
+                initial={{ scale: 0.9, opacity: 0, y: 30, filter: 'blur(10px)' }}
+                animate={{ scale: 1, opacity: 1, y: 0, filter: 'blur(0px)' }}
                 transition={{ duration: 0.6, type: "spring", stiffness: 100 }}
-                className="relative z-10 w-full sm:w-[90%] max-w-lg min-w-[300px] sm:min-w-[400px] max-h-[90vh] overflow-y-auto custom-scrollbar bg-[#0A0A0A]/80 backdrop-blur-xl border border-white/20 rounded-xl shadow-[0_0_120px_rgba(0,0,0,0.5)] flex flex-col items-center text-center pointer-events-auto"
+                className="relative z-10 w-full sm:w-[90%] max-w-lg min-w-[300px] sm:min-w-[400px] max-h-[90vh] overflow-y-auto custom-scrollbar bg-[#0A0A0A]/95 backdrop-blur-xl border border-white/20 rounded-xl shadow-[0_0_120px_rgba(0,0,0,0.5)] flex flex-col items-center text-center pointer-events-auto"
             >
                 {/* Top Glow */}
                 <div className="absolute top-0 w-full h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />

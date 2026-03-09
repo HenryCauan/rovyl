@@ -84,6 +84,11 @@ export const translations: Record<Language, Record<string, string>> = {
     "interface.center_screen": "Centralizar na Tela",
     "interface.language_selection": "Idioma",
     "interface.language_desc": "Selecione o idioma da interface.",
+    "interface.record": "Gravar",
+    "interface.recording": "Gravando...",
+    "interface.shortcut_center": "Atalho do Centro Neural",
+    "interface.button_label": "Rótulo do Botão",
+    "interface.button_label_placeholder": "Digite o texto...",
 
     "visuals.title": "Personalização Visual",
     "visuals.desc": "Estilo, cores e animações.",
@@ -121,6 +126,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "status.online": "Online",
     "status.offline": "Offline",
     "status.active": "Ativo",
+    "status.no_shortcut": "Nenhum",
 
     "workspaces.title": "Meus Espaços",
     "workspaces.desc": "Crie e gerencie ambientes de trabalho personalizados.",
@@ -253,9 +259,11 @@ export const translations: Record<Language, Record<string, string>> = {
     "appSelection.description": "Selecione o tipo de entrada",
     "appSelection.local_app": "Aplicativo Local",
     "appSelection.local_app_desc": "Executáveis do sistema",
-    "appSelection.web_url": "URL da Web",
-    "appSelection.web_url_desc": "Sitios e favoritos",
-    "appSelection.new_url": "Nova URL",
+    "appSelection.web_url": "Link da Web",
+    "appSelection.web_url_desc": "Endereço URL (http/https)",
+    "appSelection.folder": "Pasta",
+    "appSelection.folder_desc": "Abrir Diretório no Windows",
+    "appSelection.new_url": "Novo Link",
 
     "reset.title": "Redefinir configurações",
     "reset.description":
@@ -374,6 +382,11 @@ export const translations: Record<Language, Record<string, string>> = {
     "interface.center_screen": "Center on Screen",
     "interface.language_selection": "Language",
     "interface.language_desc": "Select the interface language.",
+    "interface.record": "Record",
+    "interface.recording": "Recording...",
+    "interface.shortcut_center": "Neural Center Shortcut",
+    "interface.button_label": "Button Label",
+    "interface.button_label_placeholder": "Type text...",
 
     "visuals.title": "Visual Customization",
     "visuals.desc": "Style, colors, and animations.",
@@ -411,6 +424,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "status.online": "Online",
     "status.offline": "Offline",
     "status.active": "Active",
+    "status.no_shortcut": "None",
 
     "workspaces.title": "My Workspaces",
     "workspaces.desc": "Create and manage custom work environments.",
@@ -543,8 +557,10 @@ export const translations: Record<Language, Record<string, string>> = {
     "appSelection.description": "Select entry type",
     "appSelection.local_app": "Local Application",
     "appSelection.local_app_desc": "System executables",
-    "appSelection.web_url": "Web URL",
-    "appSelection.web_url_desc": "Websites & bookmarks",
+    "appSelection.web_url": "Web Link",
+    "appSelection.web_url_desc": "URL Address (http/https)",
+    "appSelection.folder": "Folder",
+    "appSelection.folder_desc": "Open Windows Directory",
     "appSelection.new_url": "New URL",
 
     "reset.title": "Reset Settings",

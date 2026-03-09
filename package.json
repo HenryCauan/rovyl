@@ -17,7 +17,7 @@
     "framer-motion": "^10.16.4",
     "loudness": "^0.4.2",
     "lucide-react": "^0.292.0",
-    "node-global-key-listener": "^0.3.0",
+    "node-global-key-listener": "^0.1.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },

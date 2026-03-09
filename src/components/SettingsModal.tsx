@@ -6,14 +6,14 @@ import { AVAILABLE_WIDGETS } from '../defaults';
 import { AppSelector } from './AppSelector';
 import { SmartIcon } from './SmartIcon';
 import {
-    X, Save, RotateCcw, Monitor, LayoutGrid, Palette,
+    X, Save, RotateCcw, Monitor, LayoutGrid, Palette, Check,
     Plus, Trash2, Clock, Keyboard, AlertTriangle, RotateCw, AlarmClock,
     Gamepad2, AppWindow, Settings2, Folder, ChevronRight, CornerUpLeft,
     Image as ImageIcon, Upload, Search, FileType,
     Lock, LayoutDashboard, Box, Command, Ban, ChevronDown, Play, CheckCircle2,
-    HelpCircle, User, MessageSquare, CreditCard, Globe, Eye, Zap, MousePointer2, Check,
+    HelpCircle, User, MessageSquare, CreditCard, Globe, Eye, Zap, MousePointer2,
     Hash, Download, ExternalLink, Moon, Sun, ArrowRight, ArrowLeft, TimerReset,
-    FolderPlus, FileText, Edit3, Image, Calendar, Battery, CloudRain,
+    FolderPlus, FileText, Edit3, Calendar, Battery, CloudRain,
     Layout, Compass, Laptop, Smartphone, Bell, GripVertical, ChevronLeft
 } from 'lucide-react';
 import { ZenithLogo } from './ZenithLogo';
@@ -25,6 +25,7 @@ const AppEditorModal = React.memo(({
     setEditingApp,
     handleAppChange,
     handlePickCommand,
+    handlePickFolder,
     setShowAppSelector,
     handlePickIcon,
     config
@@ -33,10 +34,18 @@ const AppEditorModal = React.memo(({
     setEditingApp: (v: any) => void,
     handleAppChange: (f: keyof AppItem, v: any) => void,
     handlePickCommand: () => void,
+    handlePickFolder: () => void,
     setShowAppSelector: (v: boolean) => void,
     handlePickIcon: () => void,
     config: UIConfig
 }) => {
+    const [isCompact, setIsCompact] = useState(() => window.innerWidth < 768);
+    useEffect(() => {
+        const onResize = () => setIsCompact(window.innerWidth < 768);
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
+
     return (
         <AnimatePresence>
             {editingApp && (
@@ -49,7 +58,7 @@ const AppEditorModal = React.memo(({
                         className="absolute inset-0 bg-black/60 backdrop-blur-2xl"
                     />
                     <motion.div
-                        className="w-full max-w-3xl bg-[#080808]/90 border border-white/10 rounded-2xl shadow-[0_50px_100px_-20px_rgba(0,0,0,1)] relative overflow-hidden flex flex-col max-h-[90%]"
+                        className={`w-full ${isCompact ? 'max-w-2xl' : 'max-w-5xl'} bg-[#080808]/90 border border-white/10 rounded-2xl shadow-[0_50px_100px_-20px_rgba(0,0,0,1)] relative overflow-hidden flex flex-col max-h-[95%] md:max-h-[85%]`}
                         initial={{ opacity: 0, scale: 0.9, y: 30 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -69,169 +78,361 @@ const AppEditorModal = React.memo(({
                             </button>
                         </div>
 
-                        {/* Conteúdo em Duas Colunas */}
-                        <div className="flex flex-col lg:flex-row flex-1 overflow-hidden min-h-0">
-                            {/* Coluna Esquerda: Configuração */}
-                            <div className="flex-1 p-8 space-y-7 overflow-y-auto custom-scrollbar border-r border-white/5 bg-white/[0.01] min-h-0">
-                                {/* Seção: Identificação */}
-                                <section className="space-y-3">
-                                    <label className="text-sm font-semibold text-white/60 ml-1">{getTranslation(config, 'editingApp.name_label')}</label>
-                                    <div className="relative group">
-                                        <input
-                                            type="text"
-                                            value={editingApp.app.label}
-                                            onChange={e => handleAppChange('label', e.target.value)}
-                                            className="w-full bg-black/40 border border-white/10 rounded-xl px-5 py-3.5 text-sm font-medium text-white focus:border-white/30 focus:bg-black/60 outline-none transition-all duration-500 shadow-inner group-hover:border-white/20"
-                                            placeholder={getTranslation(config, 'editingApp.placeholder_name')}
-                                        />
-                                    </div>
-                                </section>
-
-                                {/* Seção: Alvo/Caminho */}
-                                {editingApp.app.type === 'app' && (
+                        {isCompact ? (
+                            /* ===== Layout Compacto (telas pequenas) ===== */
+                            <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0">
+                                <div className="p-5 space-y-6">
+                                    {/* Seção: Identificação + Preview Inline */}
                                     <section className="space-y-3">
-                                        <label className="text-sm font-semibold text-white/60 ml-1">
-                                            {editingApp.app.commandType === 'url' ? getTranslation(config, 'editingApp.url_label') : getTranslation(config, 'editingApp.path_label')}
-                                        </label>
-                                        <div className="flex flex-col sm:flex-row gap-3">
-                                            <div className="flex-1 relative group">
-                                                <input
-                                                    type="text"
-                                                    value={editingApp.app.command}
-                                                    onChange={e => handleAppChange('command', e.target.value)}
-                                                    className="w-full bg-black/40 border border-white/10 rounded-xl px-5 py-3.5 text-sm font-mono text-white/50 focus:border-white/30 focus:bg-black/60 outline-none transition-all duration-500 shadow-inner group-hover:border-white/20"
-                                                    placeholder={editingApp.app.commandType === 'url' ? getTranslation(config, 'editingApp.placeholder_url') : getTranslation(config, 'editingApp.placeholder_path')}
-                                                />
-                                            </div>
-                                            <div className="flex gap-2 shrink-0">
-                                                {editingApp.app.commandType === 'url' ? (
-                                                    <div className="w-[52px] h-[52px] bg-white/[0.03] border border-white/5 flex items-center justify-center text-white/20 rounded-xl">
-                                                        <Globe size={20} strokeWidth={1} />
+                                        <label className="text-sm font-semibold text-white/60 ml-1">{getTranslation(config, 'editingApp.name_label')}</label>
+                                        <div className="flex gap-4 items-start">
+                                            {/* Icon Preview Inline */}
+                                            <div className="shrink-0 flex flex-col items-center gap-2">
+                                                <div className="relative group/icon">
+                                                    <motion.div
+                                                        className="w-[72px] h-[72px] rounded-2xl bg-gradient-to-br from-white/[0.06] to-transparent flex items-center justify-center border border-white/10 group-hover/icon:border-white/30 transition-all duration-500 cursor-pointer overflow-hidden shadow-xl"
+                                                        whileHover={{ scale: 1.05 }}
+                                                        onClick={editingApp.app.iconSource === 'native' ? handlePickIcon : undefined}
+                                                    >
+                                                        {editingApp.app.iconSource === 'native' && editingApp.app.customIconUrl ? (
+                                                            <SmartIcon
+                                                                src={editingApp.app.customIconUrl}
+                                                                className="w-full h-full object-contain p-3 transition-transform duration-500 group-hover/icon:scale-110"
+                                                                size={72}
+                                                                referenceScale={0.7}
+                                                            />
+                                                        ) : (
+                                                            (() => {
+                                                                const Icon = getIcon(editingApp.app.iconName);
+                                                                return <Icon size={36} strokeWidth={1.2} className="text-white/30 group-hover/icon:text-white/60 transition-all duration-500" />;
+                                                            })()
+                                                        )}
+                                                        {editingApp.app.iconSource === 'native' && (
+                                                            <div className="absolute inset-0 bg-white/5 opacity-0 group-hover/icon:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+                                                                <div className="w-7 h-7 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20">
+                                                                    <Upload size={12} className="text-white" />
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </motion.div>
+                                                </div>
+                                                {editingApp.app.iconSource === 'native' && (
+                                                    <div className="flex flex-col items-center gap-1">
+                                                        <button
+                                                            onClick={handlePickIcon}
+                                                            className="text-[8px] font-bold text-white/30 hover:text-white/60 uppercase tracking-widest transition-colors duration-300"
+                                                        >
+                                                            {getTranslation(config, 'editingApp.choose_image') || 'Escolher'}
+                                                        </button>
+                                                        {editingApp.app.customIconUrl && (
+                                                            <button
+                                                                onClick={() => handleAppChange('customIconUrl', undefined)}
+                                                                className="text-[8px] font-bold text-white/15 hover:text-white/30 uppercase tracking-widest transition-colors duration-300"
+                                                            >
+                                                                {getTranslation(config, 'action.reset') || 'Reset'}
+                                                            </button>
+                                                        )}
                                                     </div>
-                                                ) : (
-                                                    <>
-                                                        <button
-                                                            onClick={handlePickCommand}
-                                                            className="px-5 h-[52px] bg-white text-black font-bold text-xs rounded-xl hover:bg-gray-200 transition-all duration-300 shadow-xl active:scale-95 flex items-center justify-center gap-2 group"
-                                                            title={getTranslation(config, 'editingApp.explore_title')}
-                                                        >
-                                                            <Folder size={16} strokeWidth={2.5} />
-                                                            <span>{getTranslation(config, 'action.explore')}</span>
-                                                        </button>
-                                                        <button
-                                                            onClick={() => setShowAppSelector(true)}
-                                                            className="px-4 h-[52px] bg-white/[0.03] border border-white/10 flex items-center justify-center gap-2 text-white/40 hover:text-white hover:bg-white/[0.08] rounded-xl transition-all duration-300 active:scale-90"
-                                                            title={getTranslation(config, 'editingApp.installed_apps_title')}
-                                                        >
-                                                            <LayoutGrid size={18} strokeWidth={1.5} />
-                                                            <span className="font-bold text-[10px] uppercase tracking-wider">{getTranslation(config, 'editingApp.installed_apps_label')}</span>
-                                                        </button>
-                                                    </>
                                                 )}
+                                            </div>
+                                            {/* Name + Position */}
+                                            <div className="flex-1 min-w-0 space-y-2">
+                                                <div className="relative group">
+                                                    <input
+                                                        type="text"
+                                                        value={editingApp.app.label}
+                                                        onChange={e => handleAppChange('label', e.target.value)}
+                                                        className="w-full bg-black/40 border border-white/10 rounded-xl px-5 py-3.5 text-sm font-medium text-white focus:border-white/30 focus:bg-black/60 outline-none transition-all duration-500 shadow-inner group-hover:border-white/20"
+                                                        placeholder={getTranslation(config, 'editingApp.placeholder_name')}
+                                                    />
+                                                </div>
+                                                <p className="text-[10px] text-white/20 font-bold uppercase tracking-[0.15em] ml-1">{getTranslation(config, 'editingApp.menu_pos') || 'Posição no Menu'}: {editingApp.index + 1}</p>
                                             </div>
                                         </div>
                                     </section>
-                                )}
 
-                                {/* Seção: Estilo do Ícone */}
-                                <section className="space-y-3">
-                                    <label className="text-sm font-semibold text-white/60 ml-1">{getTranslation(config, 'visuals.icon_style')}</label>
-                                    <div className="flex bg-black/60 p-1.5 rounded-2xl border border-white/10 shadow-inner relative overflow-hidden">
-                                        <div
-                                            className="absolute inset-y-1.5 rounded-xl bg-white shadow-xl transition-all duration-500 ease-out"
-                                            style={{
-                                                width: 'calc(50% - 6px)',
-                                                left: editingApp.app.iconSource === 'native' ? '6px' : 'calc(50%)',
-                                                zIndex: 0
-                                            }}
-                                        />
-                                        <button
-                                            onClick={() => handleAppChange('iconSource', 'native')}
-                                            className={`relative z-10 flex-1 py-3 text-[10px] font-bold uppercase tracking-widest rounded-xl transition-colors duration-500 ${editingApp.app.iconSource === 'native' ? 'text-black' : 'text-white/30 hover:text-white/50'}`}
-                                        >
-                                            {getTranslation(config, 'editingApp.native_icon') || 'Ícone do Sistema'}
-                                        </button>
-                                        <button
-                                            onClick={() => handleAppChange('iconSource', 'lucide')}
-                                            className={`relative z-10 flex-1 py-3 text-[10px] font-bold uppercase tracking-widest rounded-xl transition-colors duration-500 ${editingApp.app.iconSource === 'lucide' ? 'text-black' : 'text-white/30 hover:text-white/50'}`}
-                                        >
-                                            {getTranslation(config, 'editingApp.icon_library') || 'Biblioteca de Ícones'}
-                                        </button>
-                                    </div>
-                                </section>
-                            </div>
-
-                            {/* Coluna Direita: Pré-visualização */}
-                            <div className="w-full lg:w-[300px] bg-black/40 p-8 flex flex-col items-center justify-between gap-6 relative min-h-0 border-l border-white/5">
-                                <div className="w-full space-y-10 flex flex-col items-center">
-                                    <div className="flex items-center gap-2 w-full">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-white/20" />
-                                        <span className="text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">{getTranslation(config, 'editingApp.preview') || 'Pré-visualização'}</span>
-                                    </div>
-
-                                    <div className="relative group">
-                                        <motion.div
-                                            className="w-28 h-28 rounded-2xl bg-gradient-to-br from-white/[0.05] to-transparent flex items-center justify-center border border-white/10 group-hover:border-white/30 transition-all duration-700 cursor-pointer overflow-hidden shadow-2xl"
-                                            whileHover={{ scale: 1.05, y: -4 }}
-                                            onClick={handlePickIcon}
-                                        >
-                                            {editingApp.app.customIconUrl ? (
-                                                <SmartIcon
-                                                    src={editingApp.app.customIconUrl}
-                                                    className="w-full h-full object-contain p-4 transition-transform duration-700 group-hover:scale-110"
-                                                    size={112}
-                                                    referenceScale={0.7}
-                                                />
-                                            ) : (
-                                                (() => {
-                                                    const Icon = getIcon(editingApp.app.iconName);
-                                                    return <Icon size={56} strokeWidth={1} className="text-white/20 group-hover:text-white transition-all duration-500" />;
-                                                })()
-                                            )}
-                                            <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 flex items-center justify-center">
-                                                <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20">
-                                                    <Upload size={16} className="text-white" />
+                                    {/* Seção: Alvo/Caminho */}
+                                    {editingApp.app.type === 'app' && (
+                                        <section className="space-y-3">
+                                            <label className="text-sm font-semibold text-white/60 ml-1">
+                                                {editingApp.app.commandType === 'url' ? getTranslation(config, 'editingApp.url_label') : getTranslation(config, 'editingApp.path_label')}
+                                            </label>
+                                            <div className="flex flex-col gap-3">
+                                                <div className="flex-1 relative group">
+                                                    <input
+                                                        type="text"
+                                                        value={editingApp.app.command}
+                                                        onChange={e => handleAppChange('command', e.target.value)}
+                                                        className="w-full bg-black/40 border border-white/10 rounded-xl px-5 py-3.5 text-sm font-mono text-white/50 focus:border-white/30 focus:bg-black/60 outline-none transition-all duration-500 shadow-inner group-hover:border-white/20"
+                                                        placeholder={editingApp.app.commandType === 'url' ? getTranslation(config, 'editingApp.placeholder_url') : getTranslation(config, 'editingApp.placeholder_path')}
+                                                    />
+                                                </div>
+                                                <div className="flex gap-2 shrink-0">
+                                                    {editingApp.app.commandType === 'url' ? (
+                                                        <div className="w-[52px] h-[52px] bg-white/[0.03] border border-white/5 flex items-center justify-center text-white/20 rounded-xl">
+                                                            <Globe size={20} strokeWidth={1} />
+                                                        </div>
+                                                    ) : (
+                                                        <>
+                                                            <button
+                                                                onClick={editingApp.app.commandType === 'folder' ? handlePickFolder : handlePickCommand}
+                                                                className="px-5 h-[52px] bg-white text-black font-bold text-xs rounded-xl hover:bg-gray-200 transition-all duration-300 shadow-xl active:scale-95 flex items-center justify-center gap-2 group"
+                                                                title={getTranslation(config, 'editingApp.explore_title')}
+                                                            >
+                                                                <Folder size={16} strokeWidth={2.5} />
+                                                                <span>{getTranslation(config, 'action.explore')}</span>
+                                                            </button>
+                                                            {editingApp.app.commandType === 'app' && (
+                                                                <button
+                                                                    onClick={() => setShowAppSelector(true)}
+                                                                    className="px-4 h-[52px] bg-white/[0.03] border border-white/10 flex items-center justify-center gap-2 text-white/40 hover:text-white hover:bg-white/[0.08] rounded-xl transition-all duration-300 active:scale-90"
+                                                                    title={getTranslation(config, 'editingApp.installed_apps_title')}
+                                                                >
+                                                                    <LayoutGrid size={18} strokeWidth={1.5} />
+                                                                    <span className="font-bold text-[10px] uppercase tracking-wider">{getTranslation(config, 'editingApp.installed_apps_label')}</span>
+                                                                </button>
+                                                            )}
+                                                        </>
+                                                    )}
                                                 </div>
                                             </div>
-                                        </motion.div>
-                                        <div className="absolute inset-0 bg-white/[0.01] rounded-[2rem] blur-2xl -z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
-                                    </div>
+                                        </section>
+                                    )}
 
-                                    <div className="text-center space-y-1.5">
-                                        <h4 className="text-base font-bold text-white tracking-tight truncate max-w-[220px]">
-                                            {editingApp.app.label || getTranslation(config, 'editingApp.no_name') || 'Sem Nome'}
-                                        </h4>
-                                        <p className="text-[10px] text-white/20 font-bold uppercase tracking-[0.15em]">{getTranslation(config, 'editingApp.menu_pos') || 'Posição no Menu'}: {editingApp.index + 1}</p>
-                                    </div>
+                                    {/* Seção: Estilo do Ícone */}
+                                    <section className="space-y-3">
+                                        <label className="text-sm font-semibold text-white/60 ml-1">{getTranslation(config, 'visuals.icon_style')}</label>
+                                        <div className="flex bg-black/60 p-1.5 rounded-2xl border border-white/10 shadow-inner relative overflow-hidden">
+                                            <div
+                                                className="absolute inset-y-1.5 rounded-xl bg-white shadow-xl transition-all duration-500 ease-out"
+                                                style={{
+                                                    width: 'calc(50% - 6px)',
+                                                    left: editingApp.app.iconSource === 'native' ? '6px' : 'calc(50%)',
+                                                    zIndex: 0
+                                                }}
+                                            />
+                                            <button
+                                                onClick={() => handleAppChange('iconSource', 'native')}
+                                                className={`relative z-10 flex-1 py-3 text-[10px] font-bold uppercase tracking-widest rounded-xl transition-colors duration-500 ${editingApp.app.iconSource === 'native' ? 'text-black' : 'text-white/30 hover:text-white/50'}`}
+                                            >
+                                                {getTranslation(config, 'editingApp.native_icon') || 'Ícone do Sistema'}
+                                            </button>
+                                            <button
+                                                onClick={() => handleAppChange('iconSource', 'lucide')}
+                                                className={`relative z-10 flex-1 py-3 text-[10px] font-bold uppercase tracking-widest rounded-xl transition-colors duration-500 ${editingApp.app.iconSource === 'lucide' ? 'text-black' : 'text-white/30 hover:text-white/50'}`}
+                                            >
+                                                {getTranslation(config, 'editingApp.icon_library') || 'Biblioteca de Ícones'}
+                                            </button>
+                                        </div>
+                                    </section>
+
+                                    {/* Seção: Biblioteca de Ícones Lucide (inline) */}
+                                    {editingApp.app.iconSource === 'lucide' && (
+                                        <section className="space-y-3">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-white/20" />
+                                                    <span className="text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">{getTranslation(config, 'editingApp.icon_library') || 'Biblioteca de Ícones'}</span>
+                                                </div>
+                                                {(() => {
+                                                    const CurrentIcon = getIcon(editingApp.app.iconName);
+                                                    return (
+                                                        <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-white/[0.05] border border-white/10">
+                                                            <CurrentIcon size={14} strokeWidth={1.5} className="text-white/60" />
+                                                            <span className="text-[10px] text-white/40 font-medium">{editingApp.app.iconName}</span>
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </div>
+                                            <div className="bg-black/30 rounded-xl border border-white/5 p-3 max-h-[280px] overflow-y-auto custom-scrollbar">
+                                                <IconPicker
+                                                    selectedIcon={editingApp.app.iconName}
+                                                    onSelect={(name) => handleAppChange('iconName', name)}
+                                                />
+                                            </div>
+                                        </section>
+                                    )}
+                                </div>
+                            </div>
+                        ) : (
+                            /* ===== Layout Normal (telas grandes) — Duas Colunas ===== */
+                            <div className="flex flex-row flex-1 overflow-hidden min-h-0">
+                                {/* Coluna Esquerda: Configuração */}
+                                <div className="flex-1 p-8 space-y-7 overflow-y-auto custom-scrollbar border-r border-white/5 bg-white/[0.01] min-h-0 min-w-0">
+                                    {/* Seção: Identificação */}
+                                    <section className="space-y-3">
+                                        <label className="text-sm font-semibold text-white/60 ml-1">{getTranslation(config, 'editingApp.name_label')}</label>
+                                        <div className="relative group">
+                                            <input
+                                                type="text"
+                                                value={editingApp.app.label}
+                                                onChange={e => handleAppChange('label', e.target.value)}
+                                                className="w-full bg-black/40 border border-white/10 rounded-xl px-5 py-3.5 text-sm font-medium text-white focus:border-white/30 focus:bg-black/60 outline-none transition-all duration-500 shadow-inner group-hover:border-white/20"
+                                                placeholder={getTranslation(config, 'editingApp.placeholder_name')}
+                                            />
+                                        </div>
+                                    </section>
+
+                                    {/* Seção: Alvo/Caminho */}
+                                    {editingApp.app.type === 'app' && (
+                                        <section className="space-y-3">
+                                            <label className="text-sm font-semibold text-white/60 ml-1">
+                                                {editingApp.app.commandType === 'url' ? getTranslation(config, 'editingApp.url_label') : getTranslation(config, 'editingApp.path_label')}
+                                            </label>
+                                            <div className="flex flex-col sm:flex-row gap-3">
+                                                <div className="flex-1 relative group">
+                                                    <input
+                                                        type="text"
+                                                        value={editingApp.app.command}
+                                                        onChange={e => handleAppChange('command', e.target.value)}
+                                                        className="w-full bg-black/40 border border-white/10 rounded-xl px-5 py-3.5 text-sm font-mono text-white/50 focus:border-white/30 focus:bg-black/60 outline-none transition-all duration-500 shadow-inner group-hover:border-white/20"
+                                                        placeholder={editingApp.app.commandType === 'url' ? getTranslation(config, 'editingApp.placeholder_url') : getTranslation(config, 'editingApp.placeholder_path')}
+                                                    />
+                                                </div>
+                                                <div className="flex gap-2 shrink-0">
+                                                    {editingApp.app.commandType === 'url' ? (
+                                                        <div className="w-[52px] h-[52px] bg-white/[0.03] border border-white/5 flex items-center justify-center text-white/20 rounded-xl">
+                                                            <Globe size={20} strokeWidth={1} />
+                                                        </div>
+                                                    ) : (
+                                                        <>
+                                                            <button
+                                                                onClick={editingApp.app.commandType === 'folder' ? handlePickFolder : handlePickCommand}
+                                                                className="px-5 h-[52px] bg-white text-black font-bold text-xs rounded-xl hover:bg-gray-200 transition-all duration-300 shadow-xl active:scale-95 flex items-center justify-center gap-2 group"
+                                                                title={getTranslation(config, 'editingApp.explore_title')}
+                                                            >
+                                                                <Folder size={16} strokeWidth={2.5} />
+                                                                <span>{getTranslation(config, 'action.explore')}</span>
+                                                            </button>
+                                                            {editingApp.app.commandType === 'app' && (
+                                                                <button
+                                                                    onClick={() => setShowAppSelector(true)}
+                                                                    className="px-4 h-[52px] bg-white/[0.03] border border-white/10 flex items-center justify-center gap-2 text-white/40 hover:text-white hover:bg-white/[0.08] rounded-xl transition-all duration-300 active:scale-90"
+                                                                    title={getTranslation(config, 'editingApp.installed_apps_title')}
+                                                                >
+                                                                    <LayoutGrid size={18} strokeWidth={1.5} />
+                                                                    <span className="font-bold text-[10px] uppercase tracking-wider">{getTranslation(config, 'editingApp.installed_apps_label')}</span>
+                                                                </button>
+                                                            )}
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </section>
+                                    )}
+
+                                    {/* Seção: Estilo do Ícone */}
+                                    <section className="space-y-3">
+                                        <label className="text-sm font-semibold text-white/60 ml-1">{getTranslation(config, 'visuals.icon_style')}</label>
+                                        <div className="flex bg-black/60 p-1.5 rounded-2xl border border-white/10 shadow-inner relative overflow-hidden">
+                                            <div
+                                                className="absolute inset-y-1.5 rounded-xl bg-white shadow-xl transition-all duration-500 ease-out"
+                                                style={{
+                                                    width: 'calc(50% - 6px)',
+                                                    left: editingApp.app.iconSource === 'native' ? '6px' : 'calc(50%)',
+                                                    zIndex: 0
+                                                }}
+                                            />
+                                            <button
+                                                onClick={() => handleAppChange('iconSource', 'native')}
+                                                className={`relative z-10 flex-1 py-3 text-[10px] font-bold uppercase tracking-widest rounded-xl transition-colors duration-500 ${editingApp.app.iconSource === 'native' ? 'text-black' : 'text-white/30 hover:text-white/50'}`}
+                                            >
+                                                {getTranslation(config, 'editingApp.native_icon') || 'Ícone do Sistema'}
+                                            </button>
+                                            <button
+                                                onClick={() => handleAppChange('iconSource', 'lucide')}
+                                                className={`relative z-10 flex-1 py-3 text-[10px] font-bold uppercase tracking-widest rounded-xl transition-colors duration-500 ${editingApp.app.iconSource === 'lucide' ? 'text-black' : 'text-white/30 hover:text-white/50'}`}
+                                            >
+                                                {getTranslation(config, 'editingApp.icon_library') || 'Biblioteca de Ícones'}
+                                            </button>
+                                        </div>
+                                    </section>
                                 </div>
 
-                                {editingApp.app.iconSource === 'native' ? (
-                                    <div className="w-full space-y-3">
-                                        <button
-                                            onClick={handlePickIcon}
-                                            className="w-full py-3.5 bg-white/[0.04] hover:bg-white/[0.08] text-white/80 font-bold text-[11px] uppercase tracking-widest rounded-xl border border-white/5 hover:border-white/20 transition-all duration-300 active:scale-[0.98]"
-                                        >
-                                            {getTranslation(config, 'editingApp.choose_image') || 'Escolher Imagem'}
-                                        </button>
-                                        <button
-                                            onClick={() => handleAppChange('customIconUrl', undefined)}
-                                            className="w-full py-2 text-white/20 hover:text-white/40 text-[10px] font-bold uppercase tracking-widest transition-colors duration-300"
-                                        >
-                                            {getTranslation(config, 'editingApp.restore_default') || 'Restaurar Padrão'}
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div className="w-full flex-1 max-h-[180px] rounded-xl overflow-hidden border border-white/10 shadow-2xl bg-black/40">
-                                        <div className="h-full overflow-y-auto custom-scrollbar-mini">
+                                {/* Coluna Direita: Preview or Icon Library */}
+                                {editingApp.app.iconSource === 'lucide' ? (
+                                    <div className="w-[340px] shrink-0 bg-black/40 flex flex-col min-h-0 border-l border-white/5">
+                                        <div className="px-5 py-4 flex items-center justify-between border-b border-white/5 shrink-0">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-white/20" />
+                                                <span className="text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">{getTranslation(config, 'editingApp.icon_library') || 'Biblioteca de Ícones'}</span>
+                                            </div>
+                                            {(() => {
+                                                const CurrentIcon = getIcon(editingApp.app.iconName);
+                                                return (
+                                                    <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-white/[0.05] border border-white/10">
+                                                        <CurrentIcon size={14} strokeWidth={1.5} className="text-white/60" />
+                                                        <span className="text-[10px] text-white/40 font-medium">{editingApp.app.iconName}</span>
+                                                    </div>
+                                                );
+                                            })()}
+                                        </div>
+                                        <div className="flex-1 overflow-y-auto custom-scrollbar p-3 min-h-0">
                                             <IconPicker
                                                 selectedIcon={editingApp.app.iconName}
                                                 onSelect={(name) => handleAppChange('iconName', name)}
                                             />
                                         </div>
                                     </div>
+                                ) : (
+                                    <div className="w-[300px] shrink-0 bg-black/40 p-8 flex flex-col items-center justify-between gap-6 relative min-h-0 border-l border-white/5">
+                                        <div className="w-full space-y-10 flex flex-col items-center">
+                                            <div className="flex items-center gap-2 w-full">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-white/20" />
+                                                <span className="text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">{getTranslation(config, 'editingApp.preview') || 'Pré-visualização'}</span>
+                                            </div>
+                                            <div className="relative group">
+                                                <motion.div
+                                                    className="w-28 h-28 rounded-2xl bg-gradient-to-br from-white/[0.05] to-transparent flex items-center justify-center border border-white/10 group-hover:border-white/30 transition-all duration-700 cursor-pointer overflow-hidden shadow-2xl"
+                                                    whileHover={{ scale: 1.05, y: -4 }}
+                                                    onClick={handlePickIcon}
+                                                >
+                                                    {editingApp.app.customIconUrl ? (
+                                                        <SmartIcon
+                                                            src={editingApp.app.customIconUrl}
+                                                            className="w-full h-full object-contain p-4 transition-transform duration-700 group-hover:scale-110"
+                                                            size={112}
+                                                            referenceScale={0.7}
+                                                        />
+                                                    ) : (
+                                                        (() => {
+                                                            const Icon = getIcon(editingApp.app.iconName);
+                                                            return <Icon size={56} strokeWidth={1} className="text-white/20 group-hover:text-white transition-all duration-500" />;
+                                                        })()
+                                                    )}
+                                                    <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 flex items-center justify-center">
+                                                        <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20">
+                                                            <Upload size={16} className="text-white" />
+                                                        </div>
+                                                    </div>
+                                                </motion.div>
+                                                <div className="absolute inset-0 bg-white/[0.01] rounded-[2rem] blur-2xl -z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
+                                            </div>
+                                            <div className="text-center space-y-1.5">
+                                                <h4 className="text-base font-bold text-white tracking-tight truncate max-w-[220px]">
+                                                    {editingApp.app.label || getTranslation(config, 'editingApp.no_name') || 'Sem Nome'}
+                                                </h4>
+                                                <p className="text-[10px] text-white/20 font-bold uppercase tracking-[0.15em]">{getTranslation(config, 'editingApp.menu_pos') || 'Posição no Menu'}: {editingApp.index + 1}</p>
+                                            </div>
+                                        </div>
+                                        <div className="w-full space-y-3">
+                                            <button
+                                                onClick={handlePickIcon}
+                                                className="w-full py-3.5 bg-white/[0.04] hover:bg-white/[0.08] text-white/80 font-bold text-[11px] uppercase tracking-widest rounded-xl border border-white/5 hover:border-white/20 transition-all duration-300 active:scale-[0.98]"
+                                            >
+                                                {getTranslation(config, 'editingApp.choose_image') || 'Escolher Imagem'}
+                                            </button>
+                                            <button
+                                                onClick={() => handleAppChange('customIconUrl', undefined)}
+                                                className="w-full py-2 text-white/20 hover:text-white/40 text-[10px] font-bold uppercase tracking-widest transition-colors duration-300"
+                                            >
+                                                {getTranslation(config, 'editingApp.restore_default') || 'Restaurar Padrão'}
+                                            </button>
+                                        </div>
+                                    </div>
                                 )}
                             </div>
-                        </div>
+                        )}
 
                         {/* Rodapé do Modal */}
                         <div className="px-8 py-5 border-t border-white/5 bg-black/20 flex justify-between items-center">
@@ -247,9 +448,9 @@ const AppEditorModal = React.memo(({
                             </button>
                         </div>
                     </motion.div>
-                </div>
+                </div >
             )}
-        </AnimatePresence>
+        </AnimatePresence >
     );
 });
 
@@ -258,7 +459,7 @@ const AppEditorModal = React.memo(({
 const WidgetsTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig: (c: any) => void }) => {
     return (
         <motion.div
-            className="pt-10 md:pt-16 lg:pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
+            className="pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
@@ -394,7 +595,7 @@ const BentoCard = React.memo(({ title, icon: Icon, children, description, classN
 const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig: (c: any) => void }) => {
     return (
         <motion.div
-            className="pt-10 md:pt-16 lg:pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
+            className="pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
@@ -845,7 +1046,7 @@ const WorkspacesTab = React.memo(({
 }) => {
     return (
         <div className="h-full w-full flex flex-col overflow-hidden relative">
-            <div className={`flex-1 overflow-y-auto custom-scrollbar ${selectedWorkspaceIndex !== null ? 'pt-12 md:pt-16 lg:pt-20' : 'pt-10 md:pt-16 lg:pt-20'}`}>
+            <div className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar pt-20`}>
                 <div className="max-w-4xl mx-auto flex flex-col px-6 md:px-10 lg:px-12">
                     <div className={`flex items-center gap-6 ${selectedWorkspaceIndex !== null ? 'mb-6' : 'mb-12'} group/header`}>
                         {selectedWorkspaceIndex !== null && (
@@ -967,7 +1168,7 @@ const WorkspacesTab = React.memo(({
                                 )}
 
                                 {/* App Grid - Refined 2026 */}
-                                <div className="flex-1 overflow-y-auto custom-scrollbar bg-black/40 rounded-xl border border-white/5 p-5 pb-12 mb-4 shadow-inner min-h-[420px]">
+                                <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar bg-black/40 rounded-xl border border-white/5 p-5 pb-4 mb-4 shadow-inner" style={{ maxHeight: 'clamp(260px, 55vh, 640px)' }}>
                                     <div className="flex items-center gap-4 mb-5">
                                         {workspaceFolderPath.length > 0 && (
                                             <button
@@ -1024,8 +1225,8 @@ const WorkspacesTab = React.memo(({
                 </div>
             </div>
 
-            {/* Unified Global Fixed Action Bar - Premium 2026 */}
-            <div className="pb-16 pt-4 flex justify-center flex-shrink-0 bg-transparent">
+            {/* Unified Global Fixed Action Bar - always visible at bottom */}
+            <div className="py-4 flex justify-center flex-shrink-0 border-t border-white/[0.04] bg-[#0A0A0A]/80 backdrop-blur-sm">
                 <div className="flex items-center gap-1.5 p-1.5 bg-white/[0.03] backdrop-blur-3xl rounded-full border border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.6)] z-[50] ring-1 ring-white/5">
                     {selectedWorkspaceIndex === null ? (
                         <button
@@ -1082,9 +1283,158 @@ interface SettingsModalProps {
     isPage?: boolean;
 }
 
+const ShortcutRecorderField: React.FC<{
+    value: string;
+    onRecord: (shortcut: string) => void;
+    label: string;
+    config: UIConfig;
+}> = ({ value, onRecord, label, config }) => {
+    const [isRecording, setIsRecording] = useState(false);
+    const [pendingShortcut, setPendingShortcut] = useState<string | null>(null);
+    const inputRef = useRef<HTMLDivElement>(null);
+
+    const startRecording = () => {
+        setPendingShortcut(null);
+        setIsRecording(true);
+        if (window.electron?.startShortcutRecording) {
+            window.electron.startShortcutRecording();
+        }
+        if (window.electron?.pauseGlobalShortcut) {
+            window.electron.pauseGlobalShortcut();
+        }
+        inputRef.current?.focus();
+    };
+
+    const stopRecording = (shouldCleanup = true) => {
+        setIsRecording(false);
+        if (shouldCleanup) {
+            if (window.electron?.stopShortcutRecording) {
+                window.electron.stopShortcutRecording();
+            }
+            if (window.electron?.resumeGlobalShortcut) {
+                window.electron.resumeGlobalShortcut();
+            }
+        }
+    };
+
+    const handleConfirm = () => {
+        if (pendingShortcut) {
+            onRecord(pendingShortcut);
+            setPendingShortcut(null);
+        }
+        stopRecording();
+    };
+
+    const handleReset = () => {
+        setPendingShortcut(null);
+        startRecording();
+    };
+
+    useEffect(() => {
+        if (isRecording && window.electron?.onShortcutRecorded) {
+            const cleanup = window.electron.onShortcutRecorded((shortcut) => {
+                setPendingShortcut(shortcut);
+                setIsRecording(false);
+            });
+            return cleanup;
+        }
+    }, [isRecording]);
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        // We still prevent default to avoid some browser behaviors,
+        // but the actual recording is handled by the global listener.
+        if (isRecording) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.key === 'Escape') {
+                stopRecording();
+            }
+        }
+    };
+
+    return (
+        <div className="flex flex-col gap-2">
+            <label className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em] ml-1">{label}</label>
+            <div className="flex gap-3">
+                <div
+                    ref={inputRef}
+                    tabIndex={0}
+                    onFocus={startRecording}
+                    onBlur={() => !pendingShortcut && stopRecording()}
+                    onKeyDown={handleKeyDown}
+                    className={`flex-1 min-h-[64px] rounded-xl border flex items-center justify-center font-mono text-sm tracking-widest transition-all duration-300 outline-none cursor-pointer group relative overflow-hidden ${isRecording
+                        ? 'bg-red-500/10 border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.2)]'
+                        : pendingShortcut
+                            ? 'bg-white/5 border-white/30'
+                            : 'bg-black/40 border-white/10 hover:border-white/20 focus:border-white/40'
+                        }`}
+                >
+                    <AnimatePresence mode="wait">
+                        {pendingShortcut ? (
+                            <motion.div
+                                key="pending"
+                                initial={{ opacity: 0, scale: 0.9 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                className="flex flex-col items-center gap-2 py-2"
+                            >
+                                <span className="text-white font-bold text-lg tracking-[0.2em]">{pendingShortcut}</span>
+                                <div className="flex gap-4">
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); handleConfirm(); }}
+                                        className="text-[10px] font-black text-green-500 hover:text-green-400 uppercase tracking-widest px-3 py-1.5 bg-green-500/10 rounded-lg border border-green-500/20 transition-all active:scale-95 flex items-center gap-2"
+                                    >
+                                        <Check size={12} strokeWidth={3} />
+                                        {getTranslation(config, 'action.save') || 'CONFIRMAR'}
+                                    </button>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); handleReset(); }}
+                                        className="text-[10px] font-black text-white/40 hover:text-white/60 uppercase tracking-widest px-3 py-1.5 bg-white/5 rounded-lg border border-white/10 transition-all active:scale-95 flex items-center gap-2"
+                                    >
+                                        <RotateCcw size={12} strokeWidth={3} />
+                                        {getTranslation(config, 'reset.button_label') || 'REPETIR'}
+                                    </button>
+                                </div>
+                            </motion.div>
+                        ) : isRecording ? (
+                            <motion.div
+                                key="recording"
+                                initial={{ opacity: 0, scale: 0.9 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 1.1 }}
+                                className="flex items-center gap-2 text-red-500 font-bold"
+                            >
+                                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                                {getTranslation(config, 'interface.recording') || 'PRESS KEYS...'}
+                            </motion.div>
+                        ) : (
+                            <motion.span
+                                key="value"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                className="text-white/60 group-hover:text-white transition-colors"
+                            >
+                                {value || 'NONE'}
+                            </motion.span>
+                        )}
+                    </AnimatePresence>
+                </div>
+                <button
+                    onClick={() => inputRef.current?.focus()}
+                    className={`px-5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 border ${isRecording
+                        ? 'bg-red-500 border-red-500 text-white animate-pulse'
+                        : 'bg-white text-black border-white hover:shadow-[0_0_20px_rgba(255,255,255,0.2)]'
+                        }`}
+                >
+                    {isRecording ? 'REC' : (getTranslation(config, 'interface.record') || 'RECORD')}
+                </button>
+            </div>
+        </div>
+    );
+};
+
 type SettingsTab = 'apps' | 'zenith_apps' | 'workspaces' | 'interface' | 'visuals' | 'widgets' | 'gamemode' | 'user' | 'dashboard';
 
-const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, handleCenterTargetChange, setAppSelectorMode, setShowAppSelector }: {
+const InterfaceTab = React.memo((props: {
     config: UIConfig,
     setConfig: (c: any) => void,
     handleCenterTypeChange: (type: any) => void,
@@ -1092,9 +1442,10 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
     setAppSelectorMode: (mode: any) => void,
     setShowAppSelector: (show: boolean) => void
 }) => {
+    const { config, setConfig, handleCenterTypeChange, handleCenterTargetChange, setAppSelectorMode, setShowAppSelector } = props;
     return (
         <motion.div
-            className="pt-10 md:pt-16 lg:pt-20 overflow-y-auto custom-scrollbar"
+            className="pt-20 overflow-y-auto custom-scrollbar"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
@@ -1121,23 +1472,13 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.3, delay: 0.2 }}
                     >
-                        <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.25em] block ml-0.5 mb-0.5">{getTranslation(config, 'interface.activation_matrix')}</label>
-                        <h4 className="text-[13px] font-medium text-white">{getTranslation(config, 'interface.global_shortcut')}</h4>
-                        <div className="flex gap-6 items-center">
-                            <div className="flex-1 relative group">
-                                <input
-                                    type="text"
-                                    value={config.globalShortcut || 'Alt+Space'}
-                                    readOnly
-                                    className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-3 text-sm text-white font-mono text-center tracking-[0.15em] focus:border-white/40 outline-none transition-all duration-300 shadow-inner group-hover:border-white/20"
-                                />
-                                <div className="absolute inset-0 rounded-2xl ring-2 ring-white/0 group-hover:ring-white/5 transition-all pointer-events-none" />
-                            </div>
-                            <button
-                                className="px-6 py-3 bg-white text-black font-semibold text-xs uppercase tracking-[0.2em] rounded-lg hover:bg-white hover:shadow-[0_8px_24px_rgba(255,255,255,0.2)] transition-all duration-300 shrink-0"
-                            >
-                                {getTranslation(config, 'interface.resync')}
-                            </button>
+                        <div className="bg-white/5 rounded-2xl p-6 border border-white/10 space-y-6">
+                            <ShortcutRecorderField
+                                label={getTranslation(config, 'interface.global_shortcut') || 'Global Shortcut'}
+                                value={config.globalShortcut || 'Alt+Space'}
+                                config={config}
+                                onRecord={(shortcut) => setConfig(prev => ({ ...prev, globalShortcut: shortcut }))}
+                            />
                         </div>
                     </motion.div>
 
@@ -1218,7 +1559,7 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
                         </div>
 
                         <div className="flex bg-black/40 p-1 rounded-xl border border-white/5 shadow-inner">
-                            {(['system', 'app', 'widget', 'command', 'none'] as const).map(mode => (
+                            {(['app', 'widget', 'command', 'none'] as const).map(mode => (
                                 <button
                                     key={mode}
                                     onClick={() => handleCenterTypeChange(mode)}
@@ -1296,26 +1637,31 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
                                     exit={{ opacity: 0, height: 0 }}
                                     className="pt-4 space-y-3"
                                 >
-                                    <div>
-                                        <label className="text-xs font-bold text-white/40 uppercase tracking-wider mb-1 block ml-1">{getTranslation(config, 'interface.command_path')}</label>
-                                        <input
-                                            type="text"
-                                            value={config.centerButton.target}
-                                            onChange={(e) => setConfig(prev => ({ ...prev, centerButton: { ...prev.centerButton, target: e.target.value, label: prev.centerButton.label === 'CMD' || prev.centerButton.label === '' ? (e.target.value.split(/[\\/]/).pop()?.substring(0, 8).toUpperCase() || 'CMD') : prev.centerButton.label } }))}
-                                            placeholder={getTranslation(config, 'interface.command_path_placeholder')}
-                                            className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white focus:border-white/30 outline-none font-mono"
+                                    <div className="space-y-6">
+                                        <ShortcutRecorderField
+                                            label={getTranslation(config, 'interface.shortcut_center') || 'Neural Shortcut'}
+                                            value={config.centerButton.target.startsWith('shortcut:') ? config.centerButton.target.replace('shortcut:', '') : 'NONE'}
+                                            config={config}
+                                            onRecord={(shortcut) => setConfig(prev => ({
+                                                ...prev,
+                                                centerButton: {
+                                                    ...prev.centerButton,
+                                                    target: `shortcut:${shortcut}`,
+                                                    label: shortcut
+                                                }
+                                            }))}
                                         />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-white/40 uppercase tracking-wider mb-1 block ml-1">{getTranslation(config, 'interface.button_label')}</label>
-                                        <input
-                                            type="text"
-                                            value={config.centerButton.label}
-                                            onChange={(e) => setConfig(prev => ({ ...prev, centerButton: { ...prev.centerButton, label: e.target.value } }))}
-                                            placeholder={getTranslation(config, 'interface.button_label_placeholder')}
-                                            maxLength={10}
-                                            className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white focus:border-white/30 outline-none"
-                                        />
+                                        <div>
+                                            <label className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em] ml-1 block mb-2">{getTranslation(config, 'interface.button_label')}</label>
+                                            <input
+                                                type="text"
+                                                value={config.centerButton.label}
+                                                onChange={(e) => setConfig(prev => ({ ...prev, centerButton: { ...prev.centerButton, label: e.target.value } }))}
+                                                placeholder={getTranslation(config, 'interface.button_label_placeholder')}
+                                                maxLength={10}
+                                                className="w-full h-12 bg-white/5 border border-white/10 rounded-xl px-5 text-sm text-white focus:border-white/30 outline-none transition-all"
+                                            />
+                                        </div>
                                     </div>
                                 </motion.div>
                             )}
@@ -1416,7 +1762,7 @@ const InterfaceTab = React.memo(({ config, setConfig, handleCenterTypeChange, ha
 const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig: (c: any) => void }) => {
     return (
         <motion.div
-            className="pt-10 md:pt-16 lg:pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
+            className="pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
@@ -1576,7 +1922,7 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
 const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig: (c: any) => void }) => {
     return (
         <motion.div
-            className="pt-10 md:pt-16 lg:pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
+            className="pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
@@ -1706,7 +2052,7 @@ const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setCo
 const UserTab = React.memo(({ user, config }: { user: UserProfile | null, config: UIConfig }) => {
     return (
         <motion.div
-            className="pt-10 md:pt-16 lg:pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
+            className="pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
@@ -1877,16 +2223,44 @@ const NavButton = React.memo(({
     icon: Icon,
     isSidebarExpanded,
     activeTab,
-    setActiveTab
+    setActiveTab,
+    isCompact
 }: {
     tab: SettingsTab,
     label: string,
     icon: any,
     isSidebarExpanded: boolean,
     activeTab: SettingsTab,
-    setActiveTab: (tab: SettingsTab) => void
+    setActiveTab: (tab: SettingsTab) => void,
+    isCompact?: boolean
 }) => {
     const isActive = activeTab === tab;
+
+    if (isCompact) {
+        return (
+            <button
+                onClick={() => setActiveTab(tab)}
+                className={`
+                    w-full flex items-center justify-center py-3 rounded-xl
+                    transition-all duration-300 relative group
+                    ${isActive ? 'text-white' : 'text-white/40 hover:text-white/60'}
+                `}
+            >
+                {isActive && (
+                    <motion.div
+                        layoutId="active-indicator-compact"
+                        className="absolute inset-x-2 inset-y-1 bg-white/[0.08] border border-white/10 rounded-xl shadow-[inset_0_0_12px_rgba(255,255,255,0.02)]"
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                    />
+                )}
+                <div className="relative z-10 flex items-center justify-center">
+                    <Icon size={20} strokeWidth={isActive ? 2.5 : 2} />
+                </div>
+            </button>
+        );
+    }
 
     return (
         <button
@@ -2009,7 +2383,7 @@ const SearchResultsView = React.memo(({
 }) => {
     return (
         <motion.div
-            className="pt-10 md:pt-16 lg:pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
+            className="pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.98 }}
@@ -2122,12 +2496,66 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const [showAppSelector, setShowAppSelector] = useState(false);
     const [selectedWorkspaceIndex, setSelectedWorkspaceIndex] = useState<number | null>(null);
     const [workspaceFolderPath, setWorkspaceFolderPath] = useState<number[]>([]);
-    const [appSelectorMode, setAppSelectorMode] = useState<'edit' | 'center'>('edit');
+    const [appSelectorMode, setAppSelectorMode] = useState<'edit' | 'center' | 'add'>('edit');
     const [showAppSelectionModal, setShowAppSelectionModal] = useState(false);
     const [pendingWorkspaceAction, setPendingWorkspaceAction] = useState<{ workspaceIndex: number, path: number[] } | null>(null);
     const [isSidebarPinned, setIsSidebarPinned] = useState(true);
     const [isHoveringSidebar, setIsHoveringSidebar] = useState(false);
-    const isSidebarExpanded = isSidebarPinned || isHoveringSidebar;
+    const isSidebarExpanded = (isSidebarPinned || isHoveringSidebar);
+    const [isCompact, setIsCompact] = useState(window.innerWidth < 768); // Breakpoint for main settings modal
+
+    useEffect(() => {
+        const handleResize = () => {
+            setIsCompact(window.innerWidth < 768);
+        };
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
+    // --- SHORTCUT RECORDING LOGIC ---
+    const [recordingTarget, setRecordingTarget] = useState<'global' | 'center' | null>(null);
+    const [recordedKeys, setRecordedKeys] = useState<string[]>([]);
+
+    useEffect(() => {
+        if (!recordingTarget) return;
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            // Ignore standalone modifiers
+            if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
+
+            const modifiers: string[] = [];
+            if (e.ctrlKey) modifiers.push('Ctrl');
+            if (e.altKey) modifiers.push('Alt');
+            if (e.shiftKey) modifiers.push('Shift');
+            if (e.metaKey) modifiers.push('Win');
+
+            let key = e.key;
+            if (key === ' ') key = 'Space';
+            if (key.length === 1) key = key.toUpperCase();
+
+            const shortcut = [...modifiers, key].join('+');
+
+            if (recordingTarget === 'global') {
+                setConfig(prev => ({ ...prev, globalShortcut: shortcut }));
+            } else if (recordingTarget === 'center') {
+                setConfig(prev => ({
+                    ...prev,
+                    centerButton: {
+                        ...prev.centerButton,
+                        target: `shortcut:${shortcut}`,
+                        label: shortcut
+                    }
+                }));
+            }
+            setRecordingTarget(null);
+        };
+
+        window.addEventListener('keydown', handleKeyDown, true);
+        return () => window.removeEventListener('keydown', handleKeyDown, true);
+    }, [recordingTarget, setConfig]);
 
     // Keyboard Shortcuts
     useEffect(() => {
@@ -2229,13 +2657,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         if (text.includes('steam') || text.includes('game')) return 'Gamepad2';
         if (text.includes('discord')) return 'MessageSquare';
         if (text.includes('code') || text.includes('visual studio')) return 'Code';
-        if (text.includes('explorer') || text.includes('folder')) return 'Folder';
+        // Folders
+        if (text.includes('explorer') || text.includes('folder') || path.includes(':') && !path.includes('.')) return 'Folder';
+        if (text.includes('download')) return 'Download';
+        if (text.includes('document')) return 'FileText';
+        if (text.includes('picture') || text.includes('image')) return 'ImageIcon';
+        if (text.includes('music')) return 'Music';
+        if (text.includes('video')) return 'Play';
+
         if (text.includes('setting') || text.includes('config')) return 'Settings2';
-        if (text.includes('music') || text.includes('spotify')) return 'Music';
-        if (text.includes('video') || text.includes('player')) return 'Play';
-        if (text.includes('mail') || text.includes('outlook')) return 'Mail';
-        if (text.includes('chat') || text.includes('whatsapp') || text.includes('messenger')) return 'MessageSquare';
-        if (text.includes('store')) return 'ShoppingBag';
         return 'Layout'; // Default
     };
 
@@ -2325,6 +2755,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         }
     };
 
+    const handlePickFolder = async () => {
+        if (!window.electron?.selectFolder) return;
+        try {
+            const folderPath = await window.electron.selectFolder();
+            if (folderPath && editingApp) {
+                const bestIcon = getBestLucideIcon(folderPath.split(/[\\/]/).pop() || 'Folder', folderPath);
+                const nativeIconData = await extractIconFromPath(folderPath);
+
+                handleAppUpdates({
+                    command: folderPath,
+                    iconName: bestIcon,
+                    iconSource: 'native', // Always prefer native
+                    ...(nativeIconData || {})
+                });
+            }
+        } catch (e) {
+            console.error("Pick Folder Error:", e);
+        }
+    };
+
     const handlePickIcon = async () => {
         if (!window.electron?.selectImage) return;
         try {
@@ -2399,11 +2849,85 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         }
     };
 
-    const handleAppSelect = async (appData: { name: string; path: string }) => {
+    const handleAppSelect = async (appData: { name: string; path: string; type?: 'app' | 'url' | 'folder' }) => {
         if (!appData.path || appData.path.trim() === '') {
             alert(`Could not find a launch path for "${appData.name}".`);
             return;
         }
+
+        // Handle URL type
+        if (appData.type === 'url') {
+            if (appSelectorMode === 'center') {
+                setConfig(prev => ({
+                    ...prev,
+                    centerButton: { ...prev.centerButton, target: appData.path, label: appData.name.toUpperCase().substring(0, 8), iconName: 'Globe' }
+                }));
+                setShowAppSelector(false);
+                return;
+            }
+            // 'add' mode: create a new item and insert into workspace/app list
+            if (appSelectorMode === 'add') {
+                const newItem: AppItem = {
+                    id: generateId(), type: 'app', label: appData.name,
+                    iconName: 'Globe', iconSource: 'lucide', command: appData.path,
+                    commandType: 'url', description: 'Web Link'
+                };
+                if (pendingWorkspaceAction) {
+                    const { workspaceIndex, path } = pendingWorkspaceAction;
+                    setConfig(prev => {
+                        const ws = [...prev.workspaces];
+                        ws[workspaceIndex] = { ...ws[workspaceIndex], apps: updateAppTree(ws[workspaceIndex].apps, path, (list) => [...list, newItem]) };
+                        return { ...prev, workspaces: ws };
+                    });
+                    setPendingWorkspaceAction(null);
+                } else {
+                    setApps(prev => updateAppTree(prev, folderPath, (list) => [...list, newItem]));
+                }
+                setShowAppSelector(false);
+                return;
+            }
+            if (!editingApp) return;
+            handleAppUpdates({ command: appData.path, label: appData.name, commandType: 'url', iconName: 'Globe', iconSource: 'lucide' });
+            return;
+        }
+
+        // Handle Folder type
+        if (appData.type === 'folder') {
+            if (appSelectorMode === 'center') {
+                setConfig(prev => ({
+                    ...prev,
+                    centerButton: { ...prev.centerButton, target: appData.path, label: appData.name.toUpperCase().substring(0, 8), iconName: 'Folder' }
+                }));
+                setShowAppSelector(false);
+                return;
+            }
+            // 'add' mode
+            if (appSelectorMode === 'add') {
+                const newItem: AppItem = {
+                    id: generateId(), type: 'app', label: appData.name,
+                    iconName: 'Folder', iconSource: 'lucide', command: appData.path,
+                    commandType: 'folder', description: 'Folder Shortcut'
+                };
+                if (pendingWorkspaceAction) {
+                    const { workspaceIndex, path } = pendingWorkspaceAction;
+                    setConfig(prev => {
+                        const ws = [...prev.workspaces];
+                        ws[workspaceIndex] = { ...ws[workspaceIndex], apps: updateAppTree(ws[workspaceIndex].apps, path, (list) => [...list, newItem]) };
+                        return { ...prev, workspaces: ws };
+                    });
+                    setPendingWorkspaceAction(null);
+                } else {
+                    setApps(prev => updateAppTree(prev, folderPath, (list) => [...list, newItem]));
+                }
+                setShowAppSelector(false);
+                return;
+            }
+            if (!editingApp) return;
+            handleAppUpdates({ command: appData.path, label: appData.name, commandType: 'folder', iconName: 'Folder', iconSource: 'lucide' });
+            return;
+        }
+
+        // Handle App type (default)
         const bestIcon = getBestLucideIcon(appData.name, appData.path);
         if (appSelectorMode === 'center') {
             setConfig(prev => ({
@@ -2418,17 +2942,42 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             setShowAppSelector(false);
             return;
         }
-        if (!editingApp) return;
+        // 'add' mode: create and insert a new app item
+        if (appSelectorMode === 'add') {
+            const nativeIconData = await extractIconFromPath(appData.path);
+            const newItem: AppItem = {
+                id: generateId(), type: 'app', label: appData.name,
+                iconName: bestIcon, iconSource: 'native', command: appData.path,
+                commandType: 'app', description: 'Application',
+                ...(nativeIconData || {})
+            };
+            if (pendingWorkspaceAction) {
+                const { workspaceIndex, path } = pendingWorkspaceAction;
+                setConfig(prev => {
+                    const ws = [...prev.workspaces];
+                    ws[workspaceIndex] = { ...ws[workspaceIndex], apps: updateAppTree(ws[workspaceIndex].apps, path, (list) => [...list, newItem]) };
+                    return { ...prev, workspaces: ws };
+                });
+                setPendingWorkspaceAction(null);
+            } else {
+                setApps(prev => updateAppTree(prev, folderPath, (list) => [...list, newItem]));
+            }
+            setShowAppSelector(false);
+            return;
+        }
 
-        const nativeIconData = await extractIconFromPath(appData.path);
+        if (!editingApp) return;
+        const nativeIconData2 = await extractIconFromPath(appData.path);
         handleAppUpdates({
             command: appData.path,
             label: appData.name,
+            commandType: 'app',
             iconName: bestIcon,
-            iconSource: 'native', // Always prefer native
-            ...(nativeIconData || {})
+            iconSource: 'native',
+            ...(nativeIconData2 || {})
         });
     };
+
 
     const handleAddApp = (type: 'app' | 'folder') => {
         if (type === 'folder') {
@@ -2444,19 +2993,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 setApps(prev => updateAppTree(prev, folderPath, (list) => [...list, newFolder]));
             }
         } else {
-            // It's an app, show selection modal if in workspace, or just add if in main apps?
-            // User requested this specifically for workspace section
+            // Open the new AppSelector directly — it has built-in tabs for App / URL / Folder
             if (selectedWorkspaceIndex !== null) {
                 setPendingWorkspaceAction({ workspaceIndex: selectedWorkspaceIndex, path: workspaceFolderPath });
-                setShowAppSelectionModal(true);
-            } else {
-                const newApp: AppItem = {
-                    id: generateId(), type: 'app', label: getTranslation(config, 'action.new_app') || 'New App',
-                    iconName: 'Layout', iconSource: 'lucide', command: '',
-                    commandType: 'app', description: getTranslation(config, 'workspaces.app') || 'Application'
-                };
-                setApps(prev => updateAppTree(prev, folderPath, (list) => [...list, newApp]));
             }
+            setAppSelectorMode('add');
+            setShowAppSelector(true);
         }
     };
 
@@ -2480,15 +3022,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         }
     };
 
-    const handleCenterTypeChange = (type: 'system' | 'app' | 'widget' | 'command' | 'none') => {
+    const handleCenterTypeChange = (type: 'app' | 'widget' | 'command' | 'none') => {
         const defaults = {
-            system: { target: 'system-center', label: 'SYSTEM', iconName: 'Settings2' },
             app: { target: '', label: 'APP', iconName: 'Box' },
             widget: { target: '', label: 'WIDGET', iconName: 'AppWindow' },
             command: { target: '', label: 'CMD', iconName: 'Terminal' },
             none: { target: '', label: '', iconName: 'Circle' }
         };
-        setConfig(prev => ({ ...prev, centerButton: { ...prev.centerButton, type, ...defaults[type] } }));
+        setConfig(prev => ({ ...prev, centerButton: { ...prev.centerButton, type, ...defaults[type as keyof typeof defaults] } }));
     };
 
     const handleCenterTargetChange = (targetId: string, type: 'app' | 'widget') => {
@@ -2551,16 +3092,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         });
     };
 
-    const addAppToWorkspace = (workspaceIndex: number, type: 'app' | 'folder', path: number[], commandType: 'app' | 'url' = 'app') => {
+    const addAppToWorkspace = (workspaceIndex: number, type: 'app' | 'folder', path: number[], commandType: 'app' | 'url' | 'folder' = 'app') => {
         const newApp: AppItem = {
             id: generateId(),
             type: type,
-            label: type === 'folder' ? (getTranslation(config, 'action.new_folder') || 'New Folder') : (commandType === 'url' ? (getTranslation(config, 'appSelection.new_url') || 'New URL') : (getTranslation(config, 'action.new_app') || 'New App')),
-            iconName: type === 'folder' ? 'Folder' : (commandType === 'url' ? 'Globe' : 'Layout'),
+            label: type === 'folder' ? (getTranslation(config, 'action.new_folder') || 'New Folder') : (commandType === 'url' ? (getTranslation(config, 'appSelection.new_url') || 'New URL') : (commandType === 'folder' ? (getTranslation(config, 'appSelection.folder') || 'Folder') : (getTranslation(config, 'action.new_app') || 'New App'))),
+            iconName: type === 'folder' ? 'Folder' : (commandType === 'url' ? 'Globe' : (commandType === 'folder' ? 'Folder' : 'Layout')),
             iconSource: 'lucide',
             command: '',
             commandType: commandType,
-            description: type === 'folder' ? (getTranslation(config, 'workspaces.folder_group') || 'Folder Group') : (commandType === 'url' ? (getTranslation(config, 'appSelection.web_url_desc') || 'Web Link') : (getTranslation(config, 'workspaces.app') || 'Application')),
+            description: type === 'folder' ? (getTranslation(config, 'workspaces.folder_group') || 'Folder Group') : (commandType === 'url' ? (getTranslation(config, 'appSelection.web_url_desc') || 'Web Link') : (commandType === 'folder' ? (getTranslation(config, 'appSelection.folder_desc') || 'Folder Shortcut') : (getTranslation(config, 'workspaces.app') || 'Application'))),
             children: type === 'folder' ? [] : undefined
         };
 
@@ -2837,6 +3378,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                         <p className="text-[9px] text-white/20 mt-1 uppercase tracking-tight">{getTranslation(config, 'appSelection.web_url_desc')}</p>
                                     </div>
                                 </button>
+
+                                <button
+                                    onClick={() => {
+                                        if (pendingWorkspaceAction) {
+                                            addAppToWorkspace(pendingWorkspaceAction.workspaceIndex, 'app', pendingWorkspaceAction.path, 'folder');
+                                        }
+                                        setShowAppSelectionModal(false);
+                                        setPendingWorkspaceAction(null);
+                                    }}
+                                    className="group flex flex-col items-center gap-4 p-5 rounded-xl bg-white/[0.03] border border-white/5 hover:bg-white/10 hover:border-white/20 transition-all duration-300"
+                                >
+                                    <div className="w-11 h-11 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center text-white/40 group-hover:text-white group-hover:border-white/20 transition-all duration-500">
+                                        <Folder size={22} strokeWidth={1.5} />
+                                    </div>
+                                    <div className="text-center">
+                                        <div className="font-semibold text-white text-sm">{getTranslation(config, 'appSelection.folder') || 'Pasta'}</div>
+                                        <p className="text-[9px] text-white/20 mt-1 uppercase tracking-tight">{getTranslation(config, 'appSelection.folder_desc') || 'Abrir Diretório'}</p>
+                                    </div>
+                                </button>
                             </div>
 
                             <button
@@ -2864,8 +3424,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     />
                 )}
                 <motion.div
-                    className={`relative z-[101] bg-white/[0.015] backdrop-blur-3xl overflow-hidden flex ${!isPage ? 'mx-auto rounded-xl shadow-[0_0_0_1px_rgba(255,255,255,0.05),0_40px_100px_-20px_rgba(0,0,0,0.8)] border border-white/5' : 'w-full h-full border-none'}`}
-                    style={!isPage ? { width: '90%', maxWidth: 1200, marginTop: 32, height: 'calc(100% - 64px)' } : { width: '100%', height: '100%', paddingTop: 0 }}
+                    className={`relative z-[101] bg-[#0A0A0A]/95 backdrop-blur-3xl overflow-hidden flex flex-row ${!isPage ? 'mx-auto rounded-xl shadow-[0_0_0_1px_rgba(255,255,255,0.05),0_40px_100px_-20px_rgba(0,0,0,0.8)] border border-white/5' : 'w-full h-full border-none'}`}
+                    style={!isPage ? { width: isCompact ? '96%' : '90%', maxWidth: 1200, marginTop: isCompact ? 32 : 32, height: isCompact ? 'calc(100% - 64px)' : 'calc(100% - 64px)' } : { width: '100%', height: '100%', paddingTop: 0 }}
                     onClick={(e) => e.stopPropagation()}
                     initial={!isPage ? { opacity: 0, scale: 0.96, y: 40, filter: 'blur(10px)' } : { opacity: 0, x: 20 }}
                     animate={{ opacity: 1, scale: 1, y: 0, x: 0, filter: 'blur(0px)' }}
@@ -2887,167 +3447,173 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </motion.button>
                     {/* Sidebar */}
                     <motion.div
-                        className="bg-white/[0.01] border-r border-white/[0.06] p-4 pt-[52px] shrink-0 flex flex-col gap-1.5 relative overflow-hidden"
-                        animate={{ width: isSidebarExpanded ? 280 : 80 }}
+                        className={`bg-white/[0.01] border-r p-4 pt-[52px] flex-col border-white/[0.06] shrink-0 flex gap-1.5 relative`}
+                        animate={{ width: isCompact ? 80 : (isSidebarExpanded ? 240 : 80) }}
                         transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
                         onMouseEnter={() => setIsHoveringSidebar(true)}
                         onMouseLeave={() => setIsHoveringSidebar(false)}
                     >
-                        <motion.div
-                            className="mb-6 flex items-center justify-between px-1"
-                            initial={{ opacity: 0, y: -10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.5, delay: 0.2 }}
-                        >
-                            <AnimatePresence mode="wait">
-                                {isSidebarExpanded ? (
-                                    <motion.div
-                                        key="expanded"
-                                        initial={{ opacity: 0, x: -10 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        exit={{ opacity: 0, x: -10 }}
-                                        className="flex items-center gap-3"
-                                    >
-                                        <div className="w-8 h-8 bg-white text-black rounded-xl flex items-center justify-center shadow-lg">
-                                            <ZenithLogo size={18} />
-                                        </div>
-                                        <div className="flex flex-col">
-                                            <h2 className="text-[12px] font-bold text-white tracking-[0.1em] uppercase">Zenith</h2>
-                                            <span className="text-[8px] text-white/30 font-black tracking-widest uppercase">Kernel Settings</span>
-                                        </div>
-                                    </motion.div>
-                                ) : (
-                                    <motion.div
-                                        key="collapsed"
-                                        initial={{ opacity: 0, scale: 0.5 }}
-                                        animate={{ opacity: 1, scale: 1 }}
-                                        exit={{ opacity: 0, scale: 0.5 }}
-                                        className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center border border-white/10"
-                                    >
-                                        <ZenithLogo size={20} />
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
-                        </motion.div>
-
-                        <AnimatePresence>
-                            {isSidebarExpanded && (
-                                <motion.div
-                                    initial={{ opacity: 0, y: -5 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: -5 }}
-                                    className="px-1 mb-4"
-                                >
-                                    <div className="relative group">
-                                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/10 group-focus-within:text-white/40 transition-colors" size={14} />
-                                        <input
-                                            type="text"
-                                            placeholder={getTranslation(config, 'sidebar.find_prefs')}
-                                            value={searchTerm}
-                                            onChange={(e) => setSearchTerm(e.target.value)}
-                                            className="w-full bg-white/[0.02] border border-white/5 rounded-xl py-2.5 pl-10 pr-4 text-[11px] text-white/90 placeholder:text-white/10 outline-none focus:bg-white/[0.04] focus:border-white/10 transition-all font-medium"
-                                        />
-                                    </div>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-
-                        {/* Navigation Groups */}
-                        <div className="flex flex-col gap-0.5">
-                            <SectionHeader label={getTranslation(config, 'sidebar.core')} isExpanded={isSidebarExpanded} />
-                            <NavButton tab="workspaces" label={getTranslation(config, 'sidebar.workspaces')} icon={LayoutGrid} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} />
-                            <NavButton tab="zenith_apps" label={getTranslation(config, 'sidebar.zenith_widgets')} icon={AppWindow} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} />
-
-                            <SectionHeader label={getTranslation(config, 'sidebar.personalization')} isExpanded={isSidebarExpanded} />
-                            <NavButton tab="interface" label={getTranslation(config, 'sidebar.interface')} icon={Settings2} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} />
-                            <NavButton tab="visuals" label={getTranslation(config, 'sidebar.visuals')} icon={Palette} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} />
-
-                            <SectionHeader label={getTranslation(config, 'sidebar.system')} isExpanded={isSidebarExpanded} />
-                            <NavButton tab="widgets" label={getTranslation(config, 'sidebar.hud')} icon={Clock} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} />
-                            <NavButton tab="gamemode" label={getTranslation(config, 'sidebar.gamemode')} icon={Gamepad2} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} />
-                            <NavButton tab="user" label={getTranslation(config, 'sidebar.profile')} icon={User} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} />
-                        </div>
-
-                        <div className="mt-auto pt-6 border-t border-white/[0.08] space-y-2.5">
-                            <NavButton tab="dashboard" label={getTranslation(config, 'sidebar.dashboard')} icon={LayoutDashboard} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={() => onOpenDashboard()} />
-
-                            <button
-                                onClick={() => {
-                                    if (window.electron && window.electron.openConfigFolder) {
-                                        window.electron.openConfigFolder();
-                                    }
-                                }}
-                                className={`w-full flex items-center ${isSidebarExpanded ? 'gap-3 px-4' : 'justify-center'} py-2.5 text-white/30 hover:text-white hover:bg-white/5 transition-all duration-300 group relative`}
+                        {!isCompact && (
+                            <motion.div
+                                className="mb-6 flex items-center justify-between px-1"
+                                initial={{ opacity: 0, y: -10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.5, delay: 0.2 }}
                             >
-                                <div className="flex items-center justify-center transition-all duration-300 relative z-10">
-                                    <motion.div
-                                        whileHover={{ scale: 1.1 }}
-                                        transition={{ type: "spring", stiffness: 300, damping: 15 }}
-                                    >
-                                        <Folder size={isSidebarExpanded ? 16 : 19} strokeWidth={2} />
-                                    </motion.div>
-                                </div>
-                                <AnimatePresence mode="wait">
-                                    {isSidebarExpanded && (
-                                        <motion.span
-                                            key="label-config"
-                                            initial={{ opacity: 0, x: -8 }}
-                                            animate={{ opacity: 1, x: 0 }}
-                                            exit={{ opacity: 0, x: -8 }}
-                                            transition={{ duration: 0.2 }}
-                                            className="text-[11px] font-medium tracking-wide whitespace-nowrap ml-px relative z-10"
-                                        >
-                                            {getTranslation(config, 'sidebar.config_folder')}
-                                        </motion.span>
-                                    )}
-                                </AnimatePresence>
-                            </button>
-
-                            <button
-                                onClick={() => setShowResetConfirm(true)}
-                                className={`w-full flex items-center ${isSidebarExpanded ? 'gap-3 px-4' : 'justify-center'} py-2.5 text-red-400/50 hover:text-red-400 hover:bg-red-500/5 transition-all duration-300 group relative`}
-                            >
-                                <div className="flex items-center justify-center transition-all duration-300 relative z-10">
-                                    <motion.div
-                                        whileHover={{ scale: 1.1, rotate: -45 }}
-                                        transition={{ type: "spring", stiffness: 300, damping: 15 }}
-                                    >
-                                        <RotateCcw size={isSidebarExpanded ? 16 : 19} strokeWidth={2} />
-                                    </motion.div>
-                                </div>
                                 <AnimatePresence mode="wait">
                                     {isSidebarExpanded ? (
-                                        <motion.span
-                                            key="label-reset"
-                                            initial={{ opacity: 0, x: -8 }}
+                                        <motion.div
+                                            key="expanded"
+                                            initial={{ opacity: 0, x: -10 }}
                                             animate={{ opacity: 1, x: 0 }}
-                                            exit={{ opacity: 0, x: -8 }}
-                                            transition={{ duration: 0.2 }}
-                                            className="text-[11px] font-medium tracking-wide whitespace-nowrap ml-px relative z-10"
+                                            exit={{ opacity: 0, x: -10 }}
+                                            className="flex items-center gap-3"
                                         >
-                                            {getTranslation(config, 'interface.resync')}
-                                        </motion.span>
+                                            <div className="w-8 h-8 bg-white text-black rounded-xl flex items-center justify-center shadow-lg">
+                                                <ZenithLogo size={18} />
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <h2 className="text-[12px] font-bold text-white tracking-[0.1em] uppercase">Zenith</h2>
+                                                <span className="text-[8px] text-white/30 font-black tracking-widest uppercase">Kernel Settings</span>
+                                            </div>
+                                        </motion.div>
                                     ) : (
                                         <motion.div
-                                            key="badge-reset"
-                                            initial={{ opacity: 0, scale: 0.8, x: -10 }}
-                                            whileHover={{ opacity: 1, scale: 1, x: 0 }}
-                                            animate={{ opacity: 0 }}
-                                            transition={{
-                                                type: "spring",
-                                                stiffness: 400,
-                                                damping: 25,
-                                                delay: 0.05
-                                            }}
-                                            className="absolute left-[64px] px-3.5 py-2 bg-black/80 border border-white/10 rounded-xl text-[10px] font-bold text-white pointer-events-none whitespace-nowrap z-[200] shadow-2xl backdrop-blur-xl ring-1 ring-white/5"
+                                            key="collapsed"
+                                            initial={{ opacity: 0, scale: 0.5 }}
+                                            animate={{ opacity: 1, scale: 1 }}
+                                            exit={{ opacity: 0, scale: 0.5 }}
+                                            className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center border border-white/10"
                                         >
-                                            <div className="absolute inset-0 bg-white/[0.02] rounded-xl pointer-events-none" />
-                                            <span className="relative z-10 text-red-400">{getTranslation(config, 'reset.button_label') || 'Reset'}</span>
+                                            <ZenithLogo size={20} />
                                         </motion.div>
                                     )}
                                 </AnimatePresence>
-                            </button>
+                            </motion.div>
+                        )}
+
+                        {!isCompact && (
+                            <AnimatePresence>
+                                {isSidebarExpanded && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: -5 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: -5 }}
+                                        className="px-1 mb-4"
+                                    >
+                                        <div className="relative group">
+                                            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/10 group-focus-within:text-white/40 transition-colors" size={14} />
+                                            <input
+                                                type="text"
+                                                placeholder={getTranslation(config, 'sidebar.find_prefs')}
+                                                value={searchTerm}
+                                                onChange={(e) => setSearchTerm(e.target.value)}
+                                                className="w-full bg-white/[0.02] border border-white/5 rounded-xl py-2.5 pl-10 pr-4 text-[11px] text-white/90 placeholder:text-white/10 outline-none focus:bg-white/[0.04] focus:border-white/10 transition-all font-medium"
+                                            />
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        )}
+
+                        {/* Navigation Groups */}
+                        <div className="flex flex-col gap-0.5">
+                            {!isCompact && <SectionHeader label={getTranslation(config, 'sidebar.core')} isExpanded={isSidebarExpanded} />}
+                            <NavButton tab="workspaces" label={getTranslation(config, 'sidebar.workspaces')} icon={LayoutGrid} isSidebarExpanded={isCompact ? false : isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} isCompact={isCompact} />
+                            <NavButton tab="zenith_apps" label={getTranslation(config, 'sidebar.zenith_widgets')} icon={AppWindow} isSidebarExpanded={isCompact ? false : isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} isCompact={isCompact} />
+
+                            {!isCompact && <SectionHeader label={getTranslation(config, 'sidebar.personalization')} isExpanded={isSidebarExpanded} />}
+                            <NavButton tab="interface" label={getTranslation(config, 'sidebar.interface')} icon={Settings2} isSidebarExpanded={isCompact ? false : isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} isCompact={isCompact} />
+                            <NavButton tab="visuals" label={getTranslation(config, 'sidebar.visuals')} icon={Palette} isSidebarExpanded={isCompact ? false : isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} isCompact={isCompact} />
+
+                            {!isCompact && <SectionHeader label={getTranslation(config, 'sidebar.system')} isExpanded={isSidebarExpanded} />}
+                            <NavButton tab="widgets" label={getTranslation(config, 'sidebar.hud')} icon={Clock} isSidebarExpanded={isCompact ? false : isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} isCompact={isCompact} />
+                            <NavButton tab="gamemode" label={getTranslation(config, 'sidebar.gamemode')} icon={Gamepad2} isSidebarExpanded={isCompact ? false : isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} isCompact={isCompact} />
+                            <NavButton tab="user" label={getTranslation(config, 'sidebar.profile')} icon={User} isSidebarExpanded={isCompact ? false : isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} isCompact={isCompact} />
                         </div>
+
+                        {!isCompact && (
+                            <div className="mt-auto pt-6 border-t border-white/[0.08] space-y-2.5">
+                                <NavButton tab="dashboard" label={getTranslation(config, 'sidebar.dashboard')} icon={LayoutDashboard} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={() => onOpenDashboard()} />
+
+                                <button
+                                    onClick={() => {
+                                        if (window.electron && window.electron.openConfigFolder) {
+                                            window.electron.openConfigFolder();
+                                        }
+                                    }}
+                                    className={`w-full flex items-center ${isSidebarExpanded ? 'gap-3 px-4' : 'justify-center'} py-2.5 text-white/30 hover:text-white hover:bg-white/5 transition-all duration-300 group relative`}
+                                >
+                                    <div className="flex items-center justify-center transition-all duration-300 relative z-10">
+                                        <motion.div
+                                            whileHover={{ scale: 1.1 }}
+                                            transition={{ type: "spring", stiffness: 300, damping: 15 }}
+                                        >
+                                            <Folder size={isSidebarExpanded ? 16 : 19} strokeWidth={2} />
+                                        </motion.div>
+                                    </div>
+                                    <AnimatePresence mode="wait">
+                                        {isSidebarExpanded && (
+                                            <motion.span
+                                                key="label-config"
+                                                initial={{ opacity: 0, x: -8 }}
+                                                animate={{ opacity: 1, x: 0 }}
+                                                exit={{ opacity: 0, x: -8 }}
+                                                transition={{ duration: 0.2 }}
+                                                className="text-[11px] font-medium tracking-wide whitespace-nowrap ml-px relative z-10"
+                                            >
+                                                {getTranslation(config, 'sidebar.config_folder')}
+                                            </motion.span>
+                                        )}
+                                    </AnimatePresence>
+                                </button>
+
+                                <button
+                                    onClick={() => setShowResetConfirm(true)}
+                                    className={`w-full flex items-center ${isSidebarExpanded ? 'gap-3 px-4' : 'justify-center'} py-2.5 text-red-400/50 hover:text-red-400 hover:bg-red-500/5 transition-all duration-300 group relative`}
+                                >
+                                    <div className="flex items-center justify-center transition-all duration-300 relative z-10">
+                                        <motion.div
+                                            whileHover={{ scale: 1.1, rotate: -45 }}
+                                            transition={{ type: "spring", stiffness: 300, damping: 15 }}
+                                        >
+                                            <RotateCcw size={isSidebarExpanded ? 16 : 19} strokeWidth={2} />
+                                        </motion.div>
+                                    </div>
+                                    <AnimatePresence mode="wait">
+                                        {isSidebarExpanded ? (
+                                            <motion.span
+                                                key="label-reset"
+                                                initial={{ opacity: 0, x: -8 }}
+                                                animate={{ opacity: 1, x: 0 }}
+                                                exit={{ opacity: 0, x: -8 }}
+                                                transition={{ duration: 0.2 }}
+                                                className="text-[11px] font-medium tracking-wide whitespace-nowrap ml-px relative z-10"
+                                            >
+                                                {getTranslation(config, 'interface.resync')}
+                                            </motion.span>
+                                        ) : (
+                                            <motion.div
+                                                key="badge-reset"
+                                                initial={{ opacity: 0, scale: 0.8, x: -10 }}
+                                                whileHover={{ opacity: 1, scale: 1, x: 0 }}
+                                                animate={{ opacity: 0 }}
+                                                transition={{
+                                                    type: "spring",
+                                                    stiffness: 400,
+                                                    damping: 25,
+                                                    delay: 0.05
+                                                }}
+                                                className="absolute left-[64px] px-3.5 py-2 bg-black/80 border border-white/10 rounded-xl text-[10px] font-bold text-white pointer-events-none whitespace-nowrap z-[200] shadow-2xl backdrop-blur-xl ring-1 ring-white/5"
+                                            >
+                                                <div className="absolute inset-0 bg-white/[0.02] rounded-xl pointer-events-none" />
+                                                <span className="relative z-10 text-red-400">{getTranslation(config, 'reset.button_label') || 'Reset'}</span>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+                                </button>
+                            </div>
+                        )}
                     </motion.div>
 
                     {/* Content */}
@@ -3114,6 +3680,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     setEditingApp={setEditingApp}
                     handleAppChange={handleAppChange}
                     handlePickCommand={handlePickCommand}
+                    handlePickFolder={handlePickFolder}
                     setShowAppSelector={setShowAppSelector}
                     handlePickIcon={handlePickIcon}
                     config={config}
@@ -3121,6 +3688,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
 
                 <style>{`
+                .no-scrollbar::-webkit-scrollbar {
+                    display: none;
+                }
+                .no-scrollbar {
+                    -ms-overflow-style: none;
+                    scrollbar-width: none;
+                }
                 .slider::-webkit-slider-thumb {
                     appearance: none;
                     width: 16px;

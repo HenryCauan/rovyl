@@ -22,16 +22,34 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({ position, onClose, c
   const [dnd, setDnd] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
+  // Hardware capability flags (null = not yet detected)
+  const [hasWifi, setHasWifi] = useState<boolean | null>(null);
+  const [hasBluetooth, setHasBluetooth] = useState<boolean | null>(null);
+
   // Real-time clock
   const [time, setTime] = useState(new Date());
 
   const t = (key: string) => getTranslation(config, key);
 
-  // Fetch initial states
+  // Fetch initial states + hardware capabilities
   useEffect(() => {
     if (window.electron) {
       window.electron.getVolume().then(v => setVolume(v));
       window.electron.getBrightness().then(b => setBrightness(b));
+      // Detect WiFi / Bluetooth adapters
+      if (window.electron.getHardwareCapabilities) {
+        window.electron.getHardwareCapabilities().then((caps: { hasWifi: boolean; hasBluetooth: boolean }) => {
+          setHasWifi(caps.hasWifi);
+          setHasBluetooth(caps.hasBluetooth);
+        }).catch(() => {
+          // fallback: assume both available
+          setHasWifi(true);
+          setHasBluetooth(true);
+        });
+      } else {
+        setHasWifi(true);
+        setHasBluetooth(true);
+      }
     }
   }, []);
 
@@ -173,20 +191,24 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({ position, onClose, c
           </div>
         </div>
 
-        {/* Toggles Grid */}
-        <div className="grid grid-cols-3 gap-3 mb-8">
-          <ToggleBtn
-            icon={Wifi}
-            label="Wi-Fi"
-            isActive={wifi}
-            onClick={handleWifiToggle}
-          />
-          <ToggleBtn
-            icon={Bluetooth}
-            label="Bluetooth"
-            isActive={bluetooth}
-            onClick={handleBluetoothToggle}
-          />
+        {/* Toggles Grid - adapts to available hardware */}
+        <div className={`grid gap-3 mb-8 ${[hasWifi, hasBluetooth, true].filter(Boolean).length === 3 ? 'grid-cols-3' : [hasWifi, hasBluetooth].filter(Boolean).length === 1 ? 'grid-cols-2' : 'grid-cols-2'}`}>
+          {hasWifi && (
+            <ToggleBtn
+              icon={Wifi}
+              label="Wi-Fi"
+              isActive={wifi}
+              onClick={handleWifiToggle}
+            />
+          )}
+          {hasBluetooth && (
+            <ToggleBtn
+              icon={Bluetooth}
+              label="Bluetooth"
+              isActive={bluetooth}
+              onClick={handleBluetoothToggle}
+            />
+          )}
           <ToggleBtn
             icon={Moon}
             label={t('system.focus')}

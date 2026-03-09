@@ -125,15 +125,47 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
     }
   }, [isOpen]);
 
-  // Interaction Logic with Performance Optimization
+  // Stable Interaction Logic (Performance Optimization)
+  // We use refs to access current state inside stable event listeners
+  // to avoid destroying/recreating listeners on every hover (index change).
+  const stateRef = useRef({
+    isOpen,
+    position,
+    activeIndex,
+    onClose,
+    currentLevelApps,
+    config,
+    isCenterActive,
+    hasMoved,
+    folderStack,
+    apps
+  });
+
   useEffect(() => {
-    if (!isOpen || currentLevelApps.length === 0) return;
+    stateRef.current = {
+      isOpen,
+      position,
+      activeIndex,
+      onClose,
+      currentLevelApps,
+      config,
+      isCenterActive,
+      hasMoved,
+      folderStack,
+      apps
+    };
+  }, [isOpen, position, activeIndex, onClose, currentLevelApps, config, isCenterActive, hasMoved, folderStack, apps]);
+
+  useEffect(() => {
+    if (!isOpen) return;
 
     let rafId: number | null = null;
     let lastMouseEvent: MouseEvent | null = null;
 
     const processMouseMove = () => {
       if (!lastMouseEvent) return;
+      const { position, config, currentLevelApps, hasMoved, activeIndex } = stateRef.current;
+      if (currentLevelApps.length === 0) return;
 
       const e = lastMouseEvent;
       const deltaX = e.clientX - position.x;
@@ -146,13 +178,13 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
       }
 
       if (distance < config.activationThreshold) {
-        setActiveIndex(null);
-        if (hasMoved) setIsCenterActive(true);
+        if (activeIndex !== null) setActiveIndex(null);
+        if (!stateRef.current.isCenterActive) setIsCenterActive(true);
         rafId = null;
         return;
       }
 
-      setIsCenterActive(false);
+      if (stateRef.current.isCenterActive) setIsCenterActive(false);
 
       let angle = Math.atan2(deltaY, deltaX) * (180 / Math.PI);
       angle = (angle + 90);
@@ -161,9 +193,8 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
       const sliceAngle = 360 / currentLevelApps.length;
       const index = Math.floor(((angle + (sliceAngle / 2)) % 360) / sliceAngle);
 
-      // Ensure index is valid
       if (index >= 0 && index < currentLevelApps.length) {
-        setActiveIndex(index);
+        if (activeIndex !== index) setActiveIndex(index);
       }
 
       rafId = null;
@@ -171,8 +202,6 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
 
     const handleMouseMove = (e: MouseEvent) => {
       lastMouseEvent = e;
-
-      // Throttle using requestAnimationFrame
       if (rafId === null) {
         rafId = requestAnimationFrame(processMouseMove);
       }
@@ -180,13 +209,12 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
 
     const handleMouseUp = (e: MouseEvent) => {
       if (e.button !== 0 && e.button !== 1) return;
+      const { isCenterActive, folderStack, apps, currentLevelApps, activeIndex, onClose } = stateRef.current;
 
-      // Center / Back Action
       if (isCenterActive) {
         if (folderStack.length > 0) {
-          // Go Back Logic
           const newStack = [...folderStack];
-          newStack.pop();
+          const popped = newStack.pop();
           setFolderStack(newStack);
 
           if (newStack.length === 0) {
@@ -194,28 +222,23 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
           } else {
             setCurrentLevelApps(newStack[newStack.length - 1].apps);
           }
-          // Reset interaction states
           setHasMoved(false);
           setIsCenterActive(false);
         } else {
-          // Root Level Center Action
           onClose('__CENTER__');
         }
         return;
       }
 
-      // Item Selection
       const selectedItem = activeIndex !== null ? currentLevelApps[activeIndex] : null;
 
       if (selectedItem) {
         if (selectedItem.type === 'folder' && selectedItem.children) {
-          // Enter Folder Logic
           setFolderStack([...folderStack, { label: selectedItem.label, apps: selectedItem.children }]);
           setCurrentLevelApps(selectedItem.children);
-          setHasMoved(false); // Reset to force movement out of center
+          setHasMoved(false);
           setActiveIndex(null);
         } else {
-          // Standard App Launch
           onClose(selectedItem.id);
         }
       } else {
@@ -227,37 +250,32 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
       if (e.button === 2) {
         e.preventDefault();
         e.stopPropagation();
-        // If deep in folder, right click could act as back? Or just close?
-        // Let's keep it consistent: Right click closes everything.
-        onClose(null);
+        stateRef.current.onClose(null);
       }
     };
 
     const handleContextMenu = (e: MouseEvent) => e.preventDefault();
 
-    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
     window.addEventListener('mouseup', handleMouseUp);
     window.addEventListener('mousedown', handleMouseDown);
-    // Keydown listener moved to specialized stable useEffect
     window.addEventListener('contextmenu', handleContextMenu);
 
     return () => {
-      if (rafId !== null) {
-        cancelAnimationFrame(rafId);
-      }
+      if (rafId !== null) cancelAnimationFrame(rafId);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('mousedown', handleMouseDown);
       window.removeEventListener('contextmenu', handleContextMenu);
     };
-  }, [isOpen, position, activeIndex, onClose, currentLevelApps, config, isCenterActive, hasMoved, folderStack, apps]);
+  }, [isOpen]);
 
   // STABLE KEYBOARD LISTENER (Decoupled from interaction states to avoid missing events)
   useEffect(() => {
     if (!isOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      console.log(`[RadialMenu.tsx] KeyDown detected: ${e.key}, Ctrl: ${e.ctrlKey}, Alt: ${e.altKey}, Shift: ${e.shiftKey}`);
+      // diagLog(`[RadialMenu.tsx] KeyDown detected: ${e.key}, Ctrl: ${e.ctrlKey}, Alt: ${e.altKey}, Shift: ${e.shiftKey}`);
       if (e.key === 'Escape') {
         e.preventDefault();
         onClose(null);
@@ -268,7 +286,7 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
       if (onWorkspaceSwitch) {
         const num = parseInt(e.key);
         if (num >= 1 && num <= 9) {
-          console.log('🔄 Stable Listener Switching to workspace:', num - 1, 'Current config.activeWorkspaceIndex:', config.activeWorkspaceIndex);
+          // console.log('🔄 Stable Listener Switching to workspace:', num - 1, 'Current config.activeWorkspaceIndex:', config.activeWorkspaceIndex);
           e.preventDefault();
           onWorkspaceSwitch(num - 1); // Convert to 0-indexed
         }
@@ -284,7 +302,7 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
     if (!isOpen || triggerSource !== 'mmb' || !window.electron?.onMmbRelease) return;
 
     const handleMmbRelease = () => {
-      console.log("MMB Release detected. Active Index:", activeIndex);
+      // console.log("MMB Release detected. Active Index:", activeIndex);
 
       const elapsed = Date.now() - openingTimeRef.current;
       const GRACE_PERIOD_MS = 250; // Ensure menu stays open for at least 250ms to prevent flickers
@@ -322,7 +340,7 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
       };
 
       if (elapsed < GRACE_PERIOD_MS) {
-        console.log(`MMB release too quick (${elapsed}ms), applying grace period...`);
+        // console.log(`MMB release too quick (${elapsed}ms), applying grace period...`);
         setTimeout(executeClose, GRACE_PERIOD_MS - elapsed);
       } else {
         executeClose();
@@ -399,30 +417,35 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
     <AnimatePresence>
       {isOpen && (
         <>
-          {/* Layer 1: Adjustable CSS Backdrop Blur (Radius controlled by Slider) */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-40 pointer-events-none"
-            style={{
-              backgroundColor: config.backdropBlur > 0 ? 'rgba(0,0,0,0.02)' : 'transparent',
-              backdropFilter: config.backdropBlur > 0 ? `blur(${config.backdropBlur}px)` : 'none',
-              WebkitBackdropFilter: config.backdropBlur > 0 ? `blur(${config.backdropBlur}px)` : 'none',
-              willChange: 'backdrop-filter'
-            }}
-          />
+          {/* Layer 1: Acrylic Desktop Blur (only CSS can't blur the desktop in Electron) */}
+          {config.backdropBlur > 0 && (
+            <motion.div
+              key="blur-vignette"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-40 pointer-events-none"
+              style={{
+                // Vignette mask: transparent in the center so the Acrylic blur is visible,
+                // dark at the edges to hide the white border that native Acrylic creates.
+                background: config.menuBackgroundStyle === 'fullscreen'
+                  ? `radial-gradient(circle at center, transparent 0%, rgba(0,0,0,0.55) 60%, rgba(0,0,0,0.85) 100%)`
+                  : `radial-gradient(circle at ${position.x}px ${position.y}px, transparent 0%, transparent ${config.menuRadius * 1.2}px, rgba(0,0,0,0.65) ${config.menuRadius * 3}px, rgba(0,0,0,0.9) 100%)`,
+              }}
+            />
+          )}
 
-          {/* Layer 2: Color/Gradient Overlay (Opacity controlled by Slider) */}
+          {/* Layer 2: Color/Gradient Overlay (Opacity controlled by Slider) — Airier */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            exit={{ opacity: 0, transition: { duration: 0.2 } }}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
             className="fixed inset-0 z-[41] pointer-events-auto"
             style={{
               background: config.menuBackgroundStyle === 'fullscreen'
-                ? `radial-gradient(circle at center, rgba(0, 0, 0, ${config.backdropOpacity * 0.4}) 0%, rgba(0, 0, 0, ${config.backdropOpacity * 0.85}) 100%)`
-                : `radial-gradient(circle at ${position.x}px ${position.y}px, rgba(0, 0, 0, ${config.backdropOpacity + 0.1}) 0%, rgba(0, 0, 0, ${config.backdropOpacity * 0.5}) ${config.menuRadius * 1.5}px, rgba(0, 0, 0, 0) 100%)`,
+                ? `radial-gradient(circle at center, rgba(0, 0, 0, ${0.05 + config.backdropOpacity * 0.3}) 0%, rgba(0, 0, 0, ${0.2 + config.backdropOpacity * 0.5}) 100%)`
+                : `radial-gradient(circle at ${position.x}px ${position.y}px, rgba(0, 0, 0, ${0.15 + config.backdropOpacity * 0.8}) 0%, rgba(0, 0, 0, ${0.05 + config.backdropOpacity * 0.35}) ${config.menuRadius * 2.0}px, rgba(0, 0, 0, 0) 100%)`,
               willChange: 'opacity'
             }}
           />
@@ -506,10 +529,10 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
           {/* Menu Container */}
           <motion.div
             ref={menuRef}
-            initial={{ opacity: 0, scale: 0.8 }}
+            initial={{ opacity: 0, scale: 0.85 }}
             animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.15 } }}
-            transition={{ type: 'spring', damping: 28, stiffness: 400, mass: 0.8 }}
+            exit={{ opacity: 0, scale: 0.92, transition: { duration: 0.18, ease: 'easeInOut' } }}
+            transition={{ type: 'spring', damping: 24, stiffness: 260, mass: 0.8 }}
             style={{
               left: Math.round(position.x),
               top: Math.round(position.y),
@@ -538,14 +561,16 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                 backgroundColor: isCenterActive ? config.accentColor : undefined,
                 borderColor: isCenterActive ? config.accentColor : undefined,
                 boxShadow: isCenterActive ? `0 0 50px ${config.accentColor}66` : undefined,
+                willChange: 'transform, opacity, background-color'
               }}
               initial={{ x: '-50%', y: '-50%', scale: 1, opacity: 1 }}
               animate={{
-                scale: isCenterActive ? 1.2 : 1,
+                scale: isCenterActive ? 1.12 : 1,
                 opacity: 1,
                 x: '-50%',
                 y: '-50%'
               }}
+              transition={{ type: 'spring', damping: 20, stiffness: 250, mass: 0.8 }}
               onMouseDown={(e) => e.stopPropagation()}
               onMouseUp={(e) => e.stopPropagation()}
               onClick={(e) => {
@@ -591,10 +616,10 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
               )}
             </motion.div>
 
-            {/* Connecting Lines (SVG) - Re-rendered on stack change */}
+            {/* Connecting Lines (SVG) - Lightweight CSS transitions */}
             <svg
               key={`lines-${folderStack.length}`}
-              className="absolute overflow-visible opacity-30 pointer-events-none"
+              className="absolute overflow-visible pointer-events-none"
               style={{
                 width: actualMenuRadius * 3,
                 height: actualMenuRadius * 3,
@@ -612,17 +637,16 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                 const y = actualMenuRadius * Math.sin(angleRad);
 
                 return (
-                  <motion.line
+                  <line
                     key={`line-${index}`}
                     x1="50%"
                     y1="50%"
                     x2={actualMenuRadius * 1.5 + x}
                     y2={actualMenuRadius * 1.5 + y}
                     stroke={isActive ? config.accentColor : "white"}
-                    strokeWidth={isActive ? 2 : 1}
-                    initial={{ pathLength: 0, opacity: 0 }}
-                    animate={{ pathLength: 1, opacity: isActive ? 0.6 : 0.1 }}
-                    transition={{ duration: 0.2 }}
+                    strokeWidth={isActive ? 1.5 : 0.5}
+                    opacity={isActive ? 0.5 : 0.08}
+                    style={{ transition: 'opacity 0.2s ease, stroke 0.2s ease, stroke-width 0.2s ease' }}
                   />
                 );
               })}
@@ -666,20 +690,26 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                     key={`${app.id}-${folderStack.length}`} // Key change triggers animation
                     initial={{ scale: 0, opacity: 0, x: 0, y: 0 }}
                     animate={{
-                      scale: isActive ? 1.2 : 1,
-                      opacity: isActive ? 1 : 0.5,
+                      scale: isActive ? 1.15 : 1,
+                      opacity: isActive ? 1 : 0.6,
                       x: pos.x,
                       y: pos.y
                     }}
-                    exit={{ scale: 0, opacity: 0 }}
-                    transition={{ type: 'spring', stiffness: 500, damping: 30, mass: 0.8 }}
+                    exit={{ scale: 0, opacity: 0, transition: { duration: 0.12 } }}
+                    transition={{
+                      type: 'spring',
+                      stiffness: 300,
+                      damping: 22,
+                      mass: 0.7,
+                      delay: index * 0.03 // Staggered "bloom" entrance
+                    }}
                     className="absolute top-0 left-0 pointer-events-auto cursor-pointer"
                     style={{ zIndex: isActive ? 200 : 100, willChange: 'transform, opacity' }}
                     onMouseDown={(e) => e.stopPropagation()}
                     onMouseUp={(e) => e.stopPropagation()}
                     onClick={(e) => {
                       e.stopPropagation();
-                      console.log("RadialMenu: Selection clicked:", app.label, "ID:", app.id);
+                      // console.log("RadialMenu: Selection clicked:", app.label, "ID:", app.id);
                       if (app.type === 'folder' && app.children) {
                         setFolderStack([...folderStack, { label: app.label, apps: app.children }]);
                         setCurrentLevelApps(app.children);
@@ -697,20 +727,20 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                         style={{
                           width: `${actualIconSize}px`,
                           height: `${actualIconSize}px`,
-                          filter: !isActive ? `drop-shadow(0 0 ${Math.round(config.backdropOpacity * 12)}px rgba(255,255,255,${config.backdropOpacity * 0.15}))` : 'none'
                         }}
                       >
                         {/* INNER MASKED CONTAINER (Overflow Hidden) */}
                         <div
                           className={`
                             w-full h-full rounded-2xl flex items-center justify-center overflow-hidden
-                            transition-all duration-300 relative
-                            ${isActive ? 'shadow-[0_0_30px_rgba(255,255,255,0.2)]' : 'hover:bg-white/5'}
+                            transition-colors duration-200 relative
+                            ${isActive ? 'shadow-[0_0_25px_rgba(255,255,255,0.15)]' : ''}
                           `}
                           style={{
-                            backgroundColor: isActive ? config.accentColor : `rgb(${13 + Math.round(config.backdropOpacity * 15)}, ${13 + Math.round(config.backdropOpacity * 15)}, ${13 + Math.round(config.backdropOpacity * 15)})`,
-                            border: isActive ? `1px solid ${config.accentColor}` : `1px solid rgba(255,255,255,${0.1 + config.backdropOpacity * 0.08})`,
-                            color: isActive ? '#000' : '#fff'
+                            backgroundColor: isActive ? config.accentColor : `rgba(${18 + Math.round(config.backdropOpacity * 12)}, ${18 + Math.round(config.backdropOpacity * 12)}, ${20 + Math.round(config.backdropOpacity * 12)}, 0.85)`,
+                            border: isActive ? `1px solid ${config.accentColor}` : `1px solid rgba(255,255,255,${0.08 + config.backdropOpacity * 0.06})`,
+                            color: isActive ? '#000' : '#fff',
+                            boxShadow: !isActive ? `0 2px 12px rgba(0,0,0,0.3)` : undefined
                           }}
                         >
                           {/* Icon Container: Show either native icon OR vector icon, not both */}

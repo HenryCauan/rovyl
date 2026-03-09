@@ -18,8 +18,9 @@ export interface AppItem {
   customIconUrl?: string; // Supports base64 images or URLs
   direction?: string;
   command: string;
-  commandType?: "app" | "url"; // New: distinguishes if command is an app path or a web URL
+  commandType?: "app" | "url" | "folder"; // New: distinguishes if command is an app path, a web URL, or a folder
   description: string;
+  shortcut?: string;
   children?: AppItem[];
 }
 
@@ -75,7 +76,7 @@ export interface PomodoroState {
 }
 
 export interface CenterButtonConfig {
-  type: "system" | "app" | "widget" | "command" | "none";
+  type: "app" | "widget" | "command" | "none";
   target: string;
   label: string;
   iconName: string;
@@ -138,7 +139,10 @@ export interface RadialState {
 }
 
 export interface ElectronAPI {
-  executeCommand: (command: string, commandType: "app" | "url") => void;
+  executeCommand: (
+    command: string,
+    commandType: "app" | "url" | "folder",
+  ) => void;
   hideWindow: () => void;
   showWindow: () => void;
   onOpenMenu: (
@@ -163,18 +167,12 @@ export interface ElectronAPI {
   ) => () => void;
   onSwitchWorkspace: (callback: (index: number) => void) => () => void;
   selectFile: () => Promise<string | null>;
+  selectFolder: () => Promise<string | null>;
   selectImage: () => Promise<string | null>;
   getInstalledApps: () => Promise<any[]>;
   getOnboardingApps: () => Promise<any[]>;
   onExecutionError: (callback: (errorMsg: string) => void) => () => void;
   relaunchApp: () => void;
-  // System Controls
-  getVolume: () => Promise<number>;
-  setVolume: (level: number) => void;
-  getBrightness: () => Promise<number>;
-  setBrightness: (level: number) => void;
-  toggleBluetooth: (enabled: boolean) => Promise<boolean>;
-  toggleWifi: (enabled: boolean) => Promise<boolean>;
   getSettings: () => Promise<any>;
   setSettings: (settings: any) => void;
   setLoginItemSettings: (settings: { openAtLogin: boolean }) => void;
@@ -185,6 +183,23 @@ export interface ElectronAPI {
   setBackgroundMaterial: (
     material: "none" | "acrylic" | "mica" | "tabbed",
   ) => void;
+  pauseGlobalShortcut: () => void;
+  resumeGlobalShortcut: () => void;
+  getVolume: () => Promise<number>;
+  setVolume: (volume: number) => void;
+  getBrightness: () => Promise<number>;
+  setBrightness: (brightness: number) => void;
+  getHardwareCapabilities: () => Promise<{
+    hasWifi: boolean;
+    hasBluetooth: boolean;
+  }>;
+  toggleWifi: (enabled: boolean) => Promise<boolean>;
+  toggleBluetooth: (enabled: boolean) => Promise<boolean>;
+  startShortcutRecording: () => void;
+  stopShortcutRecording: () => void;
+  onShortcutRecorded: (callback: (shortcut: string) => void) => () => void;
+  saveFullConfig: (config: any) => void;
+  getFullConfig: () => Promise<any>;
 }
 
 declare global {

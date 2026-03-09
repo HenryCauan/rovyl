@@ -14,26 +14,53 @@ const path = require("path");
 const { exec, spawn } = require("child_process");
 const os = require("os");
 const fs = require("fs");
+const { GlobalKeyboardListener } = require("node-global-key-listener");
 
 const isDev = !app.isPackaged;
-// In production, log to userData folder which is writable, unlike the asar archive
 const logDir = isDev
   ? path.join(__dirname, "..")
-  : path.join(os.tmpdir(), "zenith-radial-menu-cache");
+  : path.join(os.homedir(), ".zenith-radial-menu");
 const logFile = path.join(logDir, "diagnostic.log");
 
-const diagLog = (msg) => {
+const logQueue = [];
+let isWriting = false;
+
+const processLogQueue = () => {
+  if (isWriting || logQueue.length === 0) return;
+  isWriting = true;
+
+  const logsToWrite = logQueue.splice(0, logQueue.length).join("");
+
   try {
     if (!fs.existsSync(logDir)) {
       fs.mkdirSync(logDir, { recursive: true });
     }
-    const line = `[${new Date().toISOString()}] ${msg}\n`;
-    fs.appendFileSync(logFile, line);
+    fs.appendFile(logFile, logsToWrite, (err) => {
+      isWriting = false;
+      if (err) {
+        console.error("Async log write failed:", err);
+      }
+      // Process any new logs that arrived during writing
+      if (logQueue.length > 0) processLogQueue();
+    });
   } catch (e) {
-    // Fail silently in production if logging fails to prevent app crash
-    console.error("Failed to write to diagnostic log:", e);
+    isWriting = false;
+    console.error("Failed to ensure log directory exists:", e);
   }
 };
+
+const diagLog = (msg) => {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  logQueue.push(line);
+
+  // Throttle writes: process immediately in dev, or when queue reaches 10 lines in prod
+  if (isDev || logQueue.length >= 10) {
+    processLogQueue();
+  }
+};
+
+// Periodic flush to ensure logs aren't stuck in queue
+setInterval(processLogQueue, 5000);
 const getAssetPath = (...paths) => {
   if (isDev) return path.join(__dirname, ...paths);
   // In production, backend is inside app.asar/backend. We need to point to app.asar.unpacked/backend for script execution.
@@ -45,17 +72,26 @@ const getAssetPath = (...paths) => {
 
 diagLog("Zenith Main Process Started");
 
-// Stability: Fix cache errors & GPU crashes & Window management
-app.commandLine.appendSwitch("disable-gpu-cache");
-app.commandLine.appendSwitch("disable-gpu-sandbox");
-app.commandLine.appendSwitch("no-sandbox");
-app.commandLine.appendSwitch("disable-gpu-rasterization");
-app.commandLine.appendSwitch("enable-zero-copy-dxgi-video"); // Optimiza vídeo
-app.commandLine.appendSwitch("disable-features", "WindowOcclusionPrediction"); // Prevent window from being hidden by OS
+// Performance: GPU rendering optimizations
+// IMPORTANT: disable-gpu-rasterization was REMOVED — it forced CPU rendering causing sluggish animations.
+app.commandLine.appendSwitch("disable-gpu-cache"); // Avoid stale cache issues on startup
+app.commandLine.appendSwitch("no-sandbox"); // Required for some Electron builds
+app.commandLine.appendSwitch("enable-zero-copy-dxgi-video"); // Optimize video rendering on Windows
+app.commandLine.appendSwitch(
+  "disable-features",
+  "WindowOcclusionPrediction,CalculateNativeWinOcclusion",
+); // Prevent OS from hiding/throttling window
+app.commandLine.appendSwitch(
+  "enable-features",
+  "VaapiVideoDecoder,CanvasOopRasterization",
+); // GPU-accelerated rendering
+app.commandLine.appendSwitch("disable-software-rasterizer"); // Prevent fallback to software rendering
+app.commandLine.appendSwitch("enable-gpu-rasterization"); // Explicitly enable GPU rasterization for smooth animations
+app.commandLine.appendSwitch("ignore-gpu-blocklist"); // Use GPU even if on the blocklist (some integrated GPUs)
 
 // Fix Taskbar Icon Grouping
 app.setAppUserModelId("com.henry.zenith"); // AUMID explicitly set
-app.setPath("userData", path.join(os.tmpdir(), "zenith-radial-menu-cache"));
+// app.setPath("userData", path.join(os.tmpdir(), "zenith-radial-menu-cache")); // REMOVED: tmpdir is not persistent
 
 // Remove default menus (File, Edit, etc.)
 Menu.setApplicationMenu(null);
@@ -82,9 +118,87 @@ let gameModeConfig = {
 let lastWindowedBounds = { width: 1280, height: 800, x: 100, y: 100 };
 let isUpdatingBounds = false;
 
-async function createWindow() {
-  const { width, height } = screen.getPrimaryDisplay().bounds;
+// Shortcut Recording State
+let keyboardListener = null;
+let recordingActive = false;
 
+function startShortcutRecording() {
+  if (keyboardListener) return;
+
+  keyboardListener = new GlobalKeyboardListener();
+  recordingActive = true;
+
+  keyboardListener.addListener((e, down) => {
+    if (e.state === "DOWN" && recordingActive) {
+      // Collect all currently pressed keys
+      const modifiers = {
+        CTRL: false,
+        ALT: false,
+        SHIFT: false,
+        META: false,
+      };
+
+      // Check modifiers using the 'down' object which tracks all pressed keys
+      // The listener provides names like "LEFT CTRL", "RIGHT SHIFT", etc.
+      Object.keys(down).forEach((keyName) => {
+        if (keyName.includes("CTRL")) modifiers.CTRL = true;
+        if (keyName.includes("ALT")) modifiers.ALT = true;
+        if (keyName.includes("SHIFT")) modifiers.SHIFT = true;
+        if (keyName.includes("META") || keyName.includes("WINDOWS"))
+          modifiers.META = true;
+      });
+
+      // Extract the main key
+      let key = e.name;
+
+      // Ignore lone modifiers (don't record if ONLY Ctrl is pressed)
+      if (
+        [
+          "LEFT CTRL",
+          "RIGHT CTRL",
+          "LEFT ALT",
+          "RIGHT ALT",
+          "LEFT SHIFT",
+          "RIGHT SHIFT",
+          "LEFT META",
+          "RIGHT META",
+          "WINDOWS",
+        ].includes(key)
+      ) {
+        return;
+      }
+
+      const formattedModifiers = [];
+      if (modifiers.CTRL) formattedModifiers.push("Ctrl");
+      if (modifiers.ALT) formattedModifiers.push("Alt");
+      if (modifiers.SHIFT) formattedModifiers.push("Shift");
+      if (modifiers.META) formattedModifiers.push("Super"); // Map Win key to Super for Electron compatibility
+
+      // Key name normalization for Zenith format
+      if (key === "SPACE") key = "Space";
+      if (key === "ESCAPE") key = "Escape";
+      if (key.length === 1) key = key.toUpperCase();
+
+      // Handle Function keys F1-F12 (they come in as F1, F2...)
+
+      const shortcutString = [...formattedModifiers, key].join("+");
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("shortcut-recorded", shortcutString);
+      }
+    }
+  });
+}
+
+function stopShortcutRecording() {
+  recordingActive = false;
+  if (keyboardListener) {
+    keyboardListener.kill();
+    keyboardListener = null;
+  }
+}
+
+async function createWindow() {
   const newWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -128,11 +242,12 @@ async function createWindow() {
 
   return new Promise((resolve) => {
     newWindow.once("ready-to-show", () => {
-      // Don't auto-show here to respect "start hidden" logic if desired,
-      // OR only show if not in "ghost" mode.
-      // For now, we only resolve. User can open via Tray or Shortcut.
-      console.log("Main window ready");
-      resolve(newWindow);
+      // Phase 1: Stabilization Delay (200ms)
+      // Chromium on Windows often needs a few frames to stabilize the transparent compositor
+      setTimeout(() => {
+        console.log("Main window ready (stabilized)");
+        resolve(newWindow);
+      }, 200);
     });
 
     // Track bounds for persistence
@@ -220,6 +335,8 @@ function setupMainWindow(window) {
 
   // IPC handler for renderer process logs
   ipcMain.on("renderer-log", (event, level, message, ...args) => {
+    // In production, only log warnings and errors to save performance
+    if (!isDev && level !== "warn" && level !== "error") return;
     diagLog(`RENDERER [${level.toUpperCase()}]: ${message} ${args.join(" ")}`);
   });
 
@@ -234,19 +351,19 @@ function registerWorkspaceShortcuts() {
   const shortcutKeys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
 
   shortcutKeys.forEach((key) => {
-    // Register specific number key
-    globalShortcut.register(key, () => {
-      // Send workspace switch event (index 0-8 for keys 1-9)
-      const index = key === "0" ? 9 : parseInt(key) - 1;
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        console.log(
-          `[GlobalShortcut] Key ${key} pressed -> Switching to workspace ${index}`,
-        );
-        mainWindow.webContents.send("switch-workspace", index);
-      }
-    });
+    // Optimization: Only register if not already managed by us
+    if (!globalShortcut.isRegistered(key)) {
+      globalShortcut.register(key, () => {
+        const index = key === "0" ? 9 : parseInt(key) - 1;
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          diagLog(
+            `[GlobalShortcut] Key ${key} pressed -> Switching to workspace ${index}`,
+          );
+          mainWindow.webContents.send("switch-workspace", index);
+        }
+      });
+    }
   });
-  console.log("[Shortcuts] Registered workspace keys 1-9,0");
 }
 
 function unregisterWorkspaceShortcuts() {
@@ -260,55 +377,30 @@ function unregisterWorkspaceShortcuts() {
 }
 
 function showMenuAtCursor(source = "shortcut") {
-  // Authoritative Show Sequence
-  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (!mainWindow || mainWindow.isDestroyed()) return;
 
-  // ONLY call show if the window is actually hidden to the OS.
-  // Otherwise, we just toggle opacity for instant appearance.
-  if (!mainWindow.isVisible()) {
-    mainWindow.show();
-  }
-
-  // 1. Instant Visibility (Opacity)
-  mainWindow.setOpacity(1);
-
-  // 2. Window State - Toggle AlwaysOnTop to force OS attention
+  // 1. Force state updates in one block
   mainWindow.setSkipTaskbar(true);
-  mainWindow.setAlwaysOnTop(false);
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
 
-  // 3. CRITICAL: Input Capture
-  mainWindow.setIgnoreMouseEvents(false);
-
-  // 4. Force Focus
-  // We need to be aggressive here.
-  mainWindow.focus();
-  mainWindow.webContents.focus();
-
-  // 5. Safety Refresh for Input (Race condition fix)
-  setTimeout(() => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.setIgnoreMouseEvents(false);
-      mainWindow.focus();
-      mainWindow.webContents.focus();
-    }
-  }, 20); // Slightly increased to 20ms to catch window manager lag
-
-  // 6. GLOBAL SHORTCUTS: Register keys to intercept input (Bypass Focus Issues)
-  registerWorkspaceShortcuts();
-
-  // Force overlay mode if not already
+  // 2. Window Position & Size (Only update if needed)
   if (!mainWindow.isFullScreen()) {
     updateWindowSize("fullscreen");
   }
 
-  // Ensure visibility - opaqueness 1
+  // 3. Visibility & Interaction (Instant)
   mainWindow.setOpacity(1);
+  mainWindow.setIgnoreMouseEvents(false);
+
+  // 4. Aggressive Focus
+  mainWindow.show(); // Ensure OS knows it's active
+  mainWindow.focus();
+  mainWindow.webContents.focus();
+
+  // 5. Cleanup/Register inputs
+  registerWorkspaceShortcuts();
 
   const cursorPoint = screen.getCursorScreenPoint();
-
-  // Send open-menu immediately
   mainWindow.webContents.send("open-menu", {
     x: cursorPoint.x,
     y: cursorPoint.y,
@@ -424,11 +516,98 @@ const shouldOpenMenu = async () => {
 let tray = null;
 
 app.whenReady().then(async () => {
+  // 1. Initialize Settings Management First (to avoid race conditions with renderer)
+  const settingsPath = path.join(app.getPath("userData"), "settings.json");
+  let currentSettings = {
+    globalShortcut: "Alt+Z",
+    enableMouseTrigger: true,
+    openAtLogin: false,
+  };
+
+  const syncLoginItemSettings = (openAtLogin) => {
+    try {
+      if (typeof openAtLogin === "boolean") {
+        const currentLoginSettings = app.getLoginItemSettings();
+        if (currentLoginSettings.openAtLogin !== openAtLogin || isDev) {
+          app.setLoginItemSettings({
+            openAtLogin: openAtLogin,
+            path: app.getPath("exe"),
+          });
+          console.log(
+            `Login item settings synced: openAtLogin = ${openAtLogin}`,
+          );
+        }
+      }
+    } catch (e) {
+      console.error("Failed to sync login item settings:", e);
+    }
+  };
+
+  const loadSettings = () => {
+    try {
+      if (fs.existsSync(settingsPath)) {
+        const data = fs.readFileSync(settingsPath, "utf-8");
+        currentSettings = { ...currentSettings, ...JSON.parse(data) };
+      }
+    } catch (e) {
+      console.error("Failed to load settings:", e);
+    }
+  };
+
+  const saveSettings = (newSettings) => {
+    try {
+      currentSettings = { ...currentSettings, ...newSettings };
+      fs.writeFileSync(settingsPath, JSON.stringify(currentSettings, null, 2));
+    } catch (e) {
+      console.error("Failed to save settings:", e);
+    }
+  };
+
+  loadSettings();
+  loadIconCache();
+  if (currentSettings.openAtLogin !== undefined) {
+    syncLoginItemSettings(currentSettings.openAtLogin);
+  }
+
+  // Register essential IPC handlers BEFORE window creation
+  ipcMain.handle("get-settings", () => currentSettings);
+
+  ipcMain.handle("get-full-config", () => {
+    const configPath = path.join(app.getPath("userData"), "config-v2.json");
+    try {
+      if (fs.existsSync(configPath)) {
+        const data = fs.readFileSync(configPath, "utf-8");
+        return JSON.parse(data);
+      }
+    } catch (e) {
+      console.error("Failed to load full config:", e);
+    }
+    return null;
+  });
+
+  ipcMain.on("save-full-config", (event, config) => {
+    const configPath = path.join(app.getPath("userData"), "config-v2.json");
+    try {
+      if (!fs.existsSync(path.dirname(configPath))) {
+        fs.mkdirSync(path.dirname(configPath), { recursive: true });
+      }
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+      diagLog("[Config] Full configuration saved successfully");
+    } catch (e) {
+      console.error("Failed to save full config:", e);
+      diagLog(`[ERROR] Failed to save full config: ${e.message}`);
+    }
+  });
+
+  // 2. Create Window
   mainWindow = await createWindow();
 
-  // Safety: Unregister shortcuts if window loses focus
+  // Safety: Unregister shortcuts ONLY if window is truly inactive/hidden
+  // Avoid unregistering on every minor blur if we are still the active overlay
   mainWindow.on("blur", () => {
-    unregisterWorkspaceShortcuts();
+    if (mainWindow && !mainWindow.isVisible()) {
+      unregisterWorkspaceShortcuts();
+    }
   });
 
   // Configurar Ícone na Bandeja (Tray)
@@ -447,13 +626,22 @@ app.whenReady().then(async () => {
         label: "Abrir Dashboard Zenith",
         click: async () => {
           if (!mainWindow || mainWindow.isDestroyed()) {
-            mainWindow = await createWindow(); // Await the creation
-            setupMainWindow(mainWindow); // Setup the newly created window
+            mainWindow = await createWindow();
+            setupMainWindow(mainWindow);
           }
+
+          // Smooth Entry Trick: Mask the initial white flash/compositor stutter
+          mainWindow.setOpacity(0);
           mainWindow.show();
-          mainWindow.setSkipTaskbar(false); // Make it appear in the taskbar
-          mainWindow.focus();
-          mainWindow.webContents.send("open-dashboard");
+          mainWindow.setSkipTaskbar(false);
+
+          setTimeout(() => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.setOpacity(1);
+              mainWindow.focus();
+              mainWindow.webContents.send("open-dashboard");
+            }
+          }, 50);
         },
       },
       {
@@ -479,58 +667,97 @@ app.whenReady().then(async () => {
     console.error("Erro ao criar tray icon:", err);
   }
 
-  // Settings Management
-  const settingsPath = path.join(app.getPath("userData"), "settings.json");
-  let currentSettings = {
-    globalShortcut: "Alt+Z",
-    enableMouseTrigger: true,
-  };
-
-  const loadSettings = () => {
-    try {
-      if (fs.existsSync(settingsPath)) {
-        const data = fs.readFileSync(settingsPath, "utf-8");
-        currentSettings = { ...currentSettings, ...JSON.parse(data) };
-      }
-    } catch (e) {
-      console.error("Failed to load settings:", e);
-    }
-  };
-
-  const saveSettings = (newSettings) => {
-    try {
-      currentSettings = { ...currentSettings, ...newSettings };
-      fs.writeFileSync(settingsPath, JSON.stringify(currentSettings, null, 2));
-    } catch (e) {
-      console.error("Failed to save settings:", e);
-    }
-  };
-
-  // Initial load
-  loadSettings();
-
   const registerGlobalShortcut = () => {
     globalShortcut.unregisterAll();
-    const shortcut = currentSettings.globalShortcut || "Alt+Z";
+    let shortcut = currentSettings.globalShortcut || "Alt+Z";
+
+    // MIGRATION / NORMALIZATION: 'Win' is recorded as 'Super' now, but old settings might have 'Win'
+    if (shortcut.includes("Win")) {
+      shortcut = shortcut.replace(/Win/g, "Super");
+      diagLog(
+        `[Shortcut] Normalized 'Win' to 'Super' in shortcut: ${shortcut}`,
+      );
+    }
 
     try {
       const registered = globalShortcut.register(shortcut, async () => {
-        console.log(`${shortcut} shortcut triggered`);
+        diagLog(`${shortcut} shortcut triggered`);
         const allowed = await shouldOpenMenu();
         if (!allowed) return;
         showMenuAtCursor("shortcut");
       });
-      console.log(`Global shortcut '${shortcut}' registered:`, registered);
+
+      if (registered) {
+        diagLog(`Global shortcut '${shortcut}' registered successfully.`);
+      } else {
+        const errorMsg = `Shortcut '${shortcut}' could not be registered (likely reserved by OS).`;
+        diagLog(`[ERROR] ${errorMsg}`);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("execution-error", errorMsg);
+        }
+      }
     } catch (e) {
-      console.error(`Failed to register shortcut '${shortcut}':`, e);
+      const errorMsg = `Critical error registering shortcut '${shortcut}': ${e.message}`;
+      diagLog(`[FATAL] ${errorMsg}`);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("execution-error", errorMsg);
+      }
+    }
+
+    // Register individual app shortcuts from workspaces
+    if (
+      currentSettings.workspaces &&
+      Array.isArray(currentSettings.workspaces)
+    ) {
+      currentSettings.workspaces.forEach((ws) => {
+        // Helper to recursively register shortcuts in app trees (folders)
+        const registerAppShortcutsRecursive = (apps) => {
+          if (!apps || !Array.isArray(apps)) return;
+
+          apps.forEach((app) => {
+            if (app.shortcut && app.command) {
+              try {
+                const appShortcut = app.shortcut.includes("Win")
+                  ? app.shortcut.replace(/Win/g, "Super")
+                  : app.shortcut;
+                const success = globalShortcut.register(appShortcut, () => {
+                  diagLog(
+                    `[Shortcuts] App shortcut triggered: ${appShortcut} -> ${app.label}`,
+                  );
+                  executeCommand(app.command, app.commandType || "app");
+                });
+                if (success) {
+                  diagLog(
+                    `[Shortcuts] Successfully registered app shortcut: ${appShortcut} for ${app.label}`,
+                  );
+                } else {
+                  diagLog(
+                    `[Shortcuts] Failed to register app shortcut: ${appShortcut} for ${app.label} (Likely reserved by OS)`,
+                  );
+                  if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send(
+                      "execution-error",
+                      `Erro ao registrar atalho para ${app.label}: ${appShortcut}`,
+                    );
+                  }
+                }
+              } catch (e) {
+                diagLog(
+                  `[Shortcuts] Exception registering shortcut for ${app.label}: ${e.message}`,
+                );
+              }
+            }
+            if (app.children) registerAppShortcutsRecursive(app.children);
+          });
+        };
+
+        registerAppShortcutsRecursive(ws.apps);
+      });
     }
   };
 
   // Register initial shortcut
   registerGlobalShortcut();
-
-  // IPC: Settings Handlers
-  ipcMain.handle("get-settings", () => currentSettings);
 
   ipcMain.on("set-settings", (event, settings) => {
     const oldMouseTrigger = currentSettings.enableMouseTrigger;
@@ -538,6 +765,10 @@ app.whenReady().then(async () => {
 
     if (settings.globalShortcut) {
       registerGlobalShortcut();
+    }
+
+    if (settings.openAtLogin !== undefined) {
+      syncLoginItemSettings(settings.openAtLogin);
     }
 
     if (
@@ -549,6 +780,15 @@ app.whenReady().then(async () => {
       } else {
         stopMouseHook();
       }
+    }
+  });
+
+  ipcMain.on("set-login-item-settings", (event, settings) => {
+    if (settings && typeof settings.openAtLogin === "boolean") {
+      syncLoginItemSettings(settings.openAtLogin);
+      // We also update currentSettings so it persists
+      currentSettings.openAtLogin = settings.openAtLogin;
+      saveSettings(currentSettings);
     }
   });
 
@@ -569,6 +809,27 @@ app.whenReady().then(async () => {
       mainWindow.focus();
       mainWindow.webContents.send("open-settings");
     }
+  });
+
+  ipcMain.on("pause-global-shortcut", () => {
+    console.log("[Shortcuts] Pausing global shortcuts for recording...");
+    globalShortcut.unregisterAll();
+  });
+
+  ipcMain.on("resume-global-shortcut", () => {
+    console.log("[Shortcuts] Resuming global shortcuts...");
+    registerGlobalShortcut();
+    // (though recording is usually done in settings where menu is not 'open-radial' but 'open-settings')
+  });
+
+  ipcMain.on("start-shortcut-recording", () => {
+    diagLog("[Shortcuts] Starting global recording session.");
+    startShortcutRecording();
+  });
+
+  ipcMain.on("stop-shortcut-recording", () => {
+    diagLog("[Shortcuts] Stopping global recording session.");
+    stopShortcutRecording();
   });
 
   // Open Settings Window Handler
@@ -723,6 +984,94 @@ ipcMain.on("execute-command", async (event, command, commandType) => {
   console.log(`Command Type: ${commandType}`);
   console.log(`========================================\n`);
 
+  if (trimmedCommand.startsWith("shortcut:")) {
+    const keys = trimmedCommand.replace("shortcut:", "");
+    console.log(`  → [shortcut] Simulating keys: ${keys}`);
+
+    // Map common key names to Virtual Key Codes (Windows)
+    const vkMap = {
+      Ctrl: 0x11,
+      Alt: 0x12,
+      Shift: 0x10,
+      Super: 0x5b, // Windows Key
+      Win: 0x5b,
+      Space: 0x20,
+      Escape: 0x1b,
+      Enter: 0x0d,
+      Backspace: 0x08,
+      Tab: 0x09,
+      Delete: 0x2e,
+      Insert: 0x2d,
+      Home: 0x24,
+      End: 0x23,
+      PageUp: 0x21,
+      PageDown: 0x22,
+      ArrowLeft: 0x25,
+      ArrowUp: 0x26,
+      ArrowRight: 0x27,
+      ArrowDown: 0x28,
+      Left: 0x25,
+      Up: 0x26,
+      Right: 0x27,
+      Down: 0x28,
+    };
+
+    // Add A-Z and 0-9 to map
+    for (let i = 0; i < 26; i++) {
+      vkMap[String.fromCharCode(65 + i)] = 0x41 + i;
+    }
+    for (let i = 0; i < 10; i++) {
+      vkMap[i.toString()] = 0x30 + i;
+    }
+
+    const parts = keys.split("+");
+    const vks = parts
+      .map((p) => {
+        const pClean = p.charAt(0).toUpperCase() + p.slice(1).toLowerCase(); // Normalize case like "ctrl" -> "Ctrl"
+        // Try normalized and then raw
+        const vk = vkMap[p] || vkMap[pClean];
+        if (!vk) console.warn(`[Shortcut Simulation] Unknown key: ${p}`);
+        return vk;
+      })
+      .filter((vk) => vk !== undefined);
+
+    if (vks.length === 0) {
+      console.error("  ✗ [shortcut] No valid keys found for simulation.");
+      return;
+    }
+
+    // PowerShell script using keybd_event from user32.dll
+    // keybd_event flags: 0 = Down, 2 = Up
+
+    const scriptPath = getAssetPath("simulate-keys.ps1");
+    const vksString = vks.join(",");
+
+    diagLog(
+      `[Shortcut Simulation] Calling script: ${scriptPath} with VKS: ${vksString}`,
+    );
+
+    spawn("powershell", [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      scriptPath,
+      "-vks",
+      vksString,
+    ]).on("error", (err) => {
+      console.error("  ✗ [shortcut] Failed to spawn simulation script:", err);
+      if (mainWindow) {
+        mainWindow.webContents.send(
+          "execution-error",
+          "Erro ao iniciar simulador de teclas",
+        );
+      }
+    });
+
+    console.log("  ✓ [shortcut] Simulation script spawned.");
+    return;
+  }
+
   const tryExecution = (method, cmd) => {
     return new Promise((resolve, reject) => {
       console.log(`  → [${method}] Trying...`);
@@ -813,6 +1162,15 @@ ipcMain.on("execute-command", async (event, command, commandType) => {
         `\n✓✓✓ EXEC_SUCCESS: Launched URL with 'shell.openExternal' ✓✓✓\n`,
       );
       return; // Exit early if it's explicitly a URL
+    }
+
+    if (commandType === "folder") {
+      console.log("  → Detected: Explicit Folder (from commandType)");
+      await tryExecution("shell.openPath", resolvedCommand);
+      console.log(
+        `\n✓✓✓ EXEC_SUCCESS: Opened Folder with 'shell.openPath' ✓✓✓\n`,
+      );
+      return; // Exit early if it's explicitly a folder
     }
 
     // Determine the best method based on command type
@@ -906,28 +1264,24 @@ ipcMain.on("execute-command", async (event, command, commandType) => {
 
 // IPC: Recebe comando para esconder janela
 ipcMain.on("hide-window", () => {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return; // Do nothing if the window is not available
-  }
+  if (!mainWindow || mainWindow.isDestroyed()) return;
 
-  // Unregister shortcuts immediately
   unregisterWorkspaceShortcuts();
 
-  // INSTANT HIDE: Opacity 0 + Pass-through
+  // Low latency "hide": Opacity + Passthrough + Blur
   mainWindow.setOpacity(0);
   mainWindow.setIgnoreMouseEvents(true, { forward: true });
-
-  // Blur to return focus to previous app
   mainWindow.blur();
 });
 
 // IPC: Show Window explicitly
 ipcMain.on("show-window", () => {
-  if (mainWindow) {
-    mainWindow.setOpacity(1); // Restore opacity
-    mainWindow.show();
-    mainWindow.focus();
-  }
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  mainWindow.setOpacity(1);
+  mainWindow.setIgnoreMouseEvents(false);
+  mainWindow.show();
+  mainWindow.focus();
 });
 
 ipcMain.handle("get-onboarding-apps", async () => {
@@ -1011,14 +1365,19 @@ ipcMain.on("quit-app", () => {
   app.quit();
 });
 
-ipcMain.on("reset-config", () => {
+  ipcMain.on("reset-config", () => {
   try {
-    const configPath = path.join(app.getPath("userData"), "config.json");
+    const configPath = path.join(app.getPath("userData"), "config-v2.json");
+    const oldConfigPath = path.join(app.getPath("userData"), "config.json");
     const settingsPath = path.join(app.getPath("userData"), "settings.json");
 
     // Delete config files
     if (fs.existsSync(configPath)) {
       fs.unlinkSync(configPath);
+      console.log("Deleted config-v2.json");
+    }
+    if (fs.existsSync(oldConfigPath)) {
+      fs.unlinkSync(oldConfigPath);
       console.log("Deleted config.json");
     }
     if (fs.existsSync(settingsPath)) {
@@ -1061,6 +1420,17 @@ ipcMain.handle("select-file", async () => {
   return null;
 });
 
+// IPC: Select Folder (Directory)
+ipcMain.handle("select-folder", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openDirectory"],
+  });
+  if (!result.canceled && result.filePaths.length > 0) {
+    return result.filePaths[0];
+  }
+  return null;
+});
+
 // IPC: Select Image (Custom Icon)
 ipcMain.handle("select-image", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
@@ -1077,29 +1447,46 @@ ipcMain.handle("select-image", async () => {
 });
 
 // IPC: Get File Icon
-const iconCache = new Map();
+const iconCachePath = path.join(app.getPath("userData"), "icon-cache.json");
+let iconCache = new Map();
+
+const loadIconCache = () => {
+  try {
+    if (fs.existsSync(iconCachePath)) {
+      const data = JSON.parse(fs.readFileSync(iconCachePath, "utf-8"));
+      iconCache = new Map(Object.entries(data));
+      diagLog(`[IconCache] Loaded ${iconCache.size} icons from disk`);
+    }
+  } catch (e) {
+    diagLog(`[IconCache] Failed to load icon cache: ${e.message}`);
+  }
+};
+
+const saveIconCache = () => {
+  try {
+    const data = Object.fromEntries(iconCache);
+    fs.writeFileSync(iconCachePath, JSON.stringify(data));
+  } catch (e) {
+    diagLog(`[IconCache] Failed to save icon cache: ${e.message}`);
+  }
+};
+
+// Start periodic save to prevent data loss on crash
+setInterval(saveIconCache, 60000); // Every minute
 
 ipcMain.handle("get-file-icon", async (event, filePath) => {
   try {
     if (!filePath || typeof filePath !== "string") return null;
 
-    diagLog(`[IconRequest] Fetching icon for: ${filePath}`);
-
-    // Check Cache with expiration (24 hours)
-    const CACHE_EXPIRATION_MS = 24 * 60 * 60 * 1000;
+    // Check Memory Cache first (fastest)
     if (iconCache.has(filePath)) {
       const cached = iconCache.get(filePath);
-      if (
-        cached &&
-        cached.timestamp &&
-        Date.now() - cached.timestamp < CACHE_EXPIRATION_MS
-      ) {
-        // diagLog(`[IconRequest] Cache hit for: ${filePath}`);
-        return cached.data;
-      } else {
-        iconCache.delete(filePath);
-      }
+      // We removed individual timestamps to keep the file small,
+      // relying on the manual reset config if needed.
+      if (cached && cached.data) return cached.data;
     }
+
+    diagLog(`[IconRequest] Fetching icon for: ${filePath}`);
 
     // 1. Resolve shell paths
     let resolvedPath = resolveShellPath(filePath);
@@ -1133,21 +1520,16 @@ ipcMain.handle("get-file-icon", async (event, filePath) => {
     const isExplicitFile =
       resolvedPath.includes("\\") || resolvedPath.includes("/");
 
-    diagLog(
-      `[IconRequest] Resolved: ${resolvedPath} (AUMID: ${isAUMID}, File: ${isExplicitFile})`,
-    );
-
     // 2. Try Electron Native first if it's a file path
     if (isExplicitFile && !isAUMID) {
       try {
         const icon = await app.getFileIcon(resolvedPath, { size: "large" });
         if (icon) {
           const dataUrl = icon.toDataURL();
-          iconCache.set(filePath, { data: dataUrl, timestamp: Date.now() });
+          iconCache.set(filePath, { data: dataUrl });
           return dataUrl;
         }
       } catch (e) {
-        // Fall through to PowerShell
         diagLog(
           `[IconRequest] Native extraction failed for ${resolvedPath}: ${e.message}`,
         );
@@ -1156,58 +1538,35 @@ ipcMain.handle("get-file-icon", async (event, filePath) => {
 
     // 3. PowerShell Extraction Strategy
     const psScript = getAssetPath("extract-icon.ps1");
-    // Only pass necessary args. Note: PowerShell output needs to be captured.
     const command = `powershell -NoProfile -ExecutionPolicy Bypass -File "${psScript}" -Target "${resolvedPath}"`;
-
-    diagLog(`[IconRequest] PS Command: ${command}`);
 
     const iconData = await new Promise((resolve) => {
       exec(command, { maxBuffer: 1024 * 1024 * 5 }, (error, stdout, stderr) => {
-        if (stderr) {
-          diagLog(`[IconRequest] PS Stderr: ${stderr}`);
-        }
         if (stdout) {
-          // Filter out debug lines if any (lines not starting with data:)
           const lines = stdout.trim().split(/\r?\n/);
           const dataLine = lines.find((line) => line.startsWith("data:image"));
           if (dataLine) {
             resolve(dataLine);
             return;
           }
-          const debugLines = lines.filter((line) => line.startsWith("DEBUG:"));
-          if (debugLines.length > 0) {
-            diagLog(`[IconRequest] PS Debug: ${debugLines.join(" | ")}`);
-          } else {
-            diagLog(
-              `[IconRequest] PS Stdout (No data): ${stdout.substring(0, 200)}...`,
-            );
-          }
         }
-
-        if (error) {
-          diagLog(`[IconRequest] PS Error: ${error.message}`);
-          resolve(null);
-        } else {
-          resolve(null);
-        }
+        resolve(null);
       });
     });
 
     if (iconData) {
       diagLog(`[IconRequest] Success via PowerShell for ${filePath}`);
-      iconCache.set(filePath, { data: iconData, timestamp: Date.now() });
+      iconCache.set(filePath, { data: iconData });
       return iconData;
     }
 
     // 4. Final Fallback
     try {
-      diagLog(`[IconRequest] Trying final fallback for ${resolvedPath}`);
       const icon = await app.getFileIcon(resolvedPath, { size: "large" });
       const dataUrl = icon.toDataURL();
-      iconCache.set(filePath, { data: dataUrl, timestamp: Date.now() });
+      iconCache.set(filePath, { data: dataUrl });
       return dataUrl;
     } catch (e) {
-      diagLog(`[IconRequest] Final fallback failed: ${e.message}`);
       return null;
     }
   } catch (error) {
@@ -1279,41 +1638,6 @@ ipcMain.handle("get-installed-apps", async (event, forceRefresh = false) => {
   });
 });
 
-// SYSTEM CONTROLS IPC
-const systemControl = require("./system-control");
-
-ipcMain.handle("get-volume", async () => {
-  return systemControl.getVolume();
-});
-
-ipcMain.on("set-volume", async (event, level) => {
-  try {
-    await systemControl.setVolume(level);
-  } catch (err) {
-    console.error("Failed to set volume:", err);
-  }
-});
-
-ipcMain.handle("get-brightness", async () => {
-  return systemControl.getBrightness();
-});
-
-ipcMain.on("set-brightness", async (event, level) => {
-  try {
-    await systemControl.setBrightness(level);
-  } catch (err) {
-    console.error("Failed to set brightness:", err);
-  }
-});
-
-ipcMain.handle("toggle-bluetooth", async (event, enabled) => {
-  return systemControl.toggleBluetooth(enabled);
-});
-
-ipcMain.handle("toggle-wifi", async (event, enabled) => {
-  return systemControl.toggleWifi(enabled);
-});
-
 app.on("window-all-closed", (e) => {
   // Prevent app from quitting when all windows are closed
   // This ensures the app continues to run in the tray
@@ -1321,5 +1645,6 @@ app.on("window-all-closed", (e) => {
 });
 
 app.on("will-quit", () => {
+  saveIconCache();
   globalShortcut.unregisterAll();
 });

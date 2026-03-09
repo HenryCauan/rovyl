@@ -61,6 +61,26 @@ function toggleBluetooth(enable) {
   });
 }
 
+function hasWifiAdapter() {
+  return new Promise((resolve) => {
+    const psCommand = `powershell -Command "Get-NetAdapter | Where-Object { $_.MediaType -eq '802.11' } | Select-Object -First 1 -ExpandProperty Name"`;
+    exec(psCommand, (err, stdout) => {
+      const found = !err && stdout && stdout.trim().length > 0;
+      resolve(found);
+    });
+  });
+}
+
+function hasBluetoothAdapter() {
+  return new Promise((resolve) => {
+    const psCommand = `powershell -Command "Get-PnpDevice | Where-Object { $_.Class -eq 'Bluetooth' -and $_.Status -eq 'OK' } | Select-Object -First 1 -ExpandProperty FriendlyName"`;
+    exec(psCommand, (err, stdout) => {
+      const found = !err && stdout && stdout.trim().length > 0;
+      resolve(found);
+    });
+  });
+}
+
 module.exports = {
   getVolume,
   setVolume,
@@ -68,4 +88,6 @@ module.exports = {
   setBrightness,
   toggleWifi,
   toggleBluetooth,
+  hasWifiAdapter,
+  hasBluetoothAdapter,
 };

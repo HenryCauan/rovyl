@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld("electron", {
   toggleMaximize: () => ipcRenderer.send("toggle-maximize"),
   quitApp: () => ipcRenderer.send("quit-app"),
   selectFile: () => ipcRenderer.invoke("select-file"),
+  selectFolder: () => ipcRenderer.invoke("select-folder"),
   selectImage: () => ipcRenderer.invoke("select-image"),
   getInstalledApps: () => ipcRenderer.invoke("get-installed-apps"),
   getOnboardingApps: () => ipcRenderer.invoke("get-onboarding-apps"),
@@ -58,13 +59,6 @@ contextBridge.exposeInMainWorld("electron", {
     return () => ipcRenderer.removeListener("execution-error", listener);
   },
   relaunchApp: () => ipcRenderer.send("relaunch-app"),
-  // System Controls
-  getVolume: () => ipcRenderer.invoke("get-volume"),
-  setVolume: (level) => ipcRenderer.send("set-volume", level),
-  getBrightness: () => ipcRenderer.invoke("get-brightness"),
-  setBrightness: (level) => ipcRenderer.send("set-brightness", level),
-  toggleBluetooth: (enabled) => ipcRenderer.invoke("toggle-bluetooth", enabled),
-  toggleWifi: (enabled) => ipcRenderer.invoke("toggle-wifi", enabled),
   // Settings
   getSettings: () => ipcRenderer.invoke("get-settings"),
   setSettings: (settings) => ipcRenderer.send("set-settings", settings),
@@ -74,6 +68,17 @@ contextBridge.exposeInMainWorld("electron", {
   toggleSettings: () => ipcRenderer.send("toggle-settings"),
   setBackgroundMaterial: (material) =>
     ipcRenderer.send("set-background-material", material),
+  pauseGlobalShortcut: () => ipcRenderer.send("pause-global-shortcut"),
+  resumeGlobalShortcut: () => ipcRenderer.send("resume-global-shortcut"),
+  startShortcutRecording: () => ipcRenderer.send("start-shortcut-recording"),
+  stopShortcutRecording: () => ipcRenderer.send("stop-shortcut-recording"),
+  onShortcutRecorded: (callback) => {
+    const listener = (event, shortcut) => callback(shortcut);
+    ipcRenderer.on("shortcut-recorded", listener);
+    return () => ipcRenderer.removeListener("shortcut-recorded", listener);
+  },
+  saveFullConfig: (config) => ipcRenderer.send("save-full-config", config),
+  getFullConfig: () => ipcRenderer.invoke("get-full-config"),
 });
 
 // Intercept console messages from the renderer process and send them to the main process
