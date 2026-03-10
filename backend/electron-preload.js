@@ -79,6 +79,8 @@ contextBridge.exposeInMainWorld("electron", {
   },
   saveFullConfig: (config) => ipcRenderer.send("save-full-config", config),
   getFullConfig: () => ipcRenderer.invoke("get-full-config"),
+  getAppRecents: (appName, appCommand) =>
+    ipcRenderer.invoke("get-app-recents", appName, appCommand),
 });
 
 // Intercept console messages from the renderer process and send them to the main process

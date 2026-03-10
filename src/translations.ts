@@ -115,6 +115,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "visuals.text_labels": "Rótulos",
     "visuals.hex_code": "Código Hex",
     "visuals.labels": "Legendas",
+    "visuals.icon_style": "Estilo do Ícone",
 
     "status.executing": "Executando...",
     "error.exec_failed": "Falha ao abrir",
@@ -194,12 +195,16 @@ export const translations: Record<Language, Record<string, string>> = {
     "alarm.add_new": "Adicionar Novo Alarme",
     "alarm.default_label": "Alarme",
 
+    "stopwatch.title": "Cronômetro",
     "stopwatch.lap": "Volta",
     "stopwatch.no_laps": "Não há voltas registradas",
 
     "pomodoro.timer": "Temporizador",
+    "pomodoro.timer_tab": "Temporizador",
     "pomodoro.tasks": "Tarefas",
+    "pomodoro.tasks_tab": "Tarefas",
     "pomodoro.config": "Configuração",
+    "pomodoro.config_tab": "Configuração",
     "pomodoro.focus_time": "Tempo de Foco",
     "pomodoro.short_break": "Pausa Curta",
     "pomodoro.long_break": "Pausa Longa",
@@ -208,13 +213,14 @@ export const translations: Record<Language, Record<string, string>> = {
     "pomodoro.no_task_selected": "Nenhuma tarefa selecionada",
     "pomodoro.cycles": "Ciclos",
     "pomodoro.add_task_placeholder": "Adicionar nova tarefa...",
+    "pomodoro.no_tasks": "Nenhuma tarefa",
     "pomodoro.no_tasks_desc": "Ainda não há tarefas. Mantenha o foco!",
     "pomodoro.pomodoros_count": "pomodoros",
     "pomodoro.timers_title": "Temporizadores (Minutos)",
     "pomodoro.behavior_title": "Comportamento",
-    "pomodoro.auto_start": "Iniciar Pausas Auto",
+    "pomodoro.auto_start_breaks": "Iniciar Pausas Auto",
 
-    "system.cmd_label": "Comando",
+    "system.cmd_label": "Terminal",
     "system.close": "FECHAR",
 
     "workspaces.location": "Localização",
@@ -293,6 +299,12 @@ export const translations: Record<Language, Record<string, string>> = {
     "editingApp.no_name": "Sem Nome",
     "editingApp.menu_pos": "Posição no Menu",
     "editingApp.sync_active": "Sincronização Ativa",
+    "editingApp.has_recents": "Habilitar Pastas Recentes",
+    "editingApp.has_recents_desc": "Mostra sub-menu com projetos recentes (Antigravity/Cursor/VSCode)",
+    "editingApp.quick_access": "Acesso Rápido (Pastas)",
+    "editingApp.quick_access_desc": "Adicione pastas manualmente para acesso rápido",
+    "editingApp.add_folder": "Adicionar Pasta",
+    "editingApp.no_quick_access": "Nenhuma pasta manual adicionada",
 
     "search.index": "Índice de Pesquisa",
     "search.match_results": "Resultados de Pesquisa Viral",
@@ -413,6 +425,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "visuals.text_labels": "Labels",
     "visuals.hex_code": "Hex Code",
     "visuals.labels": "Labels",
+    "visuals.icon_style": "Icon Style",
 
     "status.executing": "Executing...",
     "error.exec_failed": "Failed to open",
@@ -492,12 +505,16 @@ export const translations: Record<Language, Record<string, string>> = {
     "alarm.add_new": "Add New Alarm",
     "alarm.default_label": "Alarm",
 
+    "stopwatch.title": "Stopwatch",
     "stopwatch.lap": "Lap",
     "stopwatch.no_laps": "No laps recorded",
 
     "pomodoro.timer": "Timer",
+    "pomodoro.timer_tab": "Timer",
     "pomodoro.tasks": "Tasks",
+    "pomodoro.tasks_tab": "Tasks",
     "pomodoro.config": "Config",
+    "pomodoro.config_tab": "Config",
     "pomodoro.focus_time": "Focus Time",
     "pomodoro.short_break": "Short Break",
     "pomodoro.long_break": "Long Break",
@@ -506,13 +523,14 @@ export const translations: Record<Language, Record<string, string>> = {
     "pomodoro.no_task_selected": "No task selected",
     "pomodoro.cycles": "Cycles",
     "pomodoro.add_task_placeholder": "Add new task...",
+    "pomodoro.no_tasks": "No tasks",
     "pomodoro.no_tasks_desc": "No tasks yet. Stay focused!",
     "pomodoro.pomodoros_count": "pomodoros",
     "pomodoro.timers_title": "Timers (Minutes)",
     "pomodoro.behavior_title": "Behavior",
-    "pomodoro.auto_start": "Auto Start Breaks",
+    "pomodoro.auto_start_breaks": "Auto Start Breaks",
 
-    "system.cmd_label": "Command",
+    "system.cmd_label": "Terminal",
     "system.close": "CLOSE",
 
     "workspaces.location": "Location",
@@ -591,6 +609,12 @@ export const translations: Record<Language, Record<string, string>> = {
     "editingApp.no_name": "No Name",
     "editingApp.menu_pos": "Menu Position",
     "editingApp.sync_active": "Sync Active",
+    "editingApp.has_recents": "Enable Recent Folders",
+    "editingApp.has_recents_desc": "Show sub-menu with recent projects (Antigravity/Cursor/VSCode)",
+    "editingApp.quick_access": "Quick Access (Folders)",
+    "editingApp.quick_access_desc": "Manually add folders for quick access",
+    "editingApp.add_folder": "Add Folder",
+    "editingApp.no_quick_access": "No manual folders added yet",
 
     "search.index": "Search Index",
     "search.match_results": "Neural Match Results",
@@ -682,6 +706,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "visuals.sensitivity": "Sensibilidad",
     "visuals.trigger_pixels": "Píxeles de Disparo",
     "visuals.text_labels": "Etiquetas de Texto",
+    "visuals.icon_style": "Estilo de Ícono",
 
     // Errors & Status
     "status.executing": "Ejecutando...",
@@ -744,12 +769,16 @@ export const translations: Record<Language, Record<string, string>> = {
     "alarm.add_new": "Añadir Nueva Alarma",
     "alarm.default_label": "Alarma",
 
+    "stopwatch.title": "Cronómetro",
     "stopwatch.lap": "Vuelta",
     "stopwatch.no_laps": "No hay vueltas registradas",
 
     "pomodoro.timer": "Temporizador",
+    "pomodoro.timer_tab": "Temporizador",
     "pomodoro.tasks": "Tareas",
+    "pomodoro.tasks_tab": "Tareas",
     "pomodoro.config": "Configuración",
+    "pomodoro.config_tab": "Ajustes",
     "pomodoro.focus_time": "Tiempo de Enfoque",
     "pomodoro.short_break": "Descanso Corto",
     "pomodoro.long_break": "Descanso Largo",
@@ -758,13 +787,14 @@ export const translations: Record<Language, Record<string, string>> = {
     "pomodoro.no_task_selected": "Ninguna tarea seleccionada",
     "pomodoro.cycles": "Ciclos",
     "pomodoro.add_task_placeholder": "Añadir nueva tarea...",
+    "pomodoro.no_tasks": "No hay tareas",
     "pomodoro.no_tasks_desc": "No hay tareas todavía. ¡Mantén el enfoque!",
     "pomodoro.pomodoros_count": "pomodoros",
     "pomodoro.timers_title": "Temporizadores (Minutos)",
     "pomodoro.behavior_title": "Comportamiento",
-    "pomodoro.auto_start": "Iniciar Descansos Auto",
+    "pomodoro.auto_start_breaks": "Iniciar Descansos Auto",
 
-    "system.cmd_label": "Comando",
+    "system.cmd_label": "Terminal",
     "system.close": "CERRAR",
 
     "workspaces.title": "Mis Espacios",
@@ -947,6 +977,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "visuals.trigger_pixels": "Pixels de Déclenchement",
     "visuals.labels": "Légendes",
     "visuals.text_labels": "Étiquettes de Texte",
+    "visuals.icon_style": "Style d'icône",
 
     // Errors & Status
     "status.executing": "Exécution...",
@@ -1009,12 +1040,16 @@ export const translations: Record<Language, Record<string, string>> = {
     "alarm.add_new": "Ajouter une Alarme",
     "alarm.default_label": "Alarme",
 
+    "stopwatch.title": "Chronomètre",
     "stopwatch.lap": "Tour",
     "stopwatch.no_laps": "Aucun tour enregistré",
 
     "pomodoro.timer": "Minuteur",
+    "pomodoro.timer_tab": "Minuteur",
     "pomodoro.tasks": "Tâches",
+    "pomodoro.tasks_tab": "Tâches",
     "pomodoro.config": "Config",
+    "pomodoro.config_tab": "Config",
     "pomodoro.focus_time": "Temps de Focus",
     "pomodoro.short_break": "Pause Courte",
     "pomodoro.long_break": "Pause Longue",
@@ -1023,11 +1058,12 @@ export const translations: Record<Language, Record<string, string>> = {
     "pomodoro.no_task_selected": "Aucune tâche sélectionnée",
     "pomodoro.cycles": "Cycles",
     "pomodoro.add_task_placeholder": "Ajouter une tâche...",
+    "pomodoro.no_tasks": "Pas de tâches",
     "pomodoro.no_tasks_desc": "Pas encore de tâches. Restez concentré !",
     "pomodoro.pomodoros_count": "pomodoros",
     "pomodoro.timers_title": "Minuteurs (Minutes)",
     "pomodoro.behavior_title": "Comportement",
-    "pomodoro.auto_start": "Démarrage Auto Pauses",
+    "pomodoro.auto_start_breaks": "Démarrage Auto Pauses",
 
     "system.cmd_label": "Commande",
     "system.close": "FERMER",
@@ -1246,6 +1282,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "visuals.trigger_pixels": "Trigger-Pixel",
     "visuals.labels": "Bezeichnungen",
     "visuals.text_labels": "Textbeschriftungen",
+    "visuals.icon_style": "Symbolstil",
 
     // Errors & Status
     "status.executing": "Ausführung...",
@@ -1306,12 +1343,16 @@ export const translations: Record<Language, Record<string, string>> = {
     "alarm.add_new": "Neuen Alarm hinzufügen",
     "alarm.default_label": "Alarm",
 
+    "stopwatch.title": "Stoppuhr",
     "stopwatch.lap": "Runde",
     "stopwatch.no_laps": "Keine Runden aufgezeichnet",
 
     "pomodoro.timer": "Timer",
+    "pomodoro.timer_tab": "Timer",
     "pomodoro.tasks": "Aufgaben",
+    "pomodoro.tasks_tab": "Aufgaben",
     "pomodoro.config": "Konfig",
+    "pomodoro.config_tab": "Konfig",
     "pomodoro.focus_time": "Fokuszeit",
     "pomodoro.short_break": "Kurze Pause",
     "pomodoro.long_break": "Lange Pause",
@@ -1320,11 +1361,12 @@ export const translations: Record<Language, Record<string, string>> = {
     "pomodoro.no_task_selected": "Keine Aufgabe gewählt",
     "pomodoro.cycles": "Zyklen",
     "pomodoro.add_task_placeholder": "Neue Aufgabe...",
+    "pomodoro.no_tasks": "Keine Aufgaben",
     "pomodoro.no_tasks_desc": "Noch keine Aufgaben. Bleib fokussiert!",
     "pomodoro.pomodoros_count": "Pomodoros",
     "pomodoro.timers_title": "Timer (Minuten)",
     "pomodoro.behavior_title": "Verhalten",
-    "pomodoro.auto_start": "Pausen automatisch starten",
+    "pomodoro.auto_start_breaks": "Pausen automatisch starten",
 
     "system.cmd_label": "Befehl",
     "system.close": "SCHLIESSEN",
@@ -1544,6 +1586,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "visuals.trigger_pixels": "Pixel di Attivazione",
     "visuals.labels": "Etichette",
     "visuals.text_labels": "Etichette di Testo",
+    "visuals.icon_style": "Stile icona",
 
     // Errors & Status
     "status.executing": "Esecuzione...",
@@ -1604,12 +1647,16 @@ export const translations: Record<Language, Record<string, string>> = {
     "alarm.add_new": "Aggiungi Nuova Sveglia",
     "alarm.default_label": "Sveglia",
 
+    "stopwatch.title": "Cronometro",
     "stopwatch.lap": "Giro",
     "stopwatch.no_laps": "Nessun giro registrato",
 
     "pomodoro.timer": "Timer",
+    "pomodoro.timer_tab": "Timer",
     "pomodoro.tasks": "Compiti",
+    "pomodoro.tasks_tab": "Compiti",
     "pomodoro.config": "Config",
+    "pomodoro.config_tab": "Config",
     "pomodoro.focus_time": "Tempo Focus",
     "pomodoro.short_break": "Pausa Breve",
     "pomodoro.long_break": "Pausa Lunga",
@@ -1618,11 +1665,12 @@ export const translations: Record<Language, Record<string, string>> = {
     "pomodoro.no_task_selected": "Nessun compito selezionato",
     "pomodoro.cycles": "Cicli",
     "pomodoro.add_task_placeholder": "Aggiungi nuovo compito...",
+    "pomodoro.no_tasks": "Nessun compito",
     "pomodoro.no_tasks_desc": "Ancora nessun compito. Resta concentrato!",
     "pomodoro.pomodoros_count": "pomodori",
     "pomodoro.timers_title": "Timer (Minuti)",
-    "pomodoro.behavior_title": "Comportamento",
-    "pomodoro.auto_start": "Avvio Auto Pause",
+    "pomodoro.behavior_title": "Comportamiento",
+    "pomodoro.auto_start_breaks": "Avvio Auto Pause",
 
     "system.cmd_label": "Comando",
     "system.close": "CHIUDI",
@@ -1839,6 +1887,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "visuals.trigger_pixels": "トリガーピクセル",
     "visuals.labels": "ラベル",
     "visuals.text_labels": "テキストラベル",
+    "visuals.icon_style": "アイコンスタイル",
 
     // Errors & Status
     "status.executing": "実行中...",
@@ -1900,12 +1949,16 @@ export const translations: Record<Language, Record<string, string>> = {
     "alarm.add_new": "新規アラーム追加",
     "alarm.default_label": "アラーム",
 
+    "stopwatch.title": "ストップウォッチ",
     "stopwatch.lap": "ラップ",
     "stopwatch.no_laps": "ラップは記録されていません",
 
     "pomodoro.timer": "タイマー",
+    "pomodoro.timer_tab": "タイマー",
     "pomodoro.tasks": "タスク",
+    "pomodoro.tasks_tab": "タスク",
     "pomodoro.config": "設定",
+    "pomodoro.config_tab": "設定",
     "pomodoro.focus_time": "集中時間",
     "pomodoro.short_break": "短い休憩",
     "pomodoro.long_break": "長い休憩",
@@ -1914,11 +1967,12 @@ export const translations: Record<Language, Record<string, string>> = {
     "pomodoro.no_task_selected": "タスクが選択されていません",
     "pomodoro.cycles": "サイクル",
     "pomodoro.add_task_placeholder": "新規タスク追加...",
+    "pomodoro.no_tasks": "タスクなし",
     "pomodoro.no_tasks_desc": "まだタスクはありません。集中しましょう！",
     "pomodoro.pomodoros_count": "ポモドーロ",
     "pomodoro.timers_title": "タイマー (分)",
     "pomodoro.behavior_title": "動作",
-    "pomodoro.auto_start": "自動休憩開始",
+    "pomodoro.auto_start_breaks": "休憩の自動開始",
 
     "system.cmd_label": "コマンド",
     "system.close": "閉じる",
@@ -2131,6 +2185,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "visuals.trigger_pixels": "触发像素",
     "visuals.labels": "标签",
     "visuals.text_labels": "文字标签",
+    "visuals.icon_style": "图标样式",
 
     // Errors & Status
     "status.executing": "执行中...",
@@ -2191,12 +2246,16 @@ export const translations: Record<Language, Record<string, string>> = {
     "alarm.add_new": "添加新闹钟",
     "alarm.default_label": "闹钟",
 
+    "stopwatch.title": "秒表",
     "stopwatch.lap": "计圈",
     "stopwatch.no_laps": "暂无计圈记录",
 
     "pomodoro.timer": "计时器",
+    "pomodoro.timer_tab": "计时器",
     "pomodoro.tasks": "任务",
+    "pomodoro.tasks_tab": "任务",
     "pomodoro.config": "配置",
+    "pomodoro.config_tab": "配置",
     "pomodoro.focus_time": "专注时间",
     "pomodoro.short_break": "短时休息",
     "pomodoro.long_break": "长时休息",
@@ -2205,11 +2264,12 @@ export const translations: Record<Language, Record<string, string>> = {
     "pomodoro.no_task_selected": "未选择任务",
     "pomodoro.cycles": "周期",
     "pomodoro.add_task_placeholder": "添加新任务...",
+    "pomodoro.no_tasks": "暂无任务",
     "pomodoro.no_tasks_desc": "暂无任务。保持专注！",
     "pomodoro.pomodoros_count": "番茄钟",
     "pomodoro.timers_title": "计时器 (分钟)",
     "pomodoro.behavior_title": "行为",
-    "pomodoro.auto_start": "自动开始休息",
+    "pomodoro.auto_start_breaks": "自动开始休息",
 
     "system.cmd_label": "命令",
     "system.close": "关闭",
@@ -2422,6 +2482,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "visuals.trigger_pixels": "트리거 픽셀",
     "visuals.labels": "라벨",
     "visuals.text_labels": "텍스트 라벨",
+    "visuals.icon_style": "아이콘 스타일",
 
     // Errors & Status
     "status.executing": "실행 중...",
@@ -2482,12 +2543,16 @@ export const translations: Record<Language, Record<string, string>> = {
     "alarm.add_new": "새 알람 추가",
     "alarm.default_label": "알람",
 
+    "stopwatch.title": "스톱워치",
     "stopwatch.lap": "랩",
     "stopwatch.no_laps": "기록된 랩이 없습니다",
 
     "pomodoro.timer": "타이머",
+    "pomodoro.timer_tab": "타이머",
     "pomodoro.tasks": "작업",
+    "pomodoro.tasks_tab": "작업",
     "pomodoro.config": "설정",
+    "pomodoro.config_tab": "설정",
     "pomodoro.focus_time": "집중 시간",
     "pomodoro.short_break": "짧은 휴식",
     "pomodoro.long_break": "긴 휴식",
@@ -2496,11 +2561,12 @@ export const translations: Record<Language, Record<string, string>> = {
     "pomodoro.no_task_selected": "작업이 선택되지 않음",
     "pomodoro.cycles": "사이클",
     "pomodoro.add_task_placeholder": "새 작업 추가...",
+    "pomodoro.no_tasks": "작업 없음",
     "pomodoro.no_tasks_desc": "아직 작업이 없습니다. 집중합시다!",
     "pomodoro.pomodoros_count": "뽀모도로",
     "pomodoro.timers_title": "타이머 (분)",
     "pomodoro.behavior_title": "동작",
-    "pomodoro.auto_start": "휴식 자동 시작",
+    "pomodoro.auto_start_breaks": "휴식 자동 시작",
 
     "system.cmd_label": "명령어",
     "system.close": "닫기",
@@ -2715,6 +2781,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "visuals.trigger_pixels": "Пиксели Триггера",
     "visuals.labels": "Метки",
     "visuals.text_labels": "Текстовые Метки",
+    "visuals.icon_style": "Стиль значков",
 
     // Errors & Status
     "status.executing": "Выполнение...",
@@ -2776,12 +2843,16 @@ export const translations: Record<Language, Record<string, string>> = {
     "alarm.add_new": "Добавить будильник",
     "alarm.default_label": "Будильник",
 
+    "stopwatch.title": "Секундомер",
     "stopwatch.lap": "Круг",
     "stopwatch.no_laps": "Круги не записаны",
 
     "pomodoro.timer": "Таймер",
+    "pomodoro.timer_tab": "Таймер",
     "pomodoro.tasks": "Задачи",
+    "pomodoro.tasks_tab": "Задачи",
     "pomodoro.config": "Настройки",
+    "pomodoro.config_tab": "Настройки",
     "pomodoro.focus_time": "Время фокусировки",
     "pomodoro.short_break": "Короткий перерыв",
     "pomodoro.long_break": "Длинный перерыв",
@@ -2790,11 +2861,12 @@ export const translations: Record<Language, Record<string, string>> = {
     "pomodoro.no_task_selected": "Задача не выбрана",
     "pomodoro.cycles": "Циклы",
     "pomodoro.add_task_placeholder": "Добавить задачу...",
+    "pomodoro.no_tasks": "Нет задач",
     "pomodoro.no_tasks_desc": "Задач пока нет. Сосредоточьтесь!",
     "pomodoro.pomodoros_count": "помидоров",
     "pomodoro.timers_title": "Таймеры (Минуты)",
     "pomodoro.behavior_title": "Поведение",
-    "pomodoro.auto_start": "Автостарт перерывов",
+    "pomodoro.auto_start_breaks": "Автостарт перерывов",
 
     "system.cmd_label": "Команда",
     "system.close": "ЗАКРЫТЬ",

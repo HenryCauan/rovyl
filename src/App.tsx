@@ -10,7 +10,7 @@ import { WelcomeScreen } from './components/WelcomeScreen';
 import { usePomodoro } from './hooks/usePomodoro';
 import { Coordinates, AppItem, UIConfig, Note, Alarm, UserProfile, Workspace } from './types';
 import { DEFAULT_APPS, DEFAULT_UI_CONFIG, DEFAULT_WORKSPACES } from './defaults';
-import { BellRing, MousePointer2, Settings, Minus, X, Maximize, Square } from 'lucide-react';
+import { BellRing, MousePointer2, Settings, Minus, X, Maximize, Square, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // Helper function to find an app by ID anywhere in the nested structure
@@ -55,6 +55,7 @@ export default function App() {
   const [menuPosition, setMenuPosition] = useState<Coordinates>({ x: 0, y: 0 });
   const [triggerSource, setTriggerSource] = useState<'mmb' | 'shortcut'>('shortcut');
   const [lastLaunched, setLastLaunched] = useState<AppItem | null>(null);
+  const [executionError, setExecutionError] = useState<string | null>(null);
   const [isDesktopMode, setIsDesktopMode] = useState(false);
 
   // State for Apps and Config (Defaults to initial constants)
@@ -106,6 +107,16 @@ export default function App() {
 
     localStorage.setItem('zenith_icon_normalization_version', ICON_NORMALIZATION_VERSION);
     // console.log('[Icons] Cache-busted: re-fetching icons with new normalization.');
+  }, []);
+
+  // Listen for execution errors from backend
+  useEffect(() => {
+    if (window.electron?.onExecutionError) {
+      return window.electron.onExecutionError((errorMsg: string) => {
+        setExecutionError(errorMsg);
+        setTimeout(() => setExecutionError(null), 5000);
+      });
+    }
   }, []);
 
   // ICON HEALING: Automatically re-fetch missing native icons
@@ -535,7 +546,7 @@ export default function App() {
       setLastLaunched(itemForToast);
       setTimeout(() => setLastLaunched(null), 3000);
     } else {
-      setLastLaunched({ id: 'custom', label: 'Comando', command: command, iconName: 'Terminal', description: 'Executando...' });
+      setLastLaunched({ id: 'custom', label: 'Terminal', command: command, iconName: 'Terminal', description: 'Executando...' });
       setTimeout(() => setLastLaunched(null), 3000);
     }
 
@@ -762,6 +773,30 @@ export default function App() {
         />
 
         <Toast app={lastLaunched} />
+        
+        <AnimatePresence>
+          {executionError && (
+            <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[1000]">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 20 }}
+                className="px-6 py-4 bg-red-500/90 backdrop-blur-xl border border-red-400/50 rounded-2xl shadow-2xl flex items-center gap-4 min-w-[320px]"
+              >
+                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-white shrink-0">
+                  <AlertTriangle size={20} />
+                </div>
+                <div className="flex-1">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-white/60 mb-1">Erro de Execução</div>
+                  <div className="text-sm font-bold text-white leading-tight">{executionError}</div>
+                </div>
+                <button onClick={() => setExecutionError(null)} className="text-white/40 hover:text-white transition-colors">
+                  <X size={18} />
+                </button>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
 
         <style>{`
           .group:active { cursor: ${isAnyModalOpen ? 'default' : 'crosshair'}; }

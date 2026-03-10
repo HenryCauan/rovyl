@@ -172,6 +172,26 @@ export const DEFAULT_APPS: AppItem[] = [
     command: "",
     description: "Calculator",
   },
+  {
+    id: "antigravity-default",
+    type: "app",
+    label: "Antigravity",
+    iconName: "Binary",
+    iconSource: "lucide",
+    command: "antigravity",
+    description: "Next-gen AI IDE",
+    hasRecents: true,
+  },
+  {
+    id: "cursor-default",
+    type: "app",
+    label: "Cursor",
+    iconName: "Code2",
+    iconSource: "lucide",
+    command: "cursor",
+    description: "AI Code Editor",
+    hasRecents: true,
+  },
 ];
 
 // Default Workspaces

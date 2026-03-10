@@ -61,6 +61,26 @@ const diagLog = (msg) => {
 
 // Periodic flush to ensure logs aren't stuck in queue
 setInterval(processLogQueue, 5000);
+
+// Helper function to detect preferred terminal emulator
+const getPreferredTerminal = () => {
+  try {
+    const { execSync } = require("child_process");
+    // 1. Windows Terminal (wt.exe)
+    try {
+      execSync("where wt.exe", { stdio: "ignore" });
+      return "wt.exe";
+    } catch (e) {}
+    // 2. PowerShell
+    try {
+      execSync("where powershell.exe", { stdio: "ignore" });
+      return "powershell.exe";
+    } catch (e) {}
+  } catch (e) {}
+  // 3. Fallback to CMD
+  return "cmd.exe";
+};
+
 const getAssetPath = (...paths) => {
   if (isDev) return path.join(__dirname, ...paths);
   // In production, backend is inside app.asar/backend. We need to point to app.asar.unpacked/backend for script execution.
@@ -599,6 +619,108 @@ app.whenReady().then(async () => {
     }
   });
 
+  ipcMain.handle("get-app-recents", async (event, appName, appCommand) => {
+    const appData = process.env.APPDATA;
+    let storagePath = "";
+
+    const lowerName = appName ? appName.toLowerCase() : "";
+    const lowerCommand = appCommand ? appCommand.toLowerCase() : "";
+
+    if (lowerName.includes("antigravity") || lowerCommand.includes("antigravity")) {
+      storagePath = path.join(appData, "Antigravity", "User", "globalStorage", "storage.json");
+    } else if (lowerName.includes("cursor") || lowerCommand.includes("cursor")) {
+      storagePath = path.join(appData, "Cursor", "User", "globalStorage", "storage.json");
+    } else if (lowerName.includes("code") || lowerName.includes("vs code") || lowerCommand.includes("code")) {
+      storagePath = path.join(appData, "Code", "User", "globalStorage", "storage.json");
+    }
+
+    if (!storagePath || !fs.existsSync(storagePath)) {
+      return [];
+    }
+
+    try {
+      const content = fs.readFileSync(storagePath, "utf-8");
+      const json = JSON.parse(content);
+      
+      // Try profileAssociations first (old or specific versions)
+      let workspaceUris = Object.keys(json.profileAssociations?.workspaces || {});
+      
+      // Try history.recentlyOpenedPathsList (standard VS Code)
+      const recentlyOpened = json.history?.recentlyOpenedPathsList || [];
+      recentlyOpened.forEach(item => {
+        const uri = item.folderUri || item.workspace?.configPath || item.fileUri;
+        if (uri && !workspaceUris.includes(uri)) {
+          workspaceUris.push(uri);
+        }
+      });
+      
+      const recents = workspaceUris.map(uri => {
+        // Convert file:///c%3A/path to C:\path
+        let decoded = decodeURIComponent(uri.replace("file:///", ""));
+        if (process.platform === 'win32') {
+          if (decoded.startsWith("/")) decoded = decoded.substring(1);
+          decoded = decoded.replace(/\//g, "\\");
+        }
+        
+        const label = path.basename(decoded);
+        let command = decoded;
+        
+        // If it's an IDE, we want to open the folder WITH the IDE
+        const itemLowerName = appName ? appName.toLowerCase() : "";
+        // 2. Identify if it's an IDE that supports recent folders
+        let appCommandString = (appCommand || "").trim();
+        
+        // If we don't have a command passed, try to infer it from the name
+        if (!appCommandString) {
+          const ideNames = ["antigravity", "cursor", "code"];
+          const foundName = ideNames.find(n => lowerName.includes(n));
+          if (foundName) appCommandString = foundName;
+        }
+
+        let commandBase = "";
+        const lowerAppCmd = appCommandString.toLowerCase();
+        const isIDE = 
+          lowerAppCmd.includes("antigravity") || 
+          lowerAppCmd.includes("cursor") || 
+          lowerAppCmd.includes("code") ||
+          lowerAppCmd.includes("visual studio") ||
+          lowerAppCmd.includes("intellij") ||
+          lowerAppCmd.includes("webstorm") ||
+          lowerAppCmd.includes("pycharm");
+
+        if (isIDE) {
+          // If it's a full path with spaces and not quoted, quote it
+          if (appCommandString.includes(" ") && !appCommandString.startsWith('"')) {
+             commandBase = `"${appCommandString}"`;
+          } else {
+             commandBase = appCommandString;
+          }
+        }
+
+        if (commandBase) {
+          command = `${commandBase} "${decoded}"`;
+        } else {
+          diagLog(`[Recents] App not recognized as IDE: ${appName}`);
+        }
+
+        return {
+          id: `recent-${uri}`,
+          label: label || decoded,
+          iconName: "Folder",
+          iconSource: "lucide",
+          command: command,
+          commandType: "app",
+          description: decoded
+        };
+      });
+
+      return recents.filter(r => r.label && r.label !== ".").slice(0, 8); // Limit to top 8 recents
+    } catch (e) {
+      diagLog(`Error fetching app recents for ${appName}: ${e.message}`);
+      return [];
+    }
+  });
+
   // 2. Create Window
   mainWindow = await createWindow();
 
@@ -949,6 +1071,10 @@ const escapeCommand = (cmd) => {
   if (cmd.match(/^https?:\/\//i) || cmd.match(/^(steam|discord|spotify):/i)) {
     return cmd;
   }
+  // If it already has quotes, don't add more (likely complex command)
+  if (cmd.includes('"')) {
+    return cmd;
+  }
   // For file paths with spaces, ensure they're properly quoted
   if (cmd.includes(" ") && !cmd.startsWith('"')) {
     return `"${cmd}"`;
@@ -972,7 +1098,7 @@ ipcMain.on("execute-command", async (event, command, commandType) => {
   const trimmedCommand = command.trim();
 
   // CRITICAL: Resolve GUIDs to real paths FIRST, before any detection logic
-  const resolvedCommand = resolveShellPath(trimmedCommand);
+  let resolvedCommand = resolveShellPath(trimmedCommand);
 
   console.log(`\n========================================`);
   console.log(`EXEC_START: Attempting to launch`);
@@ -1072,79 +1198,148 @@ ipcMain.on("execute-command", async (event, command, commandType) => {
     return;
   }
 
+  const isShellApp = (cmd) => {
+    if (!cmd) return false;
+    const cleanCmd = cmd.trim().replace(/['"]/g, "");
+    const lower = cleanCmd.toLowerCase();
+    const base = lower.split(" ")[0];
+
+    // Identify Windows Store apps, AUMIDs, and Shell/GUID namespaces
+    return (
+      lower.startsWith("shell:") ||
+      lower.includes("!") || // Standard AUMID indicator (e.g. App!ID)
+      lower.includes("google.antigravity") ||
+      lower.includes("microsoft.") ||
+      lower.includes("discord") ||
+      base.startsWith("{") || // GUID
+      /^[A-F0-9]{8,64}$/i.test(base) || // Hex identifier
+      (base.includes(".") && !base.match(/\.(exe|lnk|bat|cmd|com|vbs|ps1)$/i) && !base.includes("\\") && !base.includes("/"))
+    );
+  };
+
   const tryExecution = (method, cmd) => {
     return new Promise((resolve, reject) => {
-      console.log(`  → [${method}] Trying...`);
+      diagLog(`  → [${method}] Trying...`);
       let execCmd;
       switch (method) {
         case "shell.openExternal":
           shell
             .openExternal(cmd)
             .then(() => {
-              console.log(`  ✓ [${method}] Success!`);
+              diagLog(`  ✓ [${method}] Success!`);
               resolve(true);
             })
             .catch((err) => {
-              console.log(`  ✗ [${method}] Failed: ${err.message}`);
+              diagLog(`  ✗ [${method}] Failed: ${err.message}`);
               reject(err);
             });
           break;
         case "shell.openPath":
           shell.openPath(cmd).then((errMsg) => {
             if (errMsg) {
-              console.log(`  ✗ [${method}] Failed: ${errMsg}`);
+              diagLog(`  ✗ [${method}] Failed: ${errMsg}`);
               reject(new Error(errMsg));
             } else {
-              console.log(`  ✓ [${method}] Success!`);
+              diagLog(`  ✓ [${method}] Success!`);
               resolve(true);
             }
           });
           break;
         case "exec_start":
           execCmd = `start "" ${escapeCommand(cmd)}`;
-          console.log(`  → [${method}] Running: ${execCmd}`);
+          diagLog(`  → [${method}] Running: ${execCmd}`);
           exec(execCmd, (err, stdout, stderr) => {
             if (err) {
-              console.log(`  ✗ [${method}] Failed: ${err.message}`);
-              if (stderr) console.log(`  stderr: ${stderr}`);
+              diagLog(`  ✗ [${method}] Failed: ${err.message}`);
               reject(err);
             } else {
-              console.log(`  ✓ [${method}] Success!`);
-              if (stdout) console.log(`  stdout: ${stdout}`);
+              diagLog(`  ✓ [${method}] Success!`);
               resolve(true);
             }
           });
           break;
         case "exec_explorer_shell":
-          // Use 'start shell:AppsFolder\ID' which is the Windows native way to launch
-          // both AUMIDs and Shell Namespace items (GUIDs).
-          // We wrap the path in quotes to handle spaces correctly.
-          const shellPath = `shell:AppsFolder\\${cmd}`;
-          execCmd = `start "" "${shellPath}"`;
-          console.log(`  → [${method}] Running: ${execCmd}`);
+          // Special handling for AUMIDs with arguments
+          let aumid = cmd;
+          let args = "";
+          if (cmd.includes(" ")) {
+            const firstSpace = cmd.indexOf(" ");
+            aumid = cmd.substring(0, firstSpace);
+            args = cmd.substring(firstSpace + 1);
+          }
+          
+          // Basic AUMID launch - args support depends on Windows version and app
+          const shellPath = `shell:AppsFolder\\${aumid}`;
+          execCmd = args ? `start "" "${shellPath}" ${args}` : `start "" "${shellPath}"`;
+          diagLog(`  → [${method}] Running: ${execCmd}`);
           exec(execCmd, (err, stdout, stderr) => {
             if (err) {
               console.log(`  ✗ [${method}] Failed: ${err.message}`);
               if (stderr) console.log(`  stderr: ${stderr}`);
               reject(err);
             } else {
-              console.log(`  ✓ [${method}] Success!`);
+              diagLog(`  ✓ [${method}] Success!`);
               resolve(true);
             }
           });
           break;
         case "exec_direct":
-          execCmd = `cmd.exe /c ${cmd}`;
-          console.log(`  → [${method}] Running: ${execCmd}`);
+          const terminal = getPreferredTerminal();
+          if (terminal === "wt.exe") {
+            // Windows Terminal needs special flags to stay as a single window or specific profile
+            execCmd = `wt.exe -d . cmd /c ${cmd}`;
+          } else {
+            execCmd = `${terminal} /c ${cmd}`;
+          }
+          
+          diagLog(`  → [${method}] Running: ${execCmd}`);
           exec(execCmd, (err, stdout, stderr) => {
             if (err) {
-              console.log(`  ✗ [${method}] Failed: ${err.message}`);
-              if (stderr) console.log(`  stderr: ${stderr}`);
+              diagLog(`  ✗ [${method}] Failed: ${err.message}`);
               reject(err);
             } else {
-              console.log(`  ✓ [${method}] Success!`);
-              if (stdout) console.log(`  stdout: ${stdout}`);
+              diagLog(`  ✓ [${method}] Success!`);
               resolve(true);
+            }
+          });
+          break;
+        case "exec_silent_spawn":
+          return new Promise((resolve, reject) => {
+            try {
+              let spawnPath = cmd;
+              let spawnArgs = [];
+              if (cmd.includes(" ") && !cmd.startsWith('"')) {
+                const firstSpace = cmd.indexOf(" ");
+                spawnPath = cmd.substring(0, firstSpace);
+                spawnArgs = [cmd.substring(firstSpace + 1).trim()];
+              } else if (cmd.startsWith('"')) {
+                const secondQuote = cmd.indexOf('"', 1);
+                if (secondQuote > 0) {
+                  spawnPath = cmd.substring(1, secondQuote);
+                  spawnArgs = [cmd.substring(secondQuote + 1).trim()].filter(a => a);
+                }
+              }
+
+              diagLog(`  → [${method}] Spawning: ${spawnPath} ${spawnArgs.join(' ')}`);
+              const child = spawn(spawnPath, spawnArgs, {
+                detached: true,
+                stdio: 'ignore',
+                shell: true
+              });
+              
+              child.on('error', (err) => {
+                diagLog(`  ✗ [${method}] Failed to start: ${err.message}`);
+                reject(err);
+              });
+
+              // Give it a tiny bit of time to see if it immediately errors
+              setTimeout(() => {
+                child.unref();
+                diagLog(`  ✓ [${method}] Success (Process unrefed)`);
+                resolve(true);
+              }, 100);
+            } catch (e) {
+              reject(e);
             }
           });
           break;
@@ -1156,48 +1351,97 @@ ipcMain.on("execute-command", async (event, command, commandType) => {
 
   try {
     if (commandType === "url") {
-      console.log("  → Detected: Explicit URL (from commandType)");
+      diagLog("  → Detected: Explicit URL (from commandType)");
       await tryExecution("shell.openExternal", resolvedCommand);
-      console.log(
+      diagLog(
         `\n✓✓✓ EXEC_SUCCESS: Launched URL with 'shell.openExternal' ✓✓✓\n`,
       );
-      return; // Exit early if it's explicitly a URL
+      return; 
     }
 
     if (commandType === "folder") {
-      console.log("  → Detected: Explicit Folder (from commandType)");
+      diagLog("  → Detected: Explicit Folder (from commandType)");
       await tryExecution("shell.openPath", resolvedCommand);
-      console.log(
+      diagLog(
         `\n✓✓✓ EXEC_SUCCESS: Opened Folder with 'shell.openPath' ✓✓✓\n`,
       );
-      return; // Exit early if it's explicitly a folder
+      return;
     }
 
-    // Determine the best method based on command type
     let methodsToTry = [];
 
+    if (commandType === "app") {
+      let finalCommand = resolvedCommand.trim();
+      const originalAumidCommand = finalCommand; // Keep original in case mapping fails
+      const lowerCmd = finalCommand.toLowerCase();
+      const hasArgs = finalCommand.includes(" ") && !finalCommand.startsWith('"'); // Simple heuristic for args
+
+      let wasMapped = false;
+      // IDE MAPPING: Auto-convert AUMIDs to CLI for folder opening
+      // If the command contains an AUMID and looks like it's trying to open a folder
+      if (lowerCmd.includes("google.antigravity") && lowerCmd.includes(":\\")) {
+        finalCommand = finalCommand.replace(/google\.antigravity/i, "antigravity");
+        diagLog(`[Exec] Auto-mapped Antigravity AUMID to CLI for folder opening.`);
+        wasMapped = true;
+      } else if (lowerCmd.includes("cursor") && lowerCmd.includes("!")) {
+        // Many cursor installs use AUMIDs that fail with args
+        if (lowerCmd.includes(":\\")) {
+           const firstSpace = finalCommand.indexOf(" ");
+           if (firstSpace > 0) {
+             const pathArg = finalCommand.substring(firstSpace).trim();
+             finalCommand = `cursor ${pathArg}`;
+             diagLog(`[Exec] Auto-mapped Cursor AUMID to CLI.`);
+             wasMapped = true;
+           }
+        }
+      }
+
+      const isShell = isShellApp(finalCommand);
+      const isIDE = 
+        finalCommand.toLowerCase().includes("antigravity") ||
+        finalCommand.toLowerCase().includes("cursor") ||
+        finalCommand.toLowerCase().includes("code");
+
+      // Update resolved command for execution methods
+      resolvedCommand = finalCommand;
+
+      if (isIDE && finalCommand.includes(" ")) {
+        diagLog(`[Exec] IDE with args detected: prioritizing silent spawn for no flashes.`);
+        
+        if (wasMapped) {
+          try {
+            await tryExecution("exec_silent_spawn", finalCommand);
+            diagLog(`\n✓✓✓ EXEC_SUCCESS: Launched with 'exec_silent_spawn' (Mapped CLI) ✓✓✓\n`);
+            return;
+          } catch (e) {
+            diagLog(`[Exec] Mapped CLI silent spawn failed: ${e.message}. Falling back to original AUMID sequence.`);
+          }
+        }
+        
+        resolvedCommand = originalAumidCommand;
+        methodsToTry = ["exec_silent_spawn", "exec_start", "exec_direct", "shell.openPath", "exec_explorer_shell"];
+      } else if (isShell && !finalCommand.includes(" ")) {
+        methodsToTry = ["exec_explorer_shell", "exec_start", "exec_direct"];
+        diagLog(`[Exec] Shell app (AUMID) detected: prioritizing explorer shell.`);
+      } else if (isShell && finalCommand.includes(" ")) {
+        // Mixed case: AUMID with args. Try direct CLI first (in case it's actually path to exe)
+        methodsToTry = ["exec_direct", "exec_start", "exec_explorer_shell"];
+        diagLog(`[Exec] Shell app with args: trying direct execution first.`);
+      } else {
+        methodsToTry = ["exec_direct", "exec_start", "shell.openPath"];
+      }
+    }
     // GUID/AUMID detection (Shell Namespace / UWP apps)
-    // Steam uses GUIDs like {7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\Steam\Steam.exe
-    // WhatsApp uses AUMIDs like 5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App
-    // Some system apps use hex IDs like FODC299D809B9700
-    const isHexID = /^[A-F0-9]{8,64}$/i.test(resolvedCommand);
-    const isShellApp =
+    else if (
       resolvedCommand.startsWith("{") ||
       resolvedCommand.includes("!") ||
-      isHexID ||
+      /^[A-F0-9]{8,64}$/i.test(resolvedCommand) ||
       (resolvedCommand.includes(".") &&
         !resolvedCommand.match(/\.(exe|lnk|bat|cmd)$/i) &&
         !resolvedCommand.includes("\\") &&
-        !resolvedCommand.includes("/"));
-
-    // File path detection (.exe, .lnk, etc)
-    const isExplicitFile =
-      resolvedCommand.includes("\\") || resolvedCommand.includes("/");
-    const isExe = resolvedCommand.toLowerCase().endsWith(".exe");
-
-    if (isShellApp) {
+        !resolvedCommand.includes("/"))
+    ) {
       console.log("  → Detected: Shell App (GUID or AUMID)");
-      // For Shell apps, shell:AppsFolder is the primary method
       methodsToTry = [
         "exec_explorer_shell",
         "shell.openExternal",
@@ -1218,14 +1462,13 @@ ipcMain.on("execute-command", async (event, command, commandType) => {
       methodsToTry = ["exec_direct", "exec_start"];
     }
     // Executable file detection
-    else if (resolvedCommand.match(/\.(exe|lnk|bat|cmd)$/i) || isExplicitFile) {
+    else if (resolvedCommand.match(/\.(exe|lnk|bat|cmd)$/i) || (resolvedCommand.includes("\\") || resolvedCommand.includes("/"))) {
       console.log("  → Detected: Executable file");
       methodsToTry = ["shell.openPath", "exec_start", "exec_direct"];
     }
     // Simple command / Alias (like "notepad", "calc", "MSEdge", "chrome")
     else {
       console.log("  → Detected: Simple command or Alias");
-      // Add 'exec_explorer_shell' as a final fallback for aliases that might be Shell AppIDs
       methodsToTry = [
         "exec_start",
         "exec_direct",

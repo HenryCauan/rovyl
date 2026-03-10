@@ -46,6 +46,16 @@ const AppEditorModal = React.memo(({
         return () => window.removeEventListener('resize', onResize);
     }, []);
 
+    const isIDE = useMemo(() => {
+        if (!editingApp) return false;
+        const lowerLabel = (editingApp.app.label || '').toLowerCase();
+        const lowerCmd = (editingApp.app.command || '').toLowerCase();
+        const ideKeywords = ['code', 'cursor', 'antigravity', 'visual studio', 'intellij', 'webstorm', 'pycharm', 'phpstorm', 'sublime', 'atom'];
+        return ideKeywords.some(k => lowerLabel.includes(k) || lowerCmd.includes(k));
+    }, [editingApp?.app.label, editingApp?.app.command]);
+
+
+
     return (
         <AnimatePresence>
             {editingApp && (
@@ -226,6 +236,93 @@ const AppEditorModal = React.memo(({
                                         </div>
                                     </section>
 
+                                    {/* Seção: Pastas Recentes */}
+                                    {editingApp.app.type === 'app' && isIDE && (
+                                        <section className="space-y-3">
+                                            <div
+                                                onClick={() => handleAppChange('hasRecents', !editingApp.app.hasRecents)}
+                                                className="flex items-center justify-between p-4 bg-white/[0.02] border border-white/5 rounded-2xl hover:bg-white/[0.05] transition-all cursor-pointer group"
+                                            >
+                                                <div className="space-y-1">
+                                                    <span className="text-sm font-semibold text-white/80 block group-hover:text-white transition-colors">{getTranslation(config, 'editingApp.has_recents')}</span>
+                                                    <span className="text-[10px] text-white/20 block group-hover:text-white/40 transition-colors uppercase tracking-wider font-bold">{getTranslation(config, 'editingApp.has_recents_desc')}</span>
+                                                </div>
+                                                <div
+                                                    className={`w-11 h-6 rounded-full relative transition-all duration-500 ${editingApp.app.hasRecents ? 'bg-white shadow-[0_0_15px_rgba(255,255,255,0.3)]' : 'bg-white/5'}`}
+                                                >
+                                                    <div className={`absolute top-1 w-4 h-4 rounded-full transition-all duration-500 ease-out ${editingApp.app.hasRecents ? 'left-6 bg-black' : 'left-1 bg-white/20'}`} />
+                                                </div>
+                                            </div>
+                                        </section>
+                                    )}
+
+                                    {/* Seção: Acesso Rápido (Pastas) */}
+                                    {editingApp.app.type === 'app' && isIDE && (
+                                        <section className="space-y-3">
+                                            <div className="flex items-center justify-between ml-1">
+                                                <label className="text-sm font-semibold text-white/60">{getTranslation(config, 'editingApp.quick_access')}</label>
+                                                <button
+                                                    onClick={async () => {
+                                                        const path = await window.electron?.selectFolder?.();
+                                                        if (path) {
+                                                            const label = path.split(/[\\/]/).pop() || 'Folder';
+                                                            const parentCmd = editingApp.app.command;
+                                                            const formattedParent = (parentCmd.includes(' ') && !parentCmd.startsWith('"')) ? `"${parentCmd}"` : parentCmd;
+                                                            const newFolder: AppItem = {
+                                                                id: crypto.randomUUID(),
+                                                                label,
+                                                                command: `${formattedParent} "${path}"`,
+                                                                commandType: 'app',
+                                                                iconName: 'Folder',
+                                                                iconSource: 'lucide',
+                                                                description: 'Quick Access Folder'
+                                                            };
+                                                            handleAppChange('children', [...(editingApp.app.children || []), newFolder]);
+                                                        }
+                                                    }}
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold text-white/50 hover:text-white hover:bg-white/10 transition-all uppercase tracking-wider"
+                                                >
+                                                    <Plus size={14} />
+                                                    {getTranslation(config, 'editingApp.add_folder')}
+                                                </button>
+                                            </div>
+                                            <div className="space-y-2">
+                                                {!editingApp.app.children || editingApp.app.children.filter(c => c.commandType === 'folder' || c.description === 'Quick Access Folder').length === 0 ? (
+                                                    <div className="p-8 rounded-2xl border border-dashed border-white/5 bg-white/[0.01] flex flex-col items-center justify-center gap-3 text-white/10">
+                                                        <Folder size={32} strokeWidth={1} />
+                                                        <span className="text-[10px] uppercase font-bold tracking-widest">{getTranslation(config, 'editingApp.no_quick_access')}</span>
+                                                    </div>
+                                                ) : (
+                                                    <div className="grid grid-cols-1 gap-2">
+                                                        {editingApp.app.children
+                                                            .filter(child => child.commandType === 'folder' || child.description === 'Quick Access Folder')
+                                                            .map((child) => (
+                                                                <div key={child.id} className="group flex items-center gap-3 p-3 bg-white/[0.02] border border-white/5 rounded-xl hover:bg-white/[0.04] transition-all">
+                                                                    <div className="w-8 h-8 rounded-lg bg-black/40 flex items-center justify-center text-white/20">
+                                                                        <Folder size={16} />
+                                                                    </div>
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="text-xs font-semibold text-white truncate">{child.label}</div>
+                                                                        <div className="text-[9px] text-white/20 font-mono truncate">{child.command}</div>
+                                                                    </div>
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            const newChildren = editingApp.app.children?.filter(c => c.id !== child.id);
+                                                                            handleAppChange('children', newChildren);
+                                                                        }}
+                                                                        className="w-8 h-8 rounded-lg flex items-center justify-center text-white/10 hover:text-red-400 hover:bg-red-400/10 transition-all opacity-0 group-hover:opacity-100"
+                                                                    >
+                                                                        <Trash2 size={14} />
+                                                                    </button>
+                                                                </div>
+                                                            ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <p className="text-[10px] text-white/20 ml-1 italic">{getTranslation(config, 'editingApp.quick_access_desc')}</p>
+                                        </section>
+                                    )}
+
                                     {/* Seção: Biblioteca de Ícones Lucide (inline) */}
                                     {editingApp.app.iconSource === 'lucide' && (
                                         <section className="space-y-3">
@@ -347,6 +444,101 @@ const AppEditorModal = React.memo(({
                                             </button>
                                         </div>
                                     </section>
+                                    {/* Seção: Pastas Recentes */}
+                                    {editingApp.app.type === 'app' && isIDE && (
+                                        <section className="space-y-3 pb-4">
+                                            <div
+                                                onClick={() => handleAppChange('hasRecents', !editingApp.app.hasRecents)}
+                                                className="flex items-center justify-between p-5 bg-white/[0.02] border border-white/5 rounded-2xl hover:bg-white/[0.04] transition-all cursor-pointer group"
+                                            >
+                                                <div className="space-y-1">
+                                                    <span className="text-sm font-semibold text-white/70 block group-hover:text-white transition-colors">{getTranslation(config, 'editingApp.has_recents')}</span>
+                                                    <span className="text-[10px] text-white/20 block group-hover:text-white/40 transition-colors uppercase tracking-wider font-bold">{getTranslation(config, 'editingApp.has_recents_desc')}</span>
+                                                </div>
+                                                <div
+                                                    className={`w-11 h-6 rounded-full relative transition-all duration-500 ${editingApp.app.hasRecents ? 'bg-white shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-white/5'}`}
+                                                >
+                                                    <div className={`absolute top-1 w-4 h-4 rounded-full transition-all duration-500 ease-out ${editingApp.app.hasRecents ? 'left-6 bg-black' : 'left-1 bg-white/20'}`} />
+                                                </div>
+                                            </div>
+                                        </section>
+                                    )}
+
+                                    {/* Seção: Acesso Rápido (Pastas) */}
+                                    {editingApp.app.type === 'app' && isIDE && (
+                                        <section className="space-y-3">
+                                            <div className="flex items-center justify-between ml-1">
+                                                <label className="text-sm font-semibold text-white/60">{getTranslation(config, 'editingApp.quick_access')}</label>
+                                                <button
+                                                    onClick={async () => {
+                                                        const path = await window.electron?.selectFolder?.();
+                                                        if (path) {
+                                                            const label = path.split(/[\\/]/).pop() || 'Folder';
+                                                            const parentCmd = editingApp.app.command;
+                                                            const formattedParent = (parentCmd.includes(' ') && !parentCmd.startsWith('"')) ? `"${parentCmd}"` : parentCmd;
+                                                            
+                                                            let idePrefix = formattedParent;
+                                                            const lowerParent = editingApp.app.label.toLowerCase();
+                                                            const lowerCmd = editingApp.app.command.toLowerCase();
+                                                            
+                                                            if (lowerParent.includes('antigravity') || lowerCmd.includes('antigravity')) idePrefix = 'antigravity';
+                                                            else if (lowerParent.includes('cursor') || lowerCmd.includes('cursor')) idePrefix = 'cursor';
+                                                            else if (lowerParent.includes('code') || lowerCmd.includes('code')) idePrefix = 'code';
+
+                                                            const newFolder: AppItem = {
+                                                                id: crypto.randomUUID(),
+                                                                label,
+                                                                command: `${idePrefix} "${path}"`,
+                                                                commandType: 'app',
+                                                                iconName: 'Folder',
+                                                                iconSource: 'lucide',
+                                                                description: 'Quick Access Folder'
+                                                            };
+                                                            handleAppChange('children', [...(editingApp.app.children || []), newFolder]);
+                                                        }
+                                                    }}
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold text-white/50 hover:text-white hover:bg-white/10 transition-all uppercase tracking-wider"
+                                                >
+                                                    <Plus size={14} />
+                                                    {getTranslation(config, 'editingApp.add_folder')}
+                                                </button>
+                                            </div>
+                                            <div className="space-y-2">
+                                                {!editingApp.app.children || editingApp.app.children.filter(c => c.commandType === 'folder' || c.description === 'Quick Access Folder').length === 0 ? (
+                                                    <div className="p-8 rounded-2xl border border-dashed border-white/5 bg-white/[0.01] flex flex-col items-center justify-center gap-3 text-white/10">
+                                                        <Folder size={32} strokeWidth={1} />
+                                                        <span className="text-[10px] uppercase font-bold tracking-widest">{getTranslation(config, 'editingApp.no_quick_access')}</span>
+                                                    </div>
+                                                ) : (
+                                                    <div className="grid grid-cols-1 gap-2">
+                                                        {editingApp.app.children
+                                                            .filter(child => child.commandType === 'folder' || child.description === 'Quick Access Folder')
+                                                            .map((child) => (
+                                                                <div key={child.id} className="group flex items-center gap-3 p-3 bg-white/[0.02] border border-white/5 rounded-xl hover:bg-white/[0.04] transition-all">
+                                                                    <div className="w-8 h-8 rounded-lg bg-black/40 flex items-center justify-center text-white/20">
+                                                                        <Folder size={16} />
+                                                                    </div>
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="text-xs font-semibold text-white truncate">{child.label}</div>
+                                                                        <div className="text-[9px] text-white/20 font-mono truncate">{child.command}</div>
+                                                                    </div>
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            const newChildren = editingApp.app.children?.filter(c => c.id !== child.id);
+                                                                            handleAppChange('children', newChildren);
+                                                                        }}
+                                                                        className="w-8 h-8 rounded-lg flex items-center justify-center text-white/10 hover:text-red-400 hover:bg-red-400/10 transition-all opacity-0 group-hover:opacity-100"
+                                                                    >
+                                                                        <Trash2 size={14} />
+                                                                    </button>
+                                                                </div>
+                                                            ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <p className="text-[10px] text-white/20 ml-1 italic">{getTranslation(config, 'editingApp.quick_access_desc')}</p>
+                                        </section>
+                                    )}
                                 </div>
 
                                 {/* Coluna Direita: Preview or Icon Library */}
@@ -1215,8 +1407,8 @@ const WorkspacesTab = React.memo(({
                                                     config={config}
                                                 />
                                             ))}
-                                        </div>
-                                    )}
+                                                    </div>
+                                                )}
                                 </div>
 
                             </motion.div>
@@ -3026,7 +3218,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         const defaults = {
             app: { target: '', label: 'APP', iconName: 'Box' },
             widget: { target: '', label: 'WIDGET', iconName: 'AppWindow' },
-            command: { target: '', label: 'CMD', iconName: 'Terminal' },
+            command: { target: '', label: 'TERMINAL', iconName: 'Terminal' },
             none: { target: '', label: '', iconName: 'Circle' }
         };
         setConfig(prev => ({ ...prev, centerButton: { ...prev.centerButton, type, ...defaults[type as keyof typeof defaults] } }));

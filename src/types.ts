@@ -22,6 +22,7 @@ export interface AppItem {
   description: string;
   shortcut?: string;
   children?: AppItem[];
+  hasRecents?: boolean; // New: indicates if the app should show recent folders
 }
 
 export interface WidgetDefinition {
@@ -200,6 +201,7 @@ export interface ElectronAPI {
   onShortcutRecorded: (callback: (shortcut: string) => void) => () => void;
   saveFullConfig: (config: any) => void;
   getFullConfig: () => Promise<any>;
+  getAppRecents: (appName: string, appCommand?: string) => Promise<AppItem[]>;
 }
 
 declare global {

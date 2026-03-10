@@ -32,6 +32,7 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
   // Folder Navigation State
   const [currentLevelApps, setCurrentLevelApps] = useState<AppItem[]>(apps);
   const [folderStack, setFolderStack] = useState<{ label: string, apps: AppItem[] }[]>([]);
+  const [isLoadingRecents, setIsLoadingRecents] = useState(false);
 
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -233,11 +234,53 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
       const selectedItem = activeIndex !== null ? currentLevelApps[activeIndex] : null;
 
       if (selectedItem) {
+        // Core Folder Integration Logic
+        const isKnownIDE = (item: any) => {
+          const l = item.label?.toLowerCase() || '';
+          return l.includes('antigravity') || l.includes('cursor') || l.includes('vs code') || l.includes('vscode');
+        };
+
+        const hasRecentFetch = (selectedItem.hasRecents) && window.electron?.getAppRecents;
+        const hasManualFolders = selectedItem.children && selectedItem.children.length > 0;
+
         if (selectedItem.type === 'folder' && selectedItem.children) {
+          // Standard Folder Group
           setFolderStack([...folderStack, { label: selectedItem.label, apps: selectedItem.children }]);
           setCurrentLevelApps(selectedItem.children);
           setHasMoved(false);
           setActiveIndex(null);
+        } else if (hasRecentFetch || hasManualFolders) {
+          // App with Recents/QuickAccess
+          setIsLoadingRecents(true);
+          const manualFolders = selectedItem.children || [];
+
+          if (hasRecentFetch) {
+            window.electron!.getAppRecents(selectedItem.label, selectedItem.command).then(recents => {
+              setIsLoadingRecents(false);
+              const seenPaths = new Set(manualFolders.map(c => c.command));
+              const uniqueRecents = recents.filter(r => !seenPaths.has(r.command));
+              const combined = [...manualFolders, ...uniqueRecents];
+
+              if (combined.length > 0) {
+                setFolderStack([...folderStack, { label: selectedItem.label, apps: combined }]);
+                setCurrentLevelApps(combined);
+                setHasMoved(false);
+                setActiveIndex(null);
+              } else {
+                onClose(selectedItem.id);
+              }
+            }).catch(() => {
+              setIsLoadingRecents(false);
+              onClose(selectedItem.id);
+            });
+          } else {
+            // Only manual folders
+            setIsLoadingRecents(false);
+            setFolderStack([...folderStack, { label: selectedItem.label, apps: manualFolders }]);
+            setCurrentLevelApps(manualFolders);
+            setHasMoved(false);
+            setActiveIndex(null);
+          }
         } else {
           onClose(selectedItem.id);
         }
@@ -326,11 +369,49 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
         const selectedItem = activeIndex !== null ? currentLevelApps[activeIndex] : null;
 
         if (selectedItem) {
+          const isKnownIDE = (item: any) => {
+            const l = item.label?.toLowerCase() || '';
+            return l.includes('antigravity') || l.includes('cursor') || l.includes('vs code') || l.includes('vscode');
+          };
+
+          const hasRecentFetch = (selectedItem.hasRecents) && window.electron?.getAppRecents;
+          const hasManualFolders = selectedItem.children && selectedItem.children.length > 0;
+
           if (selectedItem.type === 'folder' && selectedItem.children) {
             setFolderStack([...folderStack, { label: selectedItem.label, apps: selectedItem.children }]);
             setCurrentLevelApps(selectedItem.children);
             setHasMoved(false);
             setActiveIndex(null);
+          } else if (hasRecentFetch || hasManualFolders) {
+            setIsLoadingRecents(true);
+            const manualFolders = selectedItem.children || [];
+
+            if (selectedItem.hasRecents && window.electron?.getAppRecents) {
+              window.electron!.getAppRecents(selectedItem.label, selectedItem.command).then(recents => {
+                setIsLoadingRecents(false);
+                const seenPaths = new Set(manualFolders.map(c => c.command));
+                const uniqueRecents = recents.filter(r => !seenPaths.has(r.command));
+                const combined = [...manualFolders, ...uniqueRecents];
+
+                if (combined.length > 0) {
+                  setFolderStack([...folderStack, { label: selectedItem.label, apps: combined }]);
+                  setCurrentLevelApps(combined);
+                  setHasMoved(false);
+                  setActiveIndex(null);
+                } else {
+                  onClose(selectedItem.id);
+                }
+              }).catch(() => {
+                setIsLoadingRecents(false);
+                onClose(selectedItem.id);
+              });
+            } else {
+              setIsLoadingRecents(false);
+              setFolderStack([...folderStack, { label: selectedItem.label, apps: manualFolders }]);
+              setCurrentLevelApps(manualFolders);
+              setHasMoved(false);
+              setActiveIndex(null);
+            }
           } else {
             onClose(selectedItem.id);
           }
@@ -592,7 +673,15 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                 }
               }}
             >
-              {isCenterActive ? (
+              {isLoadingRecents ? (
+                <div className="flex flex-col items-center justify-center animate-in fade-in duration-300">
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
+                    className="w-6 h-6 border-2 border-white/10 border-t-white/60 rounded-full"
+                  />
+                </div>
+              ) : isCenterActive ? (
                 <div className="flex flex-col items-center animate-in fade-in duration-300">
                   <CenterIcon size={isRoot && config.centerButton?.type === 'none' ? Math.round(actualIconSize * 0.65) : Math.round(actualIconSize * 0.5)} strokeWidth={1.5} />
                 </div>
@@ -709,12 +798,49 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                     onMouseUp={(e) => e.stopPropagation()}
                     onClick={(e) => {
                       e.stopPropagation();
-                      // console.log("RadialMenu: Selection clicked:", app.label, "ID:", app.id);
+                      const isKnownIDE = (item: any) => {
+                        const l = item.label?.toLowerCase() || '';
+                        return l.includes('antigravity') || l.includes('cursor') || l.includes('vs code') || l.includes('vscode');
+                      };
+
+                      const hasRecentFetch = (app.hasRecents) && window.electron?.getAppRecents;
+                      const hasManualFolders = app.children && app.children.length > 0;
+
                       if (app.type === 'folder' && app.children) {
                         setFolderStack([...folderStack, { label: app.label, apps: app.children }]);
                         setCurrentLevelApps(app.children);
                         setHasMoved(false);
                         setActiveIndex(null);
+                      } else if (hasRecentFetch || hasManualFolders) {
+                        setIsLoadingRecents(true);
+                        const manualFolders = app.children || [];
+
+                        if (app.hasRecents && window.electron?.getAppRecents) {
+                          window.electron!.getAppRecents(app.label, app.command).then(recents => {
+                            setIsLoadingRecents(false);
+                            const seenPaths = new Set(manualFolders.map(c => c.command));
+                            const uniqueRecents = recents.filter(r => !seenPaths.has(r.command));
+                            const combined = [...manualFolders, ...uniqueRecents];
+
+                            if (combined.length > 0) {
+                              setFolderStack([...folderStack, { label: app.label, apps: combined }]);
+                              setCurrentLevelApps(combined);
+                              setHasMoved(false);
+                              setActiveIndex(null);
+                            } else {
+                              onClose(app.id);
+                            }
+                          }).catch(() => {
+                            setIsLoadingRecents(false);
+                            onClose(app.id);
+                          });
+                        } else {
+                          setIsLoadingRecents(false);
+                          setFolderStack([...folderStack, { label: app.label, apps: manualFolders }]);
+                          setCurrentLevelApps(manualFolders);
+                          setHasMoved(false);
+                          setActiveIndex(null);
+                        }
                       } else {
                         onClose(app.id);
                       }
