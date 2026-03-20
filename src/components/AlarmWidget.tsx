@@ -29,11 +29,9 @@ export const AlarmWidget: React.FC<AlarmWidgetProps> = ({ isOpen, onClose, alarm
             enabled: true
         };
 
-        // Sort alarms by time
         const updatedAlarms = [...alarms, newAlarm].sort((a, b) => a.time.localeCompare(b.time));
         setAlarms(updatedAlarms);
 
-        // Reset
         setNewTime('08:00');
         setNewLabel('');
         setIsAdding(false);
@@ -55,133 +53,167 @@ export const AlarmWidget: React.FC<AlarmWidgetProps> = ({ isOpen, onClose, alarm
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="absolute inset-0 bg-black/80 backdrop-blur-md"
+                className="absolute inset-0 bg-black/60 backdrop-blur-2xl"
                 onClick={onClose}
             />
 
             <motion.div
-                initial={{ scale: 0.95, opacity: 0, y: 20 }}
+                initial={{ scale: 0.98, opacity: 0, y: 10 }}
                 animate={{ scale: 1, opacity: 1, y: 0 }}
-                exit={{ scale: 0.95, opacity: 0, y: 20 }}
-                className="relative bg-[#0f0f0f] border border-white/10 rounded-3xl shadow-2xl overflow-hidden w-[400px] h-[600px] flex flex-col z-[70]"
+                exit={{ scale: 0.98, opacity: 0, y: 10 }}
+                className="relative bg-[#080808] border border-white/10 rounded-[2.5rem] shadow-[0_50px_100px_-20px_rgba(0,0,0,1)] w-[920px] h-[640px] flex overflow-hidden z-[70]"
                 onClick={e => e.stopPropagation()}
             >
-                {/* Header */}
-                <div className="p-6 border-b border-white/10 flex justify-between items-center bg-[#141414]">
-                    <div className="flex items-center gap-3">
-                        <Bell className="text-white" size={20} />
-                        <h2 className="text-white font-medium text-lg">{t('alarm.title')}</h2>
-                    </div>
-                    <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
-                        <X size={20} />
-                    </button>
-                </div>
-
-                {/* List */}
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3">
-                    {alarms.map(alarm => (
-                        <motion.div
-                            key={alarm.id}
-                            layout
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className={`
-                        p-4 rounded-xl border flex items-center justify-between transition-colors
-                        ${alarm.enabled ? 'bg-white/5 border-white/10' : 'bg-black/40 border-white/5 opacity-60'}
-                    `}
-                        >
+                {/* Main Content: Precision Grid */}
+                <div className="flex-1 flex flex-col p-10 relative">
+                    <div className="flex justify-between items-center mb-10">
+                        <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white/40">
+                                <Bell size={20} />
+                            </div>
                             <div>
-                                <div className={`text-3xl font-light tracking-tight ${alarm.enabled ? 'text-white' : 'text-white/50'}`}>
-                                    {alarm.time}
-                                </div>
-                                <div className="text-xs text-white/40 uppercase tracking-wide font-medium mt-1">
-                                    {alarm.label}
-                                </div>
+                                <h2 className="text-white font-bold text-lg tracking-tight leading-none mb-1">CHRONOS</h2>
+                                <p className="text-[9px] text-white/20 font-black uppercase tracking-[0.3em]">{alarms.length} Alarms Tracked</p>
                             </div>
-                            <div className="flex items-center gap-4">
-                                <button
-                                    onClick={() => toggleAlarm(alarm.id)}
-                                    className={`
-                                w-10 h-6 rounded-full relative transition-colors duration-300
-                                ${alarm.enabled ? 'bg-green-500' : 'bg-white/10'}
-                            `}
-                                >
-                                    <div className={`
-                                absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-300
-                                ${alarm.enabled ? 'translate-x-4' : 'translate-x-0'}
-                            `} />
-                                </button>
-                                <button
-                                    onClick={() => deleteAlarm(alarm.id)}
-                                    className="text-white/20 hover:text-red-400 transition-colors"
-                                >
-                                    <Trash2 size={16} />
-                                </button>
-                            </div>
-                        </motion.div>
-                    ))}
-
-                    {alarms.length === 0 && (
-                        <div className="flex flex-col items-center justify-center h-full text-white/20 gap-4 mt-20">
-                            <Clock size={48} strokeWidth={1} />
-                            <p className="text-sm">{t('alarm.no_alarms')}</p>
                         </div>
-                    )}
+                        <button
+                          onClick={() => setIsAdding(true)}
+                          className="px-6 py-2.5 rounded-xl bg-white text-black text-[10px] font-black uppercase tracking-widest hover:bg-gray-200 transition-all flex items-center gap-3"
+                        >
+                          <Plus size={16} /> Deploy New
+                        </button>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
+                        {alarms.length === 0 ? (
+                            <div className="h-full flex flex-col items-center justify-center text-white/10 gap-6 opacity-40">
+                                <Clock size={64} strokeWidth={1} />
+                                <p className="text-[10px] font-black uppercase tracking-[0.4em]">{t('alarm.no_alarms')}</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-2 gap-4">
+                                <AnimatePresence mode="popLayout">
+                                    {alarms.map(alarm => (
+                                        <motion.div
+                                            key={alarm.id}
+                                            layout
+                                            initial={{ opacity: 0, scale: 0.95 }}
+                                            animate={{ opacity: 1, scale: 1 }}
+                                            exit={{ opacity: 0, scale: 0.95 }}
+                                            className={`
+                                                p-6 rounded-[2rem] border transition-all duration-300 flex flex-col justify-between h-[180px] group
+                                                ${alarm.enabled ? 'bg-white/[0.03] border-white/10 shadow-xl' : 'bg-transparent border-white/5 opacity-30 grayscale'}
+                                            `}
+                                        >
+                                            <div className="flex justify-between items-start">
+                                                <div className="flex flex-col gap-1">
+                                                    <span className="text-[9px] text-white/20 font-black uppercase tracking-widest">{alarm.label}</span>
+                                                    <div className="text-5xl font-medium tracking-tight tabular-nums text-white" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                                                        {alarm.time}
+                                                    </div>
+                                                </div>
+                                                <button
+                                                  onClick={() => toggleAlarm(alarm.id)}
+                                                  className={`w-14 h-7 rounded-full relative transition-all duration-300 ${alarm.enabled ? 'bg-white' : 'bg-white/10'}`}
+                                                >
+                                                    <motion.div
+                                                      animate={{ x: alarm.enabled ? 32 : 4 }}
+                                                      className={`absolute top-1 w-5 h-5 rounded-full shadow-md ${alarm.enabled ? 'bg-black' : 'bg-white/40'}`}
+                                                      transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                                                    />
+                                                </button>
+                                            </div>
+
+                                            <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                                                <button
+                                                  onClick={() => deleteAlarm(alarm.id)}
+                                                  className="p-3 rounded-xl text-white/10 hover:text-red-400 hover:bg-red-400/10 transition-all"
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </div>
+                                        </motion.div>
+                                    ))}
+                                </AnimatePresence>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="mt-10 py-4 opacity-5 flex flex-col items-center select-none pointer-events-none grayscale">
+                        <div className="text-3xl font-extrabold tracking-tighter" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>ZENITH LABS</div>
+                        <div className="text-[7px] uppercase tracking-[0.6em] font-black mt-[-4px]">Precision Instrument</div>
+                    </div>
                 </div>
 
-                {/* Add Section */}
-                <div className="p-6 border-t border-white/10 bg-[#141414]">
-                    <AnimatePresence mode="wait">
-                        {isAdding ? (
-                            <motion.div
-                                initial={{ height: 0, opacity: 0 }}
-                                animate={{ height: 'auto', opacity: 1 }}
-                                exit={{ height: 0, opacity: 0 }}
-                                className="space-y-4"
-                            >
-                                <div className="flex gap-4">
+                {/* Side Panel: Create/Edit Alarm */}
+                <AnimatePresence>
+                    {isAdding && (
+                        <motion.div
+                            initial={{ x: '100%' }}
+                            animate={{ x: 0 }}
+                            exit={{ x: '100%' }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                            className="w-[320px] bg-white/[0.02] border-l border-white/10 backdrop-blur-3xl flex flex-col p-8 z-30"
+                        >
+                            <div className="flex justify-between items-center mb-10">
+                                <h3 className="text-white text-xs font-black uppercase tracking-[0.2em]">New Schedule</h3>
+                                <button onClick={() => setIsAdding(false)} className="text-white/20 hover:text-white transition-colors">
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            <div className="space-y-10 flex-1">
+                                <div className="space-y-4">
+                                    <label className="text-[9px] text-white/20 uppercase tracking-[0.2em] font-black ml-1">Precision Time</label>
                                     <input
                                         type="time"
                                         value={newTime}
                                         onChange={(e) => setNewTime(e.target.value)}
-                                        className="bg-[#0f0f0f] border border-white/10 rounded-lg p-3 text-white text-xl w-full outline-none focus:border-white/30"
+                                        className="bg-white/5 border border-white/10 rounded-2xl p-6 text-white text-5xl font-medium w-full outline-none focus:border-white/30 transition-all text-center [color-scheme:dark]"
+                                        style={{ fontFamily: "'Space Grotesk', sans-serif" }}
                                     />
                                 </div>
-                                <input
-                                    type="text"
-                                    placeholder={t('alarm.label_placeholder')}
-                                    value={newLabel}
-                                    onChange={(e) => setNewLabel(e.target.value)}
-                                    className="bg-[#0f0f0f] border border-white/10 rounded-lg p-3 text-white text-sm w-full outline-none focus:border-white/30"
-                                />
-                                <div className="flex gap-2 pt-2">
-                                    <button
-                                        onClick={() => setIsAdding(false)}
-                                        className="flex-1 py-3 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 text-sm font-medium transition-colors"
-                                    >
-                                        {t('welcome.cancel')}
-                                    </button>
-                                    <button
-                                        onClick={handleSave}
-                                        className="flex-1 py-3 rounded-lg bg-white text-black hover:bg-gray-200 text-sm font-semibold transition-colors"
-                                    >
-                                        {t('alarm.set_alarm')}
-                                    </button>
-                                </div>
-                            </motion.div>
-                        ) : (
-                            <button
-                                onClick={() => setIsAdding(true)}
-                                className="w-full py-4 rounded-xl border border-dashed border-white/20 hover:border-white/40 hover:bg-white/5 text-white/50 hover:text-white transition-all flex items-center justify-center gap-2 group"
-                            >
-                                <Plus size={20} className="group-hover:scale-110 transition-transform" />
-                                <span className="font-medium">{t('alarm.add_new')}</span>
-                            </button>
-                        )}
-                    </AnimatePresence>
-                </div>
 
+                                <div className="space-y-4">
+                                    <label className="text-[9px] text-white/20 uppercase tracking-[0.2em] font-black ml-1">Identification</label>
+                                    <input
+                                        type="text"
+                                        placeholder={t('alarm.label_placeholder')}
+                                        value={newLabel}
+                                        onChange={(e) => setNewLabel(e.target.value)}
+                                        className="bg-white/5 border border-white/10 rounded-2xl p-5 text-white text-sm w-full outline-none focus:border-white/30 transition-all"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col gap-3">
+                                <button
+                                    onClick={handleSave}
+                                    className="w-full py-5 rounded-2xl bg-white text-black font-black uppercase tracking-[0.2em] text-[10px] hover:bg-gray-200 transition-all"
+                                >
+                                    Activate Alarm
+                                </button>
+                                <button
+                                    onClick={() => setIsAdding(false)}
+                                    className="w-full py-5 rounded-2xl bg-white/5 text-white/30 font-black uppercase tracking-[0.2em] text-[10px] hover:bg-white/10 transition-all"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                {/* Global Close Button */}
+                {!isAdding && (
+                  <button
+                    onClick={onClose}
+                    className="absolute top-8 right-8 p-3 rounded-full bg-white/5 text-white/20 hover:text-white hover:bg-white/10 transition-all border border-transparent hover:border-white/10 z-20"
+                  >
+                    <X size={20} />
+                  </button>
+                )}
             </motion.div>
         </div>
     );
-};
+};

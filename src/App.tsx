@@ -57,6 +57,7 @@ export default function App() {
   const [lastLaunched, setLastLaunched] = useState<AppItem | null>(null);
   const [executionError, setExecutionError] = useState<string | null>(null);
   const [isDesktopMode, setIsDesktopMode] = useState(false);
+  const [isAppReady, setIsAppReady] = useState(true); // Defaults to true so initial loading works normally
 
   // State for Apps and Config (Defaults to initial constants)
   const [apps, setApps] = useState<AppItem[]>(DEFAULT_APPS);
@@ -412,6 +413,7 @@ export default function App() {
   // TRACK WINDOW STATE TO PREVENT REDUNDANT IPC CALLS (Reduces Lag/Flicker)
   const lastWindowState = useRef<'fullscreen' | 'windowed' | 'small' | null>(null);
   const lastVisibility = useRef<boolean | null>(null);
+  const hideTimeout = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (window.electron && isDesktopMode) {
@@ -420,20 +422,54 @@ export default function App() {
         ? 'fullscreen'
         : (isDashboardOpen || isSettingsOpen) ? 'windowed' : 'small';
 
-      // 1. Only update window SIZE if mode actually changed
-      if (lastWindowState.current !== targetMode) {
-        // console.log(`[App.tsx] Updating window size to: ${targetMode}`);
+      const modeChanged = lastWindowState.current !== targetMode;
+      const visibilityChanged = lastVisibility.current !== isAnyInteractive;
+
+      // 1. Handle mode changes if they happen while visible (avoids resize flicker)
+      if (modeChanged && lastVisibility.current && isAnyInteractive && targetMode !== 'small') {
+        // dip visibility during resize
+        window.electron.hideWindow();
+        setTimeout(() => {
+          window.electron.setWindowSize(targetMode);
+          setTimeout(() => {
+            window.electron.showWindow();
+          }, 80); // Stabilization delay for resize + paint
+        }, 10);
+        lastWindowState.current = targetMode;
+        return; 
+      }
+
+      // 2. Standard mode update (non-flicker-prone or hidden)
+      if (modeChanged) {
         window.electron.setWindowSize(targetMode);
         lastWindowState.current = targetMode;
       }
 
-      // 2. Only update VISIBILITY if status changed
-      if (lastVisibility.current !== isAnyInteractive) {
-        // console.log(`[App.tsx] Updating visibility to: ${isAnyInteractive}`);
+      // 3. Standard visibility update
+      if (visibilityChanged) {
         if (isAnyInteractive) {
-          window.electron.showWindow();
+          if (hideTimeout.current) {
+            clearTimeout(hideTimeout.current);
+            hideTimeout.current = null;
+          }
+          
+          // Flash Prevention phase 1: Cover everything with black
+          setIsAppReady(false);
+
+          setTimeout(() => {
+             window.electron.showWindow();
+             
+             // Flash Prevention phase 2: Reveal the app only after the native window 
+             // is fully opaque and Chromium has had time to paint the first frame.
+             setTimeout(() => setIsAppReady(true), 150);
+          }, 60);
         } else {
-          window.electron.hideWindow();
+          // Immediately cover with black to avoid flashing of stale exit frames
+          setIsAppReady(false);
+
+          hideTimeout.current = setTimeout(() => {
+            window.electron.hideWindow();
+          }, 500); // 500ms safety margin for all exit animations
         }
         lastVisibility.current = isAnyInteractive;
       }
@@ -469,22 +505,21 @@ export default function App() {
     setTriggerSource(source);
     setIsMenuOpen(true);
     isHolding.current = true;
-    setIsDashboardOpen(false); // Force close dashboard to prevent state conflict and ensure overlay mode
+    // setIsDashboardOpen(false); // REMOVED: Keep dashboard state open so it persists behind radial menu
   };
 
   // Workspace Switching Handler
-  const handleWorkspaceSwitch = (workspaceIndex: number) => {
-    if (workspaceIndex >= 0 && workspaceIndex < config.workspaces.length) {
-      const workspace = config.workspaces[workspaceIndex];
-      if (workspace.enabled) {
+  const handleWorkspaceSwitch = React.useCallback((workspaceIndex: number) => {
+    if (workspaceIndex >= 0 && workspaceIndex < configRef.current.workspaces.length) {
+      const workspace = configRef.current.workspaces[workspaceIndex];
+      if (workspace && workspace.enabled) {
         setConfig(prev => ({
           ...prev,
           activeWorkspaceIndex: workspaceIndex
         }));
-        // console.log(`Switched to workspace ${workspaceIndex + 1}: ${workspace.name}`);
       }
     }
-  };
+  }, []); // Stable reference since we use configRef.current inside if needed, or just let setConfig handle it
 
   // Centralized function to open settings and handle dashboard logic
   const handleOpenSettings = () => {
@@ -515,6 +550,9 @@ export default function App() {
 
   const handleKeyDown = (e: KeyboardEvent) => {
     /* Removed hardcoded Alt+Z */
+    if (e.key === 'Escape' && isMenuOpen) {
+      setIsMenuOpen(false);
+    }
   };
 
   const handleKeyUp = (e: KeyboardEvent) => {
@@ -530,7 +568,7 @@ export default function App() {
     }
   }, []);
 
-  const executeAction = (command: string, commandType: "app" | "url" | "folder", itemForToast?: AppItem) => {
+  const executeAction = (command: string, commandType: "app" | "url" | "folder", itemForToast?: AppItem, options?: { openTerminal?: boolean }) => {
     // console.log("🚀 Zenith executing:", command, "Type:", commandType, itemForToast);
     if (!command) {
       console.warn("Attempted to execute an empty command");
@@ -552,11 +590,11 @@ export default function App() {
 
     if (isDesktopMode && window.electron) {
       // console.log("Calling electron.executeCommand...");
-      window.electron.executeCommand(command, commandType);
+      window.electron.executeCommand(command, commandType, options);
       setTimeout(() => {
-        if (!isSettingsOpen && !isNotesOpen && !isPomodoroOpen) {
+        if (!isSettingsOpen && !isNotesOpen && !isPomodoroOpen && !isDashboardOpen) {
           window.electron?.setWindowSize('small');
-          window.electron?.hideWindow();
+          // Unified visibility effect will handle hiding automatically based on state
         }
       }, 1000);
     }
@@ -569,17 +607,33 @@ export default function App() {
 
     if (!selectedId && isDesktopMode && !isSettingsOpen && !isNotesOpen && !isPomodoroOpen && !ringingAlarm && !isDashboardOpen) {
       window.electron?.setWindowSize('small');
-      window.electron?.hideWindow();
+      // Unified visibility effect will handle hiding
       return;
     }
 
     if (selectedId) {
-      // If an app is launched, ensure dashboard is closed
-      setIsDashboardOpen(false);
+      // If an external app is launched, ensure dashboard is closed
+      const currentWorkspaceApps = config.workspaces[config.activeWorkspaceIndex]?.apps || apps;
+      const app = findAppRecursive(currentWorkspaceApps, selectedId);
+      
+      // Only close dashboard if it's NOT an internal widget (like Pomodoro, Notes, etc.)
+      const isInternalWidget = app?.command?.startsWith('internal:');
+      if (!isInternalWidget) {
+        setIsDashboardOpen(false);
+      }
     }
 
     if (selectedId === '__CENTER__') {
       const centerConfig = config.centerButton;
+      
+      if (centerConfig.type === 'cancel') {
+        if (isDesktopMode && !isSettingsOpen && !isNotesOpen && !isPomodoroOpen && !ringingAlarm && !isDashboardOpen) {
+          window.electron?.setWindowSize('small');
+          // Unified visibility effect will handle hiding
+        }
+        return;
+      }
+
       const currentWorkspaceApps = config.workspaces[config.activeWorkspaceIndex]?.apps || apps;
 
       if (centerConfig.type === 'app' || centerConfig.type === 'widget') {
@@ -601,7 +655,7 @@ export default function App() {
       console.log("Selected app found in active workspace:", app);
       if (app) {
         console.log("Attempting to execute app command:", app.command);
-        executeAction(app.command, app.commandType || 'app', app);
+        executeAction(app.command, app.commandType || 'app', app, { openTerminal: app.openTerminal });
       } else {
         console.warn("Could not find app with ID in active workspace:", selectedId);
       }
@@ -640,7 +694,10 @@ export default function App() {
       `}
       onMouseDown={handleMouseDown}
       onDoubleClick={handleDoubleClick}
-      onContextMenu={(e) => e.preventDefault()}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        if (isMenuOpen) setIsMenuOpen(false);
+      }}
     >
 
 
@@ -699,7 +756,7 @@ export default function App() {
 
         {/* WELCOME SCREEN / DASHBOARD */}
         <AnimatePresence>
-          {isDashboardOpen && !isSettingsOpen && !isMenuOpen && !isNotesOpen && !isAlarmWidgetOpen && !isStopwatchOpen && !isPomodoroOpen && !ringingAlarm && (
+          {isDashboardOpen && !isSettingsOpen && !isNotesOpen && !isAlarmWidgetOpen && !isStopwatchOpen && !isPomodoroOpen && !ringingAlarm && (
             <motion.div
               key="welcome"
               initial={{ opacity: 0, filter: 'blur(10px)' }}
@@ -748,21 +805,16 @@ export default function App() {
           currentWorkspace={config.workspaces[config.activeWorkspaceIndex]}
         />
 
-        <NotesWidget isOpen={isNotesOpen} onClose={() => { setIsNotesOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} notes={notes} setNotes={setNotes} config={config} />
-        <AlarmWidget isOpen={isAlarmWidgetOpen} onClose={() => { setIsAlarmWidgetOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} alarms={alarms} setAlarms={setAlarms} config={config} />
-        <StopwatchWidget isOpen={isStopwatchOpen} onClose={() => { setIsStopwatchOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} config={config} />
-        <PomodoroWidget isOpen={isPomodoroOpen} onClose={() => { setIsPomodoroOpen(false); if (isDesktopMode) window.electron?.hideWindow(); }} {...pomodoro} uiConfig={config} />
+        <NotesWidget isOpen={isNotesOpen} onClose={() => { setIsNotesOpen(false); }} notes={notes} setNotes={setNotes} config={config} />
+        <AlarmWidget isOpen={isAlarmWidgetOpen} onClose={() => { setIsAlarmWidgetOpen(false); }} alarms={alarms} setAlarms={setAlarms} config={config} />
+        <StopwatchWidget isOpen={isStopwatchOpen} onClose={() => { setIsStopwatchOpen(false); }} config={config} />
+        <PomodoroWidget isOpen={isPomodoroOpen} onClose={() => { setIsPomodoroOpen(false); }} {...pomodoro} uiConfig={config} />
 
         <SettingsModal
           isOpen={isSettingsOpen}
           isPage={isDashboardOpen}
           onClose={() => {
             setIsSettingsOpen(false);
-            if (isDashboardOpen) {
-              // Staying on dashboard if we were already there
-            } else if (isDesktopMode && !isMenuOpen) {
-              window.electron?.hideWindow();
-            }
           }}
           apps={apps} setApps={setApps} config={config} setConfig={setConfig} onReset={() => { setApps(DEFAULT_APPS); setConfig(DEFAULT_UI_CONFIG); }}
           onOpenDashboard={() => {
@@ -798,9 +850,16 @@ export default function App() {
           )}
         </AnimatePresence>
 
+        {/* FLASH PREVENTION BLANKER */}
+        {!isAppReady && (
+          <div 
+            className="fixed inset-0 z-[99999] bg-black flex items-center justify-center" 
+            style={{ opacity: 1, pointerEvents: 'none' }}
+          />
+        )}
+
         <style>{`
           .group:active { cursor: ${isAnyModalOpen ? 'default' : 'crosshair'}; }
-          ${isMenuOpen ? '#dashboard-container { display: none !important; }' : ''}
         `}</style>
       </div>
 

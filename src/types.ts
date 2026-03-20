@@ -23,6 +23,7 @@ export interface AppItem {
   shortcut?: string;
   children?: AppItem[];
   hasRecents?: boolean; // New: indicates if the app should show recent folders
+  openTerminal?: boolean; // New: indicates if opening this item should also open a terminal
 }
 
 export interface WidgetDefinition {
@@ -77,7 +78,7 @@ export interface PomodoroState {
 }
 
 export interface CenterButtonConfig {
-  type: "app" | "widget" | "command" | "none";
+  type: "app" | "widget" | "command" | "none" | "cancel";
   target: string;
   label: string;
   iconName: string;
@@ -143,6 +144,7 @@ export interface ElectronAPI {
   executeCommand: (
     command: string,
     commandType: "app" | "url" | "folder",
+    options?: { openTerminal?: boolean },
   ) => void;
   hideWindow: () => void;
   showWindow: () => void;
@@ -202,6 +204,9 @@ export interface ElectronAPI {
   saveFullConfig: (config: any) => void;
   getFullConfig: () => Promise<any>;
   getAppRecents: (appName: string, appCommand?: string) => Promise<AppItem[]>;
+  setWorkspaceShortcutsState: (isOpen: boolean) => void;
+  exportConfig: () => Promise<{ success: boolean; error?: string }>;
+  importConfig: () => Promise<{ success: boolean; error?: string }>;
 }
 
 declare global {

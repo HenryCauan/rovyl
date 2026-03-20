@@ -1,8 +1,8 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("electron", {
-  executeCommand: (command, commandType) =>
-    ipcRenderer.send("execute-command", command, commandType),
+  executeCommand: (command, commandType, options) =>
+    ipcRenderer.send("execute-command", command, commandType, options),
   hideWindow: () => ipcRenderer.send("hide-window"),
   showWindow: () => ipcRenderer.send("show-window"),
   onOpenMenu: (callback) => {
@@ -73,14 +73,18 @@ contextBridge.exposeInMainWorld("electron", {
   startShortcutRecording: () => ipcRenderer.send("start-shortcut-recording"),
   stopShortcutRecording: () => ipcRenderer.send("stop-shortcut-recording"),
   onShortcutRecorded: (callback) => {
-    const listener = (event, shortcut) => callback(shortcut);
-    ipcRenderer.on("shortcut-recorded", listener);
-    return () => ipcRenderer.removeListener("shortcut-recorded", listener);
+    const subscription = (event, shortcut) => callback(shortcut);
+    ipcRenderer.on("shortcut-recorded", subscription);
+    return () => ipcRenderer.removeListener("shortcut-recorded", subscription);
   },
   saveFullConfig: (config) => ipcRenderer.send("save-full-config", config),
   getFullConfig: () => ipcRenderer.invoke("get-full-config"),
+  exportConfig: () => ipcRenderer.invoke("export-config"),
+  importConfig: () => ipcRenderer.invoke("import-config"),
   getAppRecents: (appName, appCommand) =>
     ipcRenderer.invoke("get-app-recents", appName, appCommand),
+  setWorkspaceShortcutsState: (isOpen) =>
+    ipcRenderer.send("set-workspace-shortcuts", isOpen),
 });
 
 // Intercept console messages from the renderer process and send them to the main process

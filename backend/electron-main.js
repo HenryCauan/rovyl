@@ -366,35 +366,9 @@ function setupMainWindow(window) {
   // DISABLED FOR DEBUG: window.setIgnoreMouseEvents(true, { forward: true });
 }
 
-// WORKSPACE SHORTCUT MANAGEMENT
-function registerWorkspaceShortcuts() {
-  const shortcutKeys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
 
-  shortcutKeys.forEach((key) => {
-    // Optimization: Only register if not already managed by us
-    if (!globalShortcut.isRegistered(key)) {
-      globalShortcut.register(key, () => {
-        const index = key === "0" ? 9 : parseInt(key) - 1;
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          diagLog(
-            `[GlobalShortcut] Key ${key} pressed -> Switching to workspace ${index}`,
-          );
-          mainWindow.webContents.send("switch-workspace", index);
-        }
-      });
-    }
-  });
-}
 
-function unregisterWorkspaceShortcuts() {
-  const shortcutKeys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
-  shortcutKeys.forEach((key) => {
-    if (globalShortcut.isRegistered(key)) {
-      globalShortcut.unregister(key);
-    }
-  });
-  console.log("[Shortcuts] Unregistered workspace keys");
-}
+
 
 function showMenuAtCursor(source = "shortcut") {
   if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -408,24 +382,36 @@ function showMenuAtCursor(source = "shortcut") {
     updateWindowSize("fullscreen");
   }
 
-  // 3. Visibility & Interaction (Instant)
-  mainWindow.setOpacity(1);
+  // 3. Visibility & Interaction - CRITICAL FIX
+  // First, ensure the window is fully transparent before showing it.
+  mainWindow.setOpacity(0);
   mainWindow.setIgnoreMouseEvents(false);
 
   // 4. Aggressive Focus
-  mainWindow.show(); // Ensure OS knows it's active
+  // Show the window. Because opacity is 0, it will be invisible. This prevents
+  // the user from seeing the stale content from the previous view.
+  mainWindow.show();
   mainWindow.focus();
   mainWindow.webContents.focus();
 
-  // 5. Cleanup/Register inputs
-  registerWorkspaceShortcuts();
-
+  // 5. Send IPC to Renderer
+  // Tell the React app to render the radial menu.
   const cursorPoint = screen.getCursorScreenPoint();
   mainWindow.webContents.send("open-menu", {
     x: cursorPoint.x,
     y: cursorPoint.y,
     source: source,
   });
+
+  // 6. Fade In
+  // After a small delay, fade the window in. This gives the renderer time
+  // to process the 'open-menu' event and draw the new UI, avoiding the flash.
+  // 32ms is used as it's a safe value used elsewhere in the app.
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setOpacity(1);
+    }
+  }, 32);
 }
 
 function updateWindowSize(mode) {
@@ -443,7 +429,6 @@ function updateWindowSize(mode) {
       height: screenHeight,
     });
     mainWindow.setResizable(true);
-    mainWindow.setOpacity(1); // ENSURE VISIBILITY
     mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
     mainWindow.setIgnoreMouseEvents(false);
   } else if (mode === "windowed") {
@@ -456,8 +441,6 @@ function updateWindowSize(mode) {
     isUpdatingBounds = false;
     mainWindow.setAlwaysOnTop(false);
     mainWindow.setIgnoreMouseEvents(false);
-    mainWindow.setOpacity(1);
-    if (!mainWindow.isVisible()) mainWindow.show();
   } else if (mode === "small") {
     if (mainWindow.isFullScreen()) {
       mainWindow.setFullScreen(false);
@@ -472,7 +455,6 @@ function updateWindowSize(mode) {
       width: screenWidth,
       height: screenHeight,
     });
-    mainWindow.setOpacity(1);
   }
 }
 
@@ -619,6 +601,75 @@ app.whenReady().then(async () => {
     }
   });
 
+  ipcMain.handle("export-config", async () => {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: "Exportar Backup Zenith",
+      defaultPath: path.join(app.getPath("downloads"), "zenith-backup.json"),
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+
+    if (result.canceled || !result.filePath) return { success: false };
+
+    try {
+      const configPath = path.join(app.getPath("userData"), "config-v2.json");
+      const settingsPath = path.join(app.getPath("userData"), "settings.json");
+      const iconCachePath = path.join(app.getPath("userData"), "icon-cache.json");
+
+      const backup = {
+        version: "1.0",
+        timestamp: new Date().toISOString(),
+        config: fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, "utf-8")) : null,
+        settings: fs.existsSync(settingsPath) ? JSON.parse(fs.readFileSync(settingsPath, "utf-8")) : null,
+        iconCache: fs.existsSync(iconCachePath) ? JSON.parse(fs.readFileSync(iconCachePath, "utf-8")) : null,
+      };
+
+      fs.writeFileSync(result.filePath, JSON.stringify(backup, null, 2));
+      diagLog(`[Backup] Configuration exported to ${result.filePath}`);
+      return { success: true };
+    } catch (e) {
+      console.error("Export failed:", e);
+      diagLog(`[ERROR] Export failed: ${e.message}`);
+      return { success: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle("import-config", async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: "Importar Backup Zenith",
+      filters: [{ name: "JSON", extensions: ["json"] }],
+      properties: ["openFile"],
+    });
+
+    if (result.canceled || result.filePaths.length === 0) return { success: false };
+
+    try {
+      const data = JSON.parse(fs.readFileSync(result.filePaths[0], "utf-8"));
+      
+      if (!data.config && !data.settings) {
+        throw new Error("Arquivo de backup inválido: Nenhum dado de configuração encontrado.");
+      }
+
+      const configPath = path.join(app.getPath("userData"), "config-v2.json");
+      const settingsPath = path.join(app.getPath("userData"), "settings.json");
+      const iconCachePath = path.join(app.getPath("userData"), "icon-cache.json");
+
+      if (data.config) fs.writeFileSync(configPath, JSON.stringify(data.config, null, 2));
+      if (data.settings) fs.writeFileSync(settingsPath, JSON.stringify(data.settings, null, 2));
+      if (data.iconCache) fs.writeFileSync(iconCachePath, JSON.stringify(data.iconCache, null, 2));
+
+      diagLog(`[Backup] Configuration imported from ${result.filePaths[0]}. Relaunching...`);
+      
+      // Safety relaunch
+      app.relaunch();
+      app.exit(0);
+      return { success: true };
+    } catch (e) {
+      console.error("Import failed:", e);
+      diagLog(`[ERROR] Import failed: ${e.message}`);
+      return { success: false, error: e.message };
+    }
+  });
+
   ipcMain.handle("get-app-recents", async (event, appName, appCommand) => {
     const appData = process.env.APPDATA;
     let storagePath = "";
@@ -724,11 +775,10 @@ app.whenReady().then(async () => {
   // 2. Create Window
   mainWindow = await createWindow();
 
-  // Safety: Unregister shortcuts ONLY if window is truly inactive/hidden
-  // Avoid unregistering on every minor blur if we are still the active overlay
+  // Safety: Avoid unregistering on every minor blur if we are still the active overlay
   mainWindow.on("blur", () => {
     if (mainWindow && !mainWindow.isVisible()) {
-      unregisterWorkspaceShortcuts();
+      // Nothing to unregister here anymore
     }
   });
 
@@ -954,6 +1004,31 @@ app.whenReady().then(async () => {
     stopShortcutRecording();
   });
 
+  ipcMain.on("set-workspace-shortcuts", (event, isOpen) => {
+    for (let i = 1; i <= 9; i++) {
+      try {
+        globalShortcut.unregister(i.toString());
+      } catch (e) {}
+    }
+
+    if (isOpen) {
+      for (let i = 1; i <= 9; i++) {
+        try {
+          const success = globalShortcut.register(i.toString(), () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send("switch-workspace", i - 1);
+            }
+          });
+          if (!success) {
+            diagLog(`[Shortcuts] Failed to register workspace shortcut ${i}`);
+          }
+        } catch (e) {
+          diagLog(`[Shortcuts] Exception registering workspace shortcut ${i}: ${e.message}`);
+        }
+      }
+    }
+  });
+
   // Open Settings Window Handler
 
   // Helper to handle ASAR path for child processes
@@ -1083,7 +1158,7 @@ const escapeCommand = (cmd) => {
 };
 
 // IPC: Recebe comando do React para executar app
-ipcMain.on("execute-command", async (event, command, commandType) => {
+ipcMain.on("execute-command", async (event, command, commandType, options = {}) => {
   if (!command || typeof command !== "string" || command.trim() === "") {
     console.warn("EXEC_ERROR: Received empty or invalid command");
     if (mainWindow) {
@@ -1204,6 +1279,10 @@ ipcMain.on("execute-command", async (event, command, commandType) => {
     const lower = cleanCmd.toLowerCase();
     const base = lower.split(" ")[0];
 
+    // Explicit common AppIDs that are known to work with shell:AppsFolder but might be short
+    const commonAppIds = ["msedge", "edge", "chrome", "spotify", "calculator", "notepad"];
+    if (commonAppIds.includes(lower)) return true;
+
     // Identify Windows Store apps, AUMIDs, and Shell/GUID namespaces
     return (
       lower.startsWith("shell:") ||
@@ -1213,7 +1292,8 @@ ipcMain.on("execute-command", async (event, command, commandType) => {
       lower.includes("discord") ||
       base.startsWith("{") || // GUID
       /^[A-F0-9]{8,64}$/i.test(base) || // Hex identifier
-      (base.includes(".") && !base.match(/\.(exe|lnk|bat|cmd|com|vbs|ps1)$/i) && !base.includes("\\") && !base.includes("/"))
+      // If it looks like a simple name without extension/path, treat as potential AUMID
+      (base.length > 2 && !base.match(/\.(exe|lnk|bat|cmd|com|vbs|ps1|txt|pdf|png|jpg|mp3|mp4)$/i) && !base.includes("\\") && !base.includes("/") && !base.includes("."))
     );
   };
 
@@ -1361,10 +1441,40 @@ ipcMain.on("execute-command", async (event, command, commandType) => {
 
     if (commandType === "folder") {
       diagLog("  → Detected: Explicit Folder (from commandType)");
-      await tryExecution("shell.openPath", resolvedCommand);
-      diagLog(
-        `\n✓✓✓ EXEC_SUCCESS: Opened Folder with 'shell.openPath' ✓✓✓\n`,
-      );
+      
+      if (options?.openTerminal) {
+        diagLog("  → Folder + Open Terminal requested");
+        const terminal = getPreferredTerminal();
+        let termCmd;
+        
+        // Ensure path is quoted for terminal
+        const safePath = resolvedCommand.includes(" ") && !resolvedCommand.startsWith('"') 
+          ? `"${resolvedCommand}"` 
+          : resolvedCommand;
+
+        if (terminal === "wt.exe") {
+          // Windows Terminal explicitly opens in directory with -d
+          termCmd = `wt.exe -d ${safePath}`;
+        } else {
+          // cmd or powershell: start in directory
+          termCmd = `start "" /D ${safePath} ${terminal}`;
+        }
+
+        diagLog(`[Exec] Spawning terminal in folder: ${termCmd}`);
+        try {
+          // We can use the existing exec_direct which runs the terminal
+          await tryExecution("exec_silent_spawn", termCmd);
+          diagLog(`\n✓✓✓ EXEC_SUCCESS: Terminal spawned for folder ✓✓✓\n`);
+        } catch (err) {
+          diagLog(`[Exec] Failed to spawn terminal, falling back to basic folder open: ${err.message}`);
+          await tryExecution("shell.openPath", resolvedCommand);
+        }
+      } else {
+        await tryExecution("shell.openPath", resolvedCommand);
+        diagLog(
+          `\n✓✓✓ EXEC_SUCCESS: Opened Folder with 'shell.openPath' ✓✓✓\n`,
+        );
+      }
       return;
     }
 
@@ -1412,9 +1522,86 @@ ipcMain.on("execute-command", async (event, command, commandType) => {
           try {
             await tryExecution("exec_silent_spawn", finalCommand);
             diagLog(`\n✓✓✓ EXEC_SUCCESS: Launched with 'exec_silent_spawn' (Mapped CLI) ✓✓✓\n`);
+            
+            // If the user also wants to open the terminal in this folder
+            if (options && options.openTerminal) {
+              const terminal = getPreferredTerminal();
+              let termCmd;
+              
+              // Extract the path from the mapped command
+              let pathArg = "";
+              if (finalCommand.startsWith('"')) {
+                const secondQuote = finalCommand.indexOf('"', 1);
+                if (secondQuote !== -1) {
+                   pathArg = finalCommand.substring(secondQuote + 1).trim();
+                } else {
+                   pathArg = finalCommand.substring(finalCommand.indexOf(' ') + 1).trim();
+                }
+              } else {
+                const firstSpace = finalCommand.indexOf(" ");
+                if (firstSpace !== -1) {
+                  pathArg = finalCommand.substring(firstSpace + 1).trim();
+                } else {
+                  pathArg = finalCommand;
+                }
+              }
+              
+              pathArg = pathArg.replace(/^"|"$/g, '').trim();
+              const safePath = `"${pathArg}"`;
+
+              if (terminal === "wt.exe") {
+                termCmd = `wt.exe -d ${safePath}`;
+              } else {
+                termCmd = `start "" /D ${safePath} ${terminal}`;
+              }
+              
+              diagLog(`[Exec] Also spawning terminal in IDE folder: ${termCmd}`);
+              await tryExecution("exec_silent_spawn", termCmd).catch(e => diagLog(`[Exec] Failed to spawn terminal: ${e.message}`));
+            }
+            
             return;
           } catch (e) {
             diagLog(`[Exec] Mapped CLI silent spawn failed: ${e.message}. Falling back to original AUMID sequence.`);
+          }
+        }
+        
+        if (options && options.openTerminal) {
+          // Attempt to extract path and open terminal. This is harder with raw AUMIDs
+          // like google.antigravity!Antigravity followed by a path.
+          const terminal = getPreferredTerminal();
+          let termCmd;
+          
+          let pathArg = "";
+          if (finalCommand.startsWith('"')) {
+             const secondQuote = finalCommand.indexOf('"', 1);
+             if (secondQuote !== -1) {
+                 pathArg = finalCommand.substring(secondQuote + 1).trim();
+             } else {
+                 pathArg = finalCommand.substring(finalCommand.indexOf(" ") + 1).trim();
+             }
+          } else {
+             const firstSpace = finalCommand.indexOf(" ");
+             if (firstSpace !== -1) {
+                 pathArg = finalCommand.substring(firstSpace + 1).trim();
+             } else {
+                 pathArg = finalCommand;
+             }
+          }
+          
+          pathArg = pathArg.replace(/^"|"$/g, '').trim();
+          
+          if (pathArg && (pathArg.includes(":\\") || pathArg.startsWith("\\") || pathArg.startsWith("/"))) {
+              const safePath = `"${pathArg}"`;
+
+              if (terminal === "wt.exe") {
+                termCmd = `wt.exe -d ${safePath}`;
+              } else {
+                termCmd = `start "" /D ${safePath} ${terminal}`;
+              }
+              
+              diagLog(`[Exec] Also spawning terminal in IDE AUMID folder: ${termCmd}`);
+              // Fire and forget terminal spawn
+              tryExecution("exec_silent_spawn", termCmd).catch(e => diagLog(`[Exec] Failed to spawn terminal: ${e.message}`));
           }
         }
         
@@ -1470,10 +1657,10 @@ ipcMain.on("execute-command", async (event, command, commandType) => {
     else {
       console.log("  → Detected: Simple command or Alias");
       methodsToTry = [
-        "exec_start",
-        "exec_direct",
-        "shell.openPath",
-        "exec_explorer_shell",
+        "exec_start",           // try 'start' which handles many aliases well
+        "exec_explorer_shell",  // try as AUMID
+        "shell.openPath",       // try as path
+        "exec_direct",          // last resort: terminal (shows error window if fails)
       ];
     }
 
@@ -1509,7 +1696,7 @@ ipcMain.on("execute-command", async (event, command, commandType) => {
 ipcMain.on("hide-window", () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
-  unregisterWorkspaceShortcuts();
+
 
   // Low latency "hide": Opacity + Passthrough + Blur
   mainWindow.setOpacity(0);
@@ -1521,10 +1708,18 @@ ipcMain.on("hide-window", () => {
 ipcMain.on("show-window", () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
-  mainWindow.setOpacity(1);
-  mainWindow.setIgnoreMouseEvents(false);
+  // First show the window but keep it transparent (opacity 0)
+  // This allows Chromium to start rendering but keeps it invisible to the user
   mainWindow.show();
   mainWindow.focus();
+  mainWindow.setIgnoreMouseEvents(false);
+  
+  // Wait a tiny bit (approx 2 frames at 60fps) to ensure the first new frame is ready
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setOpacity(1);
+    }
+  }, 32); 
 });
 
 ipcMain.handle("get-onboarding-apps", async () => {

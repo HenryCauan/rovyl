@@ -17,6 +17,174 @@ interface RadialMenuProps {
   currentWorkspace?: Workspace;
 }
 
+interface RadialMenuItemProps {
+  app: AppItem;
+  index: number;
+  isActive: boolean;
+  actualMenuRadius: number;
+  actualIconSize: number;
+  totalApps: number;
+  config: UIConfig;
+  folderStackLength: number;
+  onClick: (app: AppItem) => void;
+}
+
+const RadialMenuItem = React.memo(({
+  app, index, isActive, actualMenuRadius, actualIconSize, totalApps, config, folderStackLength, onClick
+}: RadialMenuItemProps) => {
+  const Icon = getIcon(app.iconName);
+  const sliceAngle = 360 / totalApps;
+  const angleDeg = (index * sliceAngle) - 90;
+  const angleRad = angleDeg * (Math.PI / 180);
+  const pos = {
+    x: actualMenuRadius * Math.cos(angleRad),
+    y: actualMenuRadius * Math.sin(angleRad),
+  };
+
+  const shouldUseCustomIcon = (() => {
+    // Lista de apps que devem usar ícone Lucide em vez do nativo por serem problemáticos ou feios
+    const LUCIDE_ICON_EXCEPTIONS = [
+      'Microsoft.WindowsTerminal',
+      'WindowsTerminal',
+      'Terminal',
+      'cmd.exe',
+      'powershell.exe'
+    ];
+
+    const isException = LUCIDE_ICON_EXCEPTIONS.some(exception =>
+      app.command?.toLowerCase().includes(exception.toLowerCase()) ||
+      app.label?.toLowerCase().includes(exception.toLowerCase())
+    );
+
+    if (isException) return false;
+
+    return app.iconSource === 'native' && !!app.customIconUrl;
+  })();
+
+  // Capped delay: scale it based on total apps but cap at maximum 150ms total stagger time
+  const maxDelay = 0.15;
+  const staggerDelay = Math.min((index / Math.max(totalApps, 1)) * maxDelay, maxDelay);
+
+  return (
+    <motion.div
+      key={`${app.id}-${folderStackLength}`} // Key change triggers animation
+      initial={{ scale: 0, opacity: 0, x: 0, y: 0 }}
+      animate={{
+        scale: isActive ? 1.15 : 1,
+        opacity: isActive ? 1 : 0.6,
+        x: pos.x,
+        y: pos.y
+      }}
+      exit={{ scale: 0, opacity: 0, transition: { duration: 0.06 } }}
+      transition={{
+        type: 'spring',
+        stiffness: 300,
+        damping: 22,
+        mass: 0.7,
+        delay: staggerDelay // Faster Staggered "bloom" entrance
+      }}
+      className="absolute top-0 left-0 pointer-events-auto cursor-pointer"
+      style={{ zIndex: isActive ? 200 : 100, willChange: 'transform, opacity' }}
+      onMouseDown={(e) => e.stopPropagation()}
+      onMouseUp={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick(app);
+      }}
+    >
+      <div className="relative flex items-center justify-center -translate-x-1/2 -translate-y-1/2">
+        {/* WRAPPER FOR BADGE & MASKED CONTENT */}
+        <div
+          className="relative z-20"
+          style={{
+            width: `${actualIconSize}px`,
+            height: `${actualIconSize}px`,
+          }}
+        >
+          {/* INNER MASKED CONTAINER (Overflow Hidden) */}
+          <div
+            className={`
+              w-full h-full rounded-2xl flex items-center justify-center overflow-hidden
+              transition-colors duration-200 relative
+              ${isActive ? 'shadow-[0_0_25px_rgba(255,255,255,0.15)]' : ''}
+            `}
+            style={{
+              backgroundColor: isActive ? config.accentColor : `rgba(${18 + Math.round(config.backdropOpacity * 12)}, ${18 + Math.round(config.backdropOpacity * 12)}, ${20 + Math.round(config.backdropOpacity * 12)}, 0.85)`,
+              border: isActive ? `1px solid ${config.accentColor}` : `1px solid rgba(255,255,255,${0.08 + config.backdropOpacity * 0.06})`,
+              color: isActive ? '#000' : '#fff',
+              boxShadow: !isActive ? `0 2px 12px rgba(0,0,0,0.3)` : undefined
+            }}
+          >
+            {/* Icon Container: Show either native icon OR vector icon, not both */}
+            <div className="w-full h-full flex items-center justify-center relative">
+              {shouldUseCustomIcon ? (
+                /* Native Icon (Automatically normalized) */
+                <SmartIcon
+                  src={app.customIconUrl!}
+                  alt={app.label}
+                  className="object-contain relative z-10"
+                  size={actualIconSize}
+                  referenceScale={0.88}
+                />
+              ) : (
+                /* Vector Icon (Only when no custom icon) */
+                <Icon size={Math.round(actualIconSize * 0.55)} strokeWidth={1.5} />
+              )}
+            </div>
+          </div>
+
+          {/* FOLDER BADGE (Outside Mask, Inside Wrapper) */}
+          {app.type === 'folder' && (
+            <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-white rounded-full flex items-center justify-center border-2 border-[#1A1A1A] z-30 shadow-md">
+              <div className="w-1 h-1 bg-black rounded-full" />
+              <div className="w-1 h-1 bg-black rounded-full ml-0.5" />
+            </div>
+          )}
+        </div>
+
+        {config.showLabels && (
+          <motion.div
+            className="absolute pointer-events-none z-30"
+            style={{
+              left: '50%',
+              top: '50%',
+              translateX: '-50%',
+              translateY: '0%',
+            }}
+            initial={{ opacity: 0, scale: 0.85, y: actualIconSize / 2 + 0 }}
+            animate={{
+              opacity: isActive ? 1 : 0,
+              scale: isActive ? 1 : 0.9,
+              x: 0,
+              y: actualIconSize / 2 + 4,
+            }}
+            exit={{ opacity: 0, scale: 0.85, y: actualIconSize / 2 + 0 }}
+            transition={{ type: 'spring', damping: 22, stiffness: 380, mass: 0.6 }}
+          >
+            <div
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl whitespace-nowrap"
+              style={{
+                background: 'rgba(8, 8, 10, 0.72)',
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
+                border: `1px solid rgba(255,255,255,0.09)`,
+                boxShadow: `0 8px 32px rgba(0,0,0,0.55), 0 0 0 0.5px rgba(255,255,255,0.04) inset`,
+              }}
+            >
+              <span
+                className="text-white/90 font-medium text-[13px] tracking-wide leading-none"
+                style={{ fontFamily: 'Space Grotesk, sans-serif' }}
+              >
+                {app.label}
+              </span>
+            </div>
+          </motion.div>
+        )}
+      </div>
+    </motion.div>
+  );
+});
+
 export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClose, apps, config, triggerSource = 'shortcut', onWorkspaceSwitch, currentWorkspace }) => {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [isCenterActive, setIsCenterActive] = useState(false);
@@ -119,10 +287,13 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
       setCurrentLevelApps(apps);
       setActiveIndex(null);
 
-      // CRITICAL: Focus window to ensure keyboard events are captured
-      // This is especially important when menu is opened via MMB
+      // CRITICAL: Focus window and body to ensure keyboard events are captured
+      // This is especially important when menu is opened via MMB or after dashboard interaction
       window.focus();
       document.body.focus();
+      if (menuRef.current) {
+        menuRef.current.focus();
+      }
     }
   }, [isOpen]);
 
@@ -297,7 +468,10 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
       }
     };
 
-    const handleContextMenu = (e: MouseEvent) => e.preventDefault();
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      onClose(null);
+    };
 
     window.addEventListener('mousemove', handleMouseMove, { passive: true });
     window.addEventListener('mouseup', handleMouseUp);
@@ -313,6 +487,13 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
     };
   }, [isOpen]);
 
+  // Sync workspace shortcuts state with main process (Fix for initial focus issue)
+  useEffect(() => {
+    if (window.electron?.setWorkspaceShortcutsState) {
+      window.electron.setWorkspaceShortcutsState(isOpen);
+    }
+  }, [isOpen]);
+
   // STABLE KEYBOARD LISTENER (Decoupled from interaction states to avoid missing events)
   useEffect(() => {
     if (!isOpen) return;
@@ -325,6 +506,8 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
         return;
       }
 
+
+
       // Workspace Switching (1-9)
       if (onWorkspaceSwitch) {
         const num = parseInt(e.key);
@@ -336,8 +519,8 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
   }, [isOpen, onWorkspaceSwitch, onClose]);
 
   // MMB Release Logic (Hold to Open -> Release to Execute)
@@ -479,6 +662,50 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
       // Actually, since menu is open only for short bursts, fetching on open is enough.
     }
   }, [isOpen, config.showBattery, config.showWeather, config.weatherLocation]);
+
+  const handleAppClick = React.useCallback((app: AppItem) => {
+    const hasRecentFetch = (app.hasRecents) && window.electron?.getAppRecents;
+    const hasManualFolders = app.children && app.children.length > 0;
+
+    if (app.type === 'folder' && app.children) {
+      setFolderStack([...folderStack, { label: app.label, apps: app.children }]);
+      setCurrentLevelApps(app.children);
+      setHasMoved(false);
+      setActiveIndex(null);
+    } else if (hasRecentFetch || hasManualFolders) {
+      setIsLoadingRecents(true);
+      const manualFolders = app.children || [];
+
+      if (app.hasRecents && window.electron?.getAppRecents) {
+        window.electron!.getAppRecents(app.label, app.command).then(recents => {
+          setIsLoadingRecents(false);
+          const seenPaths = new Set(manualFolders.map(c => c.command));
+          const uniqueRecents = recents.filter(r => !seenPaths.has(r.command));
+          const combined = [...manualFolders, ...uniqueRecents];
+
+          if (combined.length > 0) {
+            setFolderStack([...folderStack, { label: app.label, apps: combined }]);
+            setCurrentLevelApps(combined);
+            setHasMoved(false);
+            setActiveIndex(null);
+          } else {
+            onClose(app.id);
+          }
+        }).catch(() => {
+          setIsLoadingRecents(false);
+          onClose(app.id);
+        });
+      } else {
+        setIsLoadingRecents(false);
+        setFolderStack([...folderStack, { label: app.label, apps: manualFolders }]);
+        setCurrentLevelApps(manualFolders);
+        setHasMoved(false);
+        setActiveIndex(null);
+      }
+    } else {
+      onClose(app.id);
+    }
+  }, [folderStack, onClose]);
 
   const getHUDStyles = () => {
     const base = "fixed text-white pointer-events-none flex flex-col z-50 p-8 gap-4";
@@ -622,6 +849,7 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
               willChange: 'transform, opacity'
             }}
             className="fixed z-50 pointer-events-none"
+            tabIndex={-1}
           >
 
 
@@ -707,7 +935,6 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
 
             {/* Connecting Lines (SVG) - Lightweight CSS transitions */}
             <svg
-              key={`lines-${folderStack.length}`}
               className="absolute overflow-visible pointer-events-none"
               style={{
                 width: actualMenuRadius * 3,
@@ -742,201 +969,22 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
             </svg>
 
             {/* App Icons - AnimatePresence handles transition between folders */}
-            <AnimatePresence mode="popLayout">
+            <AnimatePresence>
               {currentLevelApps.map((app, index) => {
                 const isActive = index === activeIndex;
-                const Icon = getIcon(app.iconName);
-                const sliceAngle = 360 / currentLevelApps.length;
-                const angleDeg = (index * sliceAngle) - 90;
-                const angleRad = angleDeg * (Math.PI / 180);
-                const pos = {
-                  x: actualMenuRadius * Math.cos(angleRad),
-                  y: actualMenuRadius * Math.sin(angleRad),
-                };
-
-                const shouldUseCustomIcon = (() => {
-                  // Lista de apps que devem usar ícone Lucide em vez do nativo por serem problemáticos ou feios
-                  const LUCIDE_ICON_EXCEPTIONS = [
-                    'Microsoft.WindowsTerminal',
-                    'WindowsTerminal',
-                    'Terminal',
-                    'cmd.exe',
-                    'powershell.exe'
-                  ];
-
-                  const isException = LUCIDE_ICON_EXCEPTIONS.some(exception =>
-                    app.command?.toLowerCase().includes(exception.toLowerCase()) ||
-                    app.label?.toLowerCase().includes(exception.toLowerCase())
-                  );
-
-                  if (isException) return false;
-
-                  return app.iconSource === 'native' && !!app.customIconUrl;
-                })();
-
                 return (
-                  <motion.div
-                    key={`${app.id}-${folderStack.length}`} // Key change triggers animation
-                    initial={{ scale: 0, opacity: 0, x: 0, y: 0 }}
-                    animate={{
-                      scale: isActive ? 1.15 : 1,
-                      opacity: isActive ? 1 : 0.6,
-                      x: pos.x,
-                      y: pos.y
-                    }}
-                    exit={{ scale: 0, opacity: 0, transition: { duration: 0.12 } }}
-                    transition={{
-                      type: 'spring',
-                      stiffness: 300,
-                      damping: 22,
-                      mass: 0.7,
-                      delay: index * 0.03 // Staggered "bloom" entrance
-                    }}
-                    className="absolute top-0 left-0 pointer-events-auto cursor-pointer"
-                    style={{ zIndex: isActive ? 200 : 100, willChange: 'transform, opacity' }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onMouseUp={(e) => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const isKnownIDE = (item: any) => {
-                        const l = item.label?.toLowerCase() || '';
-                        return l.includes('antigravity') || l.includes('cursor') || l.includes('vs code') || l.includes('vscode');
-                      };
-
-                      const hasRecentFetch = (app.hasRecents) && window.electron?.getAppRecents;
-                      const hasManualFolders = app.children && app.children.length > 0;
-
-                      if (app.type === 'folder' && app.children) {
-                        setFolderStack([...folderStack, { label: app.label, apps: app.children }]);
-                        setCurrentLevelApps(app.children);
-                        setHasMoved(false);
-                        setActiveIndex(null);
-                      } else if (hasRecentFetch || hasManualFolders) {
-                        setIsLoadingRecents(true);
-                        const manualFolders = app.children || [];
-
-                        if (app.hasRecents && window.electron?.getAppRecents) {
-                          window.electron!.getAppRecents(app.label, app.command).then(recents => {
-                            setIsLoadingRecents(false);
-                            const seenPaths = new Set(manualFolders.map(c => c.command));
-                            const uniqueRecents = recents.filter(r => !seenPaths.has(r.command));
-                            const combined = [...manualFolders, ...uniqueRecents];
-
-                            if (combined.length > 0) {
-                              setFolderStack([...folderStack, { label: app.label, apps: combined }]);
-                              setCurrentLevelApps(combined);
-                              setHasMoved(false);
-                              setActiveIndex(null);
-                            } else {
-                              onClose(app.id);
-                            }
-                          }).catch(() => {
-                            setIsLoadingRecents(false);
-                            onClose(app.id);
-                          });
-                        } else {
-                          setIsLoadingRecents(false);
-                          setFolderStack([...folderStack, { label: app.label, apps: manualFolders }]);
-                          setCurrentLevelApps(manualFolders);
-                          setHasMoved(false);
-                          setActiveIndex(null);
-                        }
-                      } else {
-                        onClose(app.id);
-                      }
-                    }}
-                  >
-                    <div className="relative flex items-center justify-center -translate-x-1/2 -translate-y-1/2">
-                      {/* WRAPPER FOR BADGE & MASKED CONTENT */}
-                      <div
-                        className="relative z-20"
-                        style={{
-                          width: `${actualIconSize}px`,
-                          height: `${actualIconSize}px`,
-                        }}
-                      >
-                        {/* INNER MASKED CONTAINER (Overflow Hidden) */}
-                        <div
-                          className={`
-                            w-full h-full rounded-2xl flex items-center justify-center overflow-hidden
-                            transition-colors duration-200 relative
-                            ${isActive ? 'shadow-[0_0_25px_rgba(255,255,255,0.15)]' : ''}
-                          `}
-                          style={{
-                            backgroundColor: isActive ? config.accentColor : `rgba(${18 + Math.round(config.backdropOpacity * 12)}, ${18 + Math.round(config.backdropOpacity * 12)}, ${20 + Math.round(config.backdropOpacity * 12)}, 0.85)`,
-                            border: isActive ? `1px solid ${config.accentColor}` : `1px solid rgba(255,255,255,${0.08 + config.backdropOpacity * 0.06})`,
-                            color: isActive ? '#000' : '#fff',
-                            boxShadow: !isActive ? `0 2px 12px rgba(0,0,0,0.3)` : undefined
-                          }}
-                        >
-                          {/* Icon Container: Show either native icon OR vector icon, not both */}
-                          <div className="w-full h-full flex items-center justify-center relative">
-                            {shouldUseCustomIcon ? (
-                              /* Native Icon (Automatically normalized) */
-                              <SmartIcon
-                                src={app.customIconUrl!}
-                                alt={app.label}
-                                className="object-contain relative z-10"
-                                size={actualIconSize}
-                                referenceScale={0.88}
-                              />
-                            ) : (
-                              /* Vector Icon (Only when no custom icon) */
-                              <Icon size={Math.round(actualIconSize * 0.55)} strokeWidth={1.5} />
-                            )}
-                          </div>
-                        </div>
-
-                        {/* FOLDER BADGE (Outside Mask, Inside Wrapper) */}
-                        {app.type === 'folder' && (
-                          <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-white rounded-full flex items-center justify-center border-2 border-[#1A1A1A] z-30 shadow-md">
-                            <div className="w-1 h-1 bg-black rounded-full" />
-                            <div className="w-1 h-1 bg-black rounded-full ml-0.5" />
-                          </div>
-                        )}
-                      </div>
-
-                      {config.showLabels && (
-                        <motion.div
-                          className="absolute pointer-events-none z-30"
-                          style={{
-                            left: '50%',
-                            top: '50%',
-                            translateX: '-50%',
-                            translateY: '0%',
-                          }}
-                          initial={{ opacity: 0, scale: 0.85, y: actualIconSize / 2 + 0 }}
-                          animate={{
-                            opacity: isActive ? 1 : 0,
-                            scale: isActive ? 1 : 0.9,
-                            x: 0,
-                            y: actualIconSize / 2 + 4,
-                          }}
-                          exit={{ opacity: 0, scale: 0.85, y: actualIconSize / 2 + 0 }}
-                          transition={{ type: 'spring', damping: 22, stiffness: 380, mass: 0.6 }}
-                        >
-                          <div
-                            className="flex items-center gap-2 px-3 py-1.5 rounded-xl whitespace-nowrap"
-                            style={{
-                              background: 'rgba(8, 8, 10, 0.72)',
-                              backdropFilter: 'blur(16px)',
-                              WebkitBackdropFilter: 'blur(16px)',
-                              border: `1px solid rgba(255,255,255,0.09)`,
-                              boxShadow: `0 8px 32px rgba(0,0,0,0.55), 0 0 0 0.5px rgba(255,255,255,0.04) inset`,
-                            }}
-                          >
-                            <span
-                              className="text-white/90 font-medium text-[13px] tracking-wide leading-none"
-                              style={{ fontFamily: 'Space Grotesk, sans-serif' }}
-                            >
-                              {app.label}
-                            </span>
-
-                          </div>
-                        </motion.div>
-                      )}
-                    </div>
-                  </motion.div>
+                  <RadialMenuItem
+                    key={`${app.id}-${folderStack.length}-${index}`}
+                    app={app}
+                    index={index}
+                    isActive={isActive}
+                    actualMenuRadius={actualMenuRadius}
+                    actualIconSize={actualIconSize}
+                    totalApps={currentLevelApps.length}
+                    config={config}
+                    folderStackLength={folderStack.length}
+                    onClick={handleAppClick}
+                  />
                 );
               })}
             </AnimatePresence>

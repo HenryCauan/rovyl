@@ -13,290 +13,179 @@ interface NotesWidgetProps {
 }
 
 export const NotesWidget: React.FC<NotesWidgetProps> = ({ isOpen, onClose, notes, setNotes, config }) => {
-    const [isAdding, setIsAdding] = useState(false);
-    const [newTitle, setNewTitle] = useState('');
-    const [newContent, setNewContent] = useState('');
+    const [activeNoteId, setActiveNoteId] = useState<string | null>(notes.length > 0 ? notes[0].id : null);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [isEditing, setIsEditing] = useState(false);
 
     const t = (key: string) => getTranslation(config, key);
 
-    // Save logic (Simulating Cloud Save)
-    const handleSave = () => {
-        if (!newTitle.trim() && !newContent.trim()) return;
+    const activeNote = notes.find(n => n.id === activeNoteId);
 
+    const handleCreate = () => {
         const newNote: Note = {
             id: crypto.randomUUID(),
-            title: newTitle || t('notes.untitled'),
-            content: newContent,
+            title: '',
+            content: '',
             date: new Date().toISOString(),
         };
-
-        // Add to top of stack
         setNotes([newNote, ...notes]);
-
-        // Reset
-        setNewTitle('');
-        setNewContent('');
-        setIsAdding(false);
+        setActiveNoteId(newNote.id);
+        setIsEditing(true);
     };
 
-    const handleDelete = (id: string, e: React.MouseEvent) => {
-        e.stopPropagation();
-        setNotes(notes.filter(n => n.id !== id));
+    const handleUpdate = (id: string, updates: Partial<Note>) => {
+        setNotes(notes.map(n => n.id === id ? { ...n, ...updates } : n));
     };
 
-    // Cycle logic for swiping
-    const cycleNext = () => {
-        if (notes.length < 2) return;
-        const newNotes = [...notes];
-        const top = newNotes.shift();
-        if (top) newNotes.push(top);
-        setNotes(newNotes);
+    const handleDelete = (id: string) => {
+        const updated = notes.filter(n => n.id !== id);
+        setNotes(updated);
+        if (activeNoteId === id) {
+            setActiveNoteId(updated.length > 0 ? updated[0].id : null);
+        }
     };
 
-    const cyclePrev = () => {
-        if (notes.length < 2) return;
-        const newNotes = [...notes];
-        const bottom = newNotes.pop();
-        if (bottom) newNotes.unshift(bottom);
-        setNotes(newNotes);
-    };
+    const filteredNotes = notes.filter(n => 
+        n.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        n.content.toLowerCase().includes(searchQuery.toLowerCase())
+    );
 
     if (!isOpen) return null;
 
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center">
-            {/* Backdrop */}
             <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="absolute inset-0 bg-black/80 backdrop-blur-xl"
+                className="absolute inset-0 bg-black/60 backdrop-blur-2xl"
                 onClick={onClose}
             />
 
-            {/* Global Close Button */}
-            <button
-                onClick={onClose}
-                className="absolute top-6 right-6 p-2 rounded-full bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-all z-[70] group"
+            <motion.div
+                initial={{ scale: 0.98, opacity: 0, y: 10 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.98, opacity: 0, y: 10 }}
+                className="relative bg-[#080808] border border-white/10 rounded-[2.5rem] shadow-[0_50px_100px_-20px_rgba(0,0,0,1)] w-[1120px] h-[720px] flex overflow-hidden z-[70]"
+                onClick={e => e.stopPropagation()}
             >
-                <X size={24} className="group-hover:rotate-90 transition-transform duration-300" />
-            </button>
+                {/* Sidebar: Explorer (300px) */}
+                <div className="w-[300px] bg-black/20 border-r border-white/5 flex flex-col">
+                    <div className="p-8 pb-4">
+                        <div className="flex items-center justify-between mb-8">
+                            <h2 className="text-white text-[10px] font-black tracking-[0.3em] uppercase opacity-40">{t('notes.explorer')}</h2>
+                            <button 
+                                onClick={handleCreate}
+                                className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/10 transition-all"
+                            >
+                                <Plus size={16} />
+                            </button>
+                        </div>
 
-            {/* Main Container */}
-            <div className="relative w-[900px] h-[550px] flex pointer-events-none">
-
-                {/* Left Side: The "Deck" of Notes */}
-                <div className="w-1/2 relative flex flex-col items-center justify-center pointer-events-auto">
-                    <div className="relative w-72 h-96 perspective-1000">
-                        <AnimatePresence mode="popLayout">
-                            {notes.length === 0 && !isAdding && (
-                                <motion.div
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    className="absolute inset-0 flex flex-col items-center justify-center text-white/20 border-2 border-dashed border-white/10 rounded-xl"
-                                >
-                                    <PenLine size={32} className="mb-2 opacity-50" />
-                                    <span className="text-sm font-medium">{t('notes.no_notes')}</span>
-                                </motion.div>
-                            )}
-
-                            {notes.map((note, index) => {
-                                // Only render top 4 cards for performance
-                                if (index > 3) return null;
-
-                                // Is this the top card?
-                                const isTop = index === 0;
-
-                                return (
-                                    <motion.div
-                                        key={note.id}
-                                        layoutId={note.id}
-                                        drag={isTop && !isAdding ? "x" : false}
-                                        dragConstraints={{ left: 0, right: 0 }}
-                                        dragElastic={0.1}
-                                        onDragEnd={(e, { offset, velocity }) => {
-                                            const swipeThreshold = 50;
-                                            if (offset.x < -swipeThreshold) {
-                                                cycleNext(); // Swipe Left -> Next (Send top to bottom)
-                                            } else if (offset.x > swipeThreshold) {
-                                                cyclePrev(); // Swipe Right -> Prev (Bring bottom to top)
-                                            }
-                                        }}
-                                        initial={{ opacity: 0, y: -50, scale: 0.9, rotate: 0 }}
-                                        animate={{
-                                            opacity: 1 - (index * 0.1),
-                                            y: index * -15, // Stack visually upwards slightly for depth
-                                            scale: 1 - (index * 0.05),
-                                            rotate: index % 2 === 0 ? index * 2 : index * -2, // Subtle rotation
-                                            zIndex: 50 - index
-                                        }}
-                                        whileHover={isTop ? { scale: 1.02, rotate: 0 } : {}}
-                                        whileDrag={{ cursor: 'grabbing', scale: 1.05 }}
-                                        transition={{ type: "spring", stiffness: 260, damping: 20 }}
-                                        className={`
-                                    absolute bottom-0 left-0 w-full h-full 
-                                    bg-[#141414] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col 
-                                    ${isTop ? 'cursor-grab active:cursor-grabbing hover:border-white/30 shadow-[0_20px_50px_rgba(0,0,0,0.5)]' : ''}
-                                `}
-                                    >
-                                        {/* Drag Indicator (Top) */}
-                                        {isTop && (
-                                            <div className="absolute top-2 left-1/2 -translate-x-1/2 w-8 h-1 bg-white/20 rounded-full" />
-                                        )}
-
-                                        {/* Note Header */}
-                                        <div className="p-5 pt-6 border-b border-white/5 bg-[#1A1A1A] flex justify-between items-start select-none">
-                                            <div className="flex-1 mr-2">
-                                                <h3 className="text-white font-semibold text-xl leading-tight line-clamp-1">{note.title}</h3>
-                                                <div className="flex items-center gap-2 text-[10px] text-white/40 mt-1.5 uppercase tracking-wide font-medium">
-                                                    <Calendar size={10} />
-                                                    {new Date(note.date).toLocaleDateString(config.language || 'pt-BR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                                </div>
-                                            </div>
-                                            <button
-                                                onClick={(e) => handleDelete(note.id, e)}
-                                                className="text-white/20 hover:text-red-400 hover:bg-red-400/10 p-1.5 rounded-lg transition-all"
-                                            >
-                                                <Trash2 size={16} />
-                                            </button>
-                                        </div>
-                                        {/* Note Body */}
-                                        <div className="p-5 flex-1 overflow-hidden relative">
-                                            <p className="text-sm text-white/70 whitespace-pre-wrap font-light leading-relaxed select-text">
-                                                {note.content}
-                                            </p>
-
-                                        </div>
-                                        {/* Stack Gradient Fade for long text */}
-                                        <div className="absolute bottom-0 left-0 w-full h-16 bg-gradient-to-t from-[#141414] to-transparent pointer-events-none" />
-                                    </motion.div>
-                                );
-                            })}
-                        </AnimatePresence>
+                        <div className="relative group mb-6">
+                            <input
+                                type="text"
+                                placeholder={t('notes.archives') + "..."}
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
+                                className="w-full bg-white/[0.03] text-white placeholder:text-white/10 text-[10px] py-3.5 pl-4 pr-10 rounded-xl border border-white/5 focus:border-white/20 outline-none transition-all"
+                            />
+                            <PenLine size={12} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/10" />
+                        </div>
                     </div>
 
-                    {/* Navigation Controls */}
-                    {!isAdding && notes.length > 1 && (
-                        <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="flex items-center gap-6 mt-12"
-                        >
-                            <button onClick={cyclePrev} className="p-3 rounded-full bg-white/5 hover:bg-white/10 text-white/50 hover:text-white transition-all hover:scale-110 active:scale-95">
-                                <ChevronLeft size={20} />
-                            </button>
-                            <span className="text-xs font-mono text-white/30 tracking-widest">{notes.length} {t('notes.notes_count')}</span>
-                            <button onClick={cycleNext} className="p-3 rounded-full bg-white/5 hover:bg-white/10 text-white/50 hover:text-white transition-all hover:scale-110 active:scale-95">
-                                <ChevronRight size={20} />
-                            </button>
-                        </motion.div>
-                    )}
-                </div>
-
-                {/* Right Side: Actions & Editor */}
-                <div className="w-1/2 flex flex-col justify-center pl-12 pointer-events-auto border-l border-white/5">
-                    <AnimatePresence mode="wait">
-                        {isAdding ? (
-                            <motion.div
-                                key="editor"
-                                initial={{ opacity: 0, x: 20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                exit={{ opacity: 0, x: 20 }}
-                                className="bg-[#0f0f0f] border border-white/10 p-8 rounded-2xl shadow-2xl w-full"
+                    <div className="flex-1 overflow-y-auto custom-scrollbar px-6 space-y-1">
+                        {filteredNotes.map(note => (
+                            <div
+                                key={note.id}
+                                onClick={() => setActiveNoteId(note.id)}
+                                className={`
+                                    group p-4 rounded-2xl cursor-pointer transition-all border border-transparent
+                                    ${activeNoteId === note.id ? 'bg-white/10 border-white/5 shadow-xl' : 'hover:bg-white/[0.02]'}
+                                `}
                             >
-                                <div className="flex justify-between items-center mb-6">
-                                    <h2 className="text-lg font-medium text-white flex items-center gap-2">
-                                        <PenLine size={18} /> {t('notes.new_note')}
-                                    </h2>
-                                    <button onClick={() => setIsAdding(false)} className="text-white/40 hover:text-white">
-                                        <X size={20} />
-                                    </button>
-                                </div>
-
-                                <div className="space-y-6">
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] uppercase tracking-wider text-white/30 font-semibold">{t('notes.note_title')}</label>
-                                        <input
-                                            autoFocus
-                                            type="text"
-                                            placeholder={t('notes.note_title') + "..."}
-                                            value={newTitle}
-                                            onChange={(e) => setNewTitle(e.target.value)}
-                                            className="w-full bg-transparent text-2xl font-medium text-white placeholder:text-white/10 outline-none border-b border-white/10 pb-2 focus:border-white/40 transition-colors"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] uppercase tracking-wider text-white/30 font-semibold">{t('notes.note_content')}</label>
-                                        <textarea
-                                            placeholder={t('notes.type_thoughts')}
-                                            value={newContent}
-                                            onChange={(e) => setNewContent(e.target.value)}
-                                            className="w-full h-48 bg-white/5 rounded-lg p-4 text-sm text-white/80 placeholder:text-white/10 outline-none resize-none font-light leading-relaxed custom-scrollbar focus:bg-white/10 transition-colors border border-transparent focus:border-white/10"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="mt-8 flex justify-end gap-3">
-                                    <button
-                                        onClick={() => setIsAdding(false)}
-                                        className="px-5 py-2.5 rounded-xl text-sm font-medium text-white/60 hover:text-white hover:bg-white/5 transition-colors"
-                                    >
-                                        {t('welcome.cancel')}
-                                    </button>
-                                    <button
-                                        onClick={handleSave}
-                                        className="bg-white text-black px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-gray-200 transition-colors flex items-center gap-2 shadow-lg shadow-white/10"
-                                    >
-                                        <Save size={16} /> {t('notes.save_note')}
-                                    </button>
-                                </div>
-                            </motion.div>
-                        ) : (
-                            <motion.div
-                                key="actions"
-                                initial={{ opacity: 0, x: 20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                exit={{ opacity: 0, x: 20 }}
-                                className="flex flex-col items-start gap-6"
-                            >
-                                <div>
-                                    <h1 className="text-5xl font-light text-white mb-3 tracking-tight">{t('notes.title')}</h1>
-                                    <p className="text-white/40 text-sm max-w-[280px] leading-relaxed">
-                                        {t('notes.desc')}
+                                <div className="flex flex-col gap-1.5 min-w-0">
+                                    <h3 className={`text-xs font-bold truncate ${activeNoteId === note.id ? 'text-white' : 'text-white/40'}`}>
+                                        {note.title || t('notes.untitled')}
+                                    </h3>
+                                    <p className="text-[10px] text-white/20 line-clamp-1 leading-relaxed">
+                                        {note.content || t('notes.manuscript') + "..."}
                                     </p>
-                                </div>
-
-                                <button
-                                    onClick={() => setIsAdding(true)}
-                                    className="group flex items-center gap-5 bg-white/5 hover:bg-white/10 border border-white/10 px-8 py-5 rounded-2xl transition-all hover:scale-105 active:scale-95 w-full max-w-sm"
-                                >
-                                    <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-black shadow-lg shadow-white/20">
-                                        <Plus size={24} />
-                                    </div>
-                                    <div className="text-left flex-1">
-                                        <div className="text-base font-semibold text-white">{t('notes.create_new')}</div>
-                                        <div className="text-xs text-white/40 mt-0.5">{t('notes.add_to_stack')}</div>
-                                    </div>
-                                </button>
-
-                                <div className="grid grid-cols-2 gap-4 w-full max-w-sm">
-                                    <div className="bg-[#141414] p-4 rounded-xl border border-white/5 flex flex-col items-center justify-center text-center">
-                                        <span className="text-2xl font-bold text-white mb-1">{notes.length}</span>
-                                        <span className="text-[10px] uppercase text-white/30 tracking-wider">{t('notes.total_notes')}</span>
-                                    </div>
-                                    <div className="bg-[#141414] p-4 rounded-xl border border-white/5 flex flex-col items-center justify-center text-center">
-                                        <span className="text-xl font-bold text-white mb-1">
-                                            {notes.length > 0 ? new Date(notes[0].date).toLocaleDateString(config.language || 'pt-BR', { weekday: 'short' }) : '-'}
+                                    <div className="flex items-center gap-2 mt-1 opacity-40">
+                                        <Calendar size={10} className="text-white/40" />
+                                        <span className="text-[8px] font-black uppercase tracking-wider text-white/50">
+                                            {new Date(note.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                                         </span>
-                                        <span className="text-[10px] uppercase text-white/30 tracking-wider">{t('notes.latest')}</span>
                                     </div>
                                 </div>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="p-8 border-t border-white/5">
+                        <div className="text-[10px] font-black text-white/10 uppercase tracking-[0.4em]">ZENITH EDITIONS</div>
+                    </div>
                 </div>
 
-            </div>
+                {/* Main: Editorial Editor */}
+                <div className="flex-1 flex flex-col bg-transparent relative">
+                    <header className="h-24 border-b border-white/5 flex items-center justify-between px-12 shrink-0">
+                        <div className="flex items-center gap-6">
+                            <div className="flex items-center gap-3 py-1.5 px-3 rounded-lg bg-white/[0.03] border border-white/10">
+                                <PenLine size={14} className="text-white/20" />
+                                <span className="text-[9px] font-black text-white/40 uppercase tracking-widest">{t('notes.editor_mode')}</span>
+                            </div>
+                            {activeNote && (
+                                <span className="text-[9px] font-black text-white/10 uppercase tracking-[0.2em]">
+                                    {activeNote.content.split(' ').length} WORDS
+                                </span>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-4">
+                            <button
+                                onClick={() => activeNote && handleDelete(activeNote.id)}
+                                className="p-3 rounded-xl text-white/20 hover:text-red-400 hover:bg-red-400/10 transition-all border border-transparent hover:border-red-400/20"
+                            >
+                                <Trash2 size={18} />
+                            </button>
+                            <button
+                                onClick={onClose}
+                                className="p-3 rounded-xl bg-white/5 text-white/20 hover:text-white hover:bg-white/10 transition-all border border-white/5"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+                    </header>
+
+                    <main className="flex-1 overflow-y-auto custom-scrollbar">
+                        {activeNote ? (
+                            <div className="max-w-[720px] mx-auto py-24 px-12 space-y-12">
+                                <input
+                                    type="text"
+                                    placeholder={t('notes.note_title')}
+                                    value={activeNote.title}
+                                    onChange={e => handleUpdate(activeNote.id, { title: e.target.value })}
+                                    className="w-full bg-transparent text-5xl font-bold text-white placeholder:text-white/5 outline-none tracking-tight leading-tight"
+                                />
+                                <textarea
+                                    placeholder={t('notes.type_thoughts')}
+                                    value={activeNote.content}
+                                    onChange={e => handleUpdate(activeNote.id, { content: e.target.value })}
+                                    className="w-full min-h-[400px] bg-transparent text-lg text-white/70 placeholder:text-white/5 outline-none resize-none font-light leading-relaxed custom-scrollbar pb-32"
+                                />
+                            </div>
+                        ) : (
+                            <div className="h-full flex flex-col items-center justify-center gap-8 opacity-10">
+                                <PenLine size={80} strokeWidth={1} />
+                                <div className="text-[12px] font-black uppercase tracking-[1em]">{t('notes.no_notes')}</div>
+                            </div>
+                        )}
+                    </main>
+
+                    {/* Gradient shadows for bottom of editor */}
+                    <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-[#080808] to-transparent pointer-events-none" />
+                </div>
+            </motion.div>
         </div>
     );
 };

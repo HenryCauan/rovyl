@@ -305,15 +305,33 @@ const AppEditorModal = React.memo(({
                                                                         <div className="text-xs font-semibold text-white truncate">{child.label}</div>
                                                                         <div className="text-[9px] text-white/20 font-mono truncate">{child.command}</div>
                                                                     </div>
-                                                                    <button
-                                                                        onClick={() => {
-                                                                            const newChildren = editingApp.app.children?.filter(c => c.id !== child.id);
-                                                                            handleAppChange('children', newChildren);
-                                                                        }}
-                                                                        className="w-8 h-8 rounded-lg flex items-center justify-center text-white/10 hover:text-red-400 hover:bg-red-400/10 transition-all opacity-0 group-hover:opacity-100"
-                                                                    >
-                                                                        <Trash2 size={14} />
-                                                                    </button>
+                                                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                const newChildren = editingApp.app.children?.map(c => 
+                                                                                    c.id === child.id ? { ...c, openTerminal: !c.openTerminal } : c
+                                                                                );
+                                                                                handleAppChange('children', newChildren);
+                                                                            }}
+                                                                            title={getTranslation(config, 'editingApp.toggle_terminal') || 'Abrir com Terminal'}
+                                                                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                                                                                child.openTerminal 
+                                                                                ? 'text-blue-400 bg-blue-400/10 hover:bg-blue-400/20' 
+                                                                                : 'text-white/10 hover:text-white/40 hover:bg-white/5'
+                                                                            }`}
+                                                                        >
+                                                                            <Command size={14} />
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                const newChildren = editingApp.app.children?.filter(c => c.id !== child.id);
+                                                                                handleAppChange('children', newChildren);
+                                                                            }}
+                                                                            className="w-8 h-8 rounded-lg flex items-center justify-center text-white/10 hover:text-red-400 hover:bg-red-400/10 transition-all"
+                                                                        >
+                                                                            <Trash2 size={14} />
+                                                                        </button>
+                                                                    </div>
                                                                 </div>
                                                             ))}
                                                     </div>
@@ -522,15 +540,33 @@ const AppEditorModal = React.memo(({
                                                                         <div className="text-xs font-semibold text-white truncate">{child.label}</div>
                                                                         <div className="text-[9px] text-white/20 font-mono truncate">{child.command}</div>
                                                                     </div>
-                                                                    <button
-                                                                        onClick={() => {
-                                                                            const newChildren = editingApp.app.children?.filter(c => c.id !== child.id);
-                                                                            handleAppChange('children', newChildren);
-                                                                        }}
-                                                                        className="w-8 h-8 rounded-lg flex items-center justify-center text-white/10 hover:text-red-400 hover:bg-red-400/10 transition-all opacity-0 group-hover:opacity-100"
-                                                                    >
-                                                                        <Trash2 size={14} />
-                                                                    </button>
+                                                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                const newChildren = editingApp.app.children?.map(c => 
+                                                                                    c.id === child.id ? { ...c, openTerminal: !c.openTerminal } : c
+                                                                                );
+                                                                                handleAppChange('children', newChildren);
+                                                                            }}
+                                                                            title={getTranslation(config, 'editingApp.toggle_terminal') || 'Abrir com Terminal'}
+                                                                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                                                                                child.openTerminal 
+                                                                                ? 'text-blue-400 bg-blue-400/10 hover:bg-blue-400/20' 
+                                                                                : 'text-white/10 hover:text-white/40 hover:bg-white/5'
+                                                                            }`}
+                                                                        >
+                                                                            <Command size={14} />
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                const newChildren = editingApp.app.children?.filter(c => c.id !== child.id);
+                                                                                handleAppChange('children', newChildren);
+                                                                            }}
+                                                                            className="w-8 h-8 rounded-lg flex items-center justify-center text-white/10 hover:text-red-400 hover:bg-red-400/10 transition-all"
+                                                                        >
+                                                                            <Trash2 size={14} />
+                                                                        </button>
+                                                                    </div>
                                                                 </div>
                                                             ))}
                                                     </div>
@@ -1751,7 +1787,7 @@ const InterfaceTab = React.memo((props: {
                         </div>
 
                         <div className="flex bg-black/40 p-1 rounded-xl border border-white/5 shadow-inner">
-                            {(['app', 'widget', 'command', 'none'] as const).map(mode => (
+                            {(['app', 'widget', 'command', 'none', 'cancel'] as const).map(mode => (
                                 <button
                                     key={mode}
                                     onClick={() => handleCenterTypeChange(mode)}
@@ -2241,7 +2277,23 @@ const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setCo
     );
 });
 
-const UserTab = React.memo(({ user, config }: { user: UserProfile | null, config: UIConfig }) => {
+const UserTab = React.memo(({
+    user,
+    config,
+    handleExport,
+    handleImport,
+    isExporting,
+    isImporting,
+    status
+}: {
+    user: UserProfile | null,
+    config: UIConfig,
+    handleExport: () => void,
+    handleImport: () => void,
+    isExporting: boolean,
+    isImporting: boolean,
+    status: { type: 'success' | 'error', message: string } | null
+}) => {
     return (
         <motion.div
             className="pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
@@ -2316,7 +2368,7 @@ const UserTab = React.memo(({ user, config }: { user: UserProfile | null, config
                         </div>
                     </motion.div>
 
-                    {/* Security & Data */}
+                    {/* Security, Data & Backup */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <motion.div
                             className="bg-white/[0.04] border border-white/[0.08] p-5 rounded-xl hover:bg-white/[0.06] transition-all duration-300 group"
@@ -2342,16 +2394,41 @@ const UserTab = React.memo(({ user, config }: { user: UserProfile | null, config
                             animate={{ opacity: 1, x: 0 }}
                             transition={{ delay: 0.3 }}
                         >
-                            <div className="flex items-center gap-4 mb-6">
+                            <div className="flex items-center gap-4 mb-3">
                                 <div className="w-11 h-11 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center text-white/40 group-hover:text-white transition-all">
-                                    <TimerReset size={20} strokeWidth={1.5} />
+                                    <Download size={20} strokeWidth={1.5} />
                                 </div>
                                 <div>
-                                    <label className="text-[9px] font-semibold text-white/20 uppercase tracking-widest block mb-0.5">{getTranslation(config, 'user.time_display')}</label>
-                                    <h4 className="font-semibold text-white text-base">{getTranslation(config, 'user.system_clock')}</h4>
+                                    <label className="text-[9px] font-semibold text-white/20 uppercase tracking-widest block mb-0.5">{getTranslation(config, 'user.security_data')}</label>
+                                    <h4 className="font-semibold text-white text-base">{getTranslation(config, 'user.backup_title')}</h4>
                                 </div>
                             </div>
-                            <button className="w-full py-3.5 bg-white/5 border border-white/10 rounded-xl text-[11px] font-semibold uppercase tracking-widest text-white/60 hover:text-white hover:bg-white/10 transition-all">{getTranslation(config, 'user.sync_cloud')}</button>
+                            <p className="text-[10px] text-white/30 mb-4 px-1">{getTranslation(config, 'user.backup_desc')}</p>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={handleExport}
+                                    disabled={isExporting}
+                                    className="flex-1 py-3 bg-white/5 border border-white/10 rounded-xl text-[10px] font-semibold uppercase tracking-widest text-white/60 hover:text-white hover:bg-white/10 transition-all disabled:opacity-50"
+                                >
+                                    {isExporting ? '...' : getTranslation(config, 'user.export_btn')}
+                                </button>
+                                <button
+                                    onClick={handleImport}
+                                    disabled={isImporting}
+                                    className="flex-1 py-3 bg-white/5 border border-white/10 rounded-xl text-[10px] font-semibold uppercase tracking-widest text-white/60 hover:text-white hover:bg-white/10 transition-all disabled:opacity-50"
+                                >
+                                    {isImporting ? '...' : getTranslation(config, 'user.import_btn')}
+                                </button>
+                            </div>
+                            {status && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 5 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    className={`mt-3 text-[9px] font-medium text-center ${status.type === 'success' ? 'text-green-400' : 'text-red-400'}`}
+                                >
+                                    {status.message}
+                                </motion.div>
+                            )}
                         </motion.div>
                     </div>
 
@@ -2458,7 +2535,7 @@ const NavButton = React.memo(({
         <button
             onClick={() => setActiveTab(tab)}
             className={`
-                w-full flex items-center ${isSidebarExpanded ? 'gap-3 px-4' : 'justify-center'} py-2.5 
+                w-full flex items-center ${isSidebarExpanded ? 'gap-3 px-4' : 'justify-center'} py-2.5
                 transition-all duration-300 relative group
             `}
         >
@@ -2695,6 +2772,47 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const [isHoveringSidebar, setIsHoveringSidebar] = useState(false);
     const isSidebarExpanded = (isSidebarPinned || isHoveringSidebar);
     const [isCompact, setIsCompact] = useState(window.innerWidth < 768); // Breakpoint for main settings modal
+
+    // --- BACKUP & RESTORE STATE ---
+    const [isExporting, setIsExporting] = useState(false);
+    const [isImporting, setIsImporting] = useState(false);
+    const [status, setStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+
+    const handleExport = async () => {
+        if (!window.electron?.exportConfig) return;
+        setIsExporting(true);
+        setStatus(null);
+        try {
+            const result = await window.electron.exportConfig();
+            if (result.success) {
+                setStatus({ type: 'success', message: getTranslation(config, 'user.export_success') || 'Backup exported successfully' });
+            } else if (result.error) {
+                setStatus({ type: 'error', message: result.error });
+            }
+        } catch (e: any) {
+            setStatus({ type: 'error', message: e.message || 'Export failed' });
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    const handleImport = async () => {
+        if (!window.electron?.importConfig) return;
+        setIsImporting(true);
+        setStatus(null);
+        try {
+            const result = await window.electron.importConfig();
+            if (result.success) {
+                setStatus({ type: 'success', message: getTranslation(config, 'user.import_success') || 'Backup imported successfully. Zenith will relaunch...' });
+            } else if (result.error) {
+                setStatus({ type: 'error', message: result.error });
+            }
+        } catch (e: any) {
+            setStatus({ type: 'error', message: e.message || 'Import failed' });
+        } finally {
+            setIsImporting(false);
+        }
+    };
 
     useEffect(() => {
         const handleResize = () => {
@@ -3214,12 +3332,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         }
     };
 
-    const handleCenterTypeChange = (type: 'app' | 'widget' | 'command' | 'none') => {
+    const handleCenterTypeChange = (type: 'app' | 'widget' | 'command' | 'none' | 'cancel') => {
         const defaults = {
             app: { target: '', label: 'APP', iconName: 'Box' },
             widget: { target: '', label: 'WIDGET', iconName: 'AppWindow' },
             command: { target: '', label: 'TERMINAL', iconName: 'Terminal' },
-            none: { target: '', label: '', iconName: 'Circle' }
+            none: { target: '', label: '', iconName: 'Circle' },
+            cancel: { target: '', label: 'FECHAR', iconName: 'X' }
         };
         setConfig(prev => ({ ...prev, centerButton: { ...prev.centerButton, type, ...defaults[type as keyof typeof defaults] } }));
     };
@@ -3604,7 +3723,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                 )}
             </AnimatePresence>
-            <div className={`absolute inset-0 z-[100] ${!isPage ? 'flex items-center justify-center' : ''}`}>
+            <div id="settings-container" className={`absolute inset-0 z-[100] ${!isPage ? 'flex items-center justify-center' : ''}`}>
                 {!isPage && (
                     <motion.div
                         className="absolute inset-0 bg-black/60 backdrop-blur-[20px]"
@@ -3860,7 +3979,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                     )}
                                     {activeTab === 'widgets' && <HUDTab key="hud" config={config} setConfig={setConfig} />}
                                     {activeTab === 'gamemode' && <GameModeTab key="gamemode" config={config} setConfig={setConfig} />}
-                                    {activeTab === 'user' && <UserTab key="user" user={user} config={config} />}
+                                    {activeTab === 'user' && (
+                                        <UserTab
+                                            user={user}
+                                            config={config}
+                                            handleExport={handleExport}
+                                            handleImport={handleImport}
+                                            isExporting={isExporting}
+                                            isImporting={isImporting}
+                                            status={status}
+                                        />
+                                    )}
                                 </>
                             )}
                         </AnimatePresence>
