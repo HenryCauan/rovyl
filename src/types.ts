@@ -132,6 +132,7 @@ export interface UIConfig {
   openAtLogin?: boolean; // New: Start app at login
   enableMouseTrigger: boolean;
   language: "pt" | "en" | "es" | "fr" | "de" | "it" | "ja" | "zh" | "ko" | "ru";
+  performanceMode: boolean; // New: Strict performance mode for zero-lag
 }
 
 export interface RadialState {

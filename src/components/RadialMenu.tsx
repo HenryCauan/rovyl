@@ -26,11 +26,12 @@ interface RadialMenuItemProps {
   totalApps: number;
   config: UIConfig;
   folderStackLength: number;
+  isOpen: boolean;
   onClick: (app: AppItem) => void;
 }
 
 const RadialMenuItem = React.memo(({
-  app, index, isActive, actualMenuRadius, actualIconSize, totalApps, config, folderStackLength, onClick
+  app, index, isActive, actualMenuRadius, actualIconSize, totalApps, config, folderStackLength, isOpen, onClick
 }: RadialMenuItemProps) => {
   const Icon = getIcon(app.iconName);
   const sliceAngle = 360 / totalApps;
@@ -55,7 +56,6 @@ const RadialMenuItem = React.memo(({
       app.command?.toLowerCase().includes(exception.toLowerCase()) ||
       app.label?.toLowerCase().includes(exception.toLowerCase())
     );
-
     if (isException) return false;
 
     return app.iconSource === 'native' && !!app.customIconUrl;
@@ -69,11 +69,13 @@ const RadialMenuItem = React.memo(({
     <motion.div
       key={`${app.id}-${folderStackLength}`} // Key change triggers animation
       initial={{ scale: 0, opacity: 0, x: 0, y: 0 }}
-      animate={{
+      animate={isOpen ? {
         scale: isActive ? 1.15 : 1,
         opacity: isActive ? 1 : 0.6,
         x: pos.x,
         y: pos.y
+      } : {
+        scale: 0, opacity: 0, x: 0, y: 0
       }}
       exit={{ scale: 0, opacity: 0, transition: { duration: 0.06 } }}
       transition={{
@@ -81,7 +83,7 @@ const RadialMenuItem = React.memo(({
         stiffness: 300,
         damping: 22,
         mass: 0.7,
-        delay: staggerDelay // Faster Staggered "bloom" entrance
+        delay: isOpen ? staggerDelay : 0 // Faster Staggered "bloom" entrance
       }}
       className="absolute top-0 left-0 pointer-events-auto cursor-pointer"
       style={{ zIndex: isActive ? 200 : 100, willChange: 'transform, opacity' }}
@@ -473,10 +475,35 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
       onClose(null);
     };
 
+    const handleWheel = (e: WheelEvent) => {
+      if (!onWorkspaceSwitch) return;
+      const { config } = stateRef.current;
+      const numWorkspaces = config.workspaces.length;
+      if (numWorkspaces <= 1) return;
+
+      const currentIndex = config.activeWorkspaceIndex;
+      let nextIndex = currentIndex;
+
+      if (e.deltaY < 0) {
+        nextIndex = (currentIndex - 1 + numWorkspaces) % numWorkspaces;
+      } else if (e.deltaY > 0) {
+        nextIndex = (currentIndex + 1) % numWorkspaces;
+      }
+
+      if (nextIndex !== currentIndex) {
+        // Reset folders so we see the new workspace's root apps
+        setFolderStack([]);
+        setActiveIndex(null);
+        setHasMoved(false);
+        onWorkspaceSwitch(nextIndex);
+      }
+    };
+
     window.addEventListener('mousemove', handleMouseMove, { passive: true });
     window.addEventListener('mouseup', handleMouseUp);
     window.addEventListener('mousedown', handleMouseDown);
     window.addEventListener('contextmenu', handleContextMenu);
+    window.addEventListener('wheel', handleWheel, { passive: false });
 
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
@@ -484,6 +511,7 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
       window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('mousedown', handleMouseDown);
       window.removeEventListener('contextmenu', handleContextMenu);
+      window.removeEventListener('wheel', handleWheel);
     };
   }, [isOpen]);
 
@@ -603,7 +631,7 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
         }
       };
 
-      if (elapsed < GRACE_PERIOD_MS) {
+      if (!hasMoved && elapsed < GRACE_PERIOD_MS) {
         // console.log(`MMB release too quick (${elapsed}ms), applying grace period...`);
         setTimeout(executeClose, GRACE_PERIOD_MS - elapsed);
       } else {
@@ -615,7 +643,7 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
     return () => {
       if (cleanup) cleanup();
     };
-  }, [isOpen, triggerSource, activeIndex, isCenterActive, folderStack, currentLevelApps, onClose, apps]);
+  }, [isOpen, triggerSource, activeIndex, isCenterActive, folderStack, currentLevelApps, onClose, apps, hasMoved]);
 
   const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
   const [weather, setWeather] = useState<{ temp: number; condition: string } | null>(null);
@@ -722,16 +750,20 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
   };
 
   return (
-    <AnimatePresence>
-      {isOpen && (
+    <div
+      className="fixed inset-0 z-40 transition-opacity duration-200"
+      style={{
+        opacity: isOpen ? 1 : 0,
+        pointerEvents: isOpen ? 'auto' : 'none',
+        visibility: isOpen ? 'visible' : 'hidden'
+      }}
+    >
         <>
           {/* Layer 1: Acrylic Desktop Blur (only CSS can't blur the desktop in Electron) */}
-          {config.backdropBlur > 0 && (
+          {config.backdropBlur > 0 && !config.performanceMode && (
             <motion.div
               key="blur-vignette"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+              animate={{ opacity: isOpen ? 1 : 0 }}
               className="fixed inset-0 z-40 pointer-events-none"
               style={{
                 // Vignette mask: transparent in the center so the Acrylic blur is visible,
@@ -745,9 +777,8 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
 
           {/* Layer 2: Color/Gradient Overlay (Opacity controlled by Slider) — Airier */}
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0, transition: { duration: 0.2 } }}
+            initial={false}
+            animate={{ opacity: isOpen ? 1 : 0 }}
             transition={{ duration: 0.25, ease: 'easeOut' }}
             className="fixed inset-0 z-[41] pointer-events-auto"
             style={{
@@ -761,9 +792,8 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
           {/* HUD Elements */}
           {(config.showClock || config.showDate || config.showBattery || config.showWeather) && (
             <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 20 }}
+              initial={false}
+              animate={{ opacity: isOpen ? 1 : 0, x: isOpen ? 0 : 20 }}
               className={getHUDStyles()}
             >
               {/* Clock & Date */}
@@ -796,7 +826,7 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                       <span className="text-xs font-bold font-mono">{batteryLevel}%</span>
                     </div>
                   )}
-                  {config.showWeather && weather && (
+                  {config.showWeather && !config.performanceMode && weather && (
                     <div className="flex items-center gap-2">
                       {/* Simple Weather Icon placeholder */}
                       <div className="text-lg">☁️</div>
@@ -813,9 +843,8 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
           {/* Workspace Indicator */}
           {currentWorkspace && (
             <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
+              initial={false}
+              animate={{ opacity: isOpen ? 1 : 0, x: isOpen ? 0 : -20 }}
               className="fixed top-8 left-8 z-50 pointer-events-none"
             >
               <div className="flex items-center gap-2 px-4 py-2 bg-black/40 backdrop-blur-md border border-white/10 rounded-full">
@@ -837,9 +866,8 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
           {/* Menu Container */}
           <motion.div
             ref={menuRef}
-            initial={{ opacity: 0, scale: 0.85 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.92, transition: { duration: 0.18, ease: 'easeInOut' } }}
+            initial={false}
+            animate={{ opacity: isOpen ? 1 : 0, scale: isOpen ? 1 : 0.92 }}
             transition={{ type: 'spring', damping: 24, stiffness: 260, mass: 0.8 }}
             style={{
               left: Math.round(position.x),
@@ -983,6 +1011,7 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                     totalApps={currentLevelApps.length}
                     config={config}
                     folderStackLength={folderStack.length}
+                    isOpen={isOpen}
                     onClick={handleAppClick}
                   />
                 );
@@ -990,7 +1019,6 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
             </AnimatePresence>
           </motion.div>
         </>
-      )}
-    </AnimatePresence>
+    </div>
   );
 };

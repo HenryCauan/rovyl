@@ -116,6 +116,10 @@ export const translations: Record<Language, Record<string, string>> = {
     "visuals.hex_code": "Código Hex",
     "visuals.labels": "Legendas",
     "visuals.icon_style": "Estilo do Ícone",
+    "performance.title": "Desempenho",
+    "performance.desc": "Modo Performance (Zero-Lag)",
+    "performance.strict": "Performance Estrita",
+
 
     "status.executing": "Executando...",
     "error.exec_failed": "Falha ao abrir",
@@ -447,6 +451,10 @@ export const translations: Record<Language, Record<string, string>> = {
     "visuals.hex_code": "Hex Code",
     "visuals.labels": "Labels",
     "visuals.icon_style": "Icon Style",
+    "performance.title": "Performance",
+    "performance.desc": "Performance Mode (Zero-Lag)",
+    "performance.strict": "Strict Performance",
+
 
     "status.executing": "Executing...",
     "error.exec_failed": "Failed to open",
@@ -743,6 +751,10 @@ export const translations: Record<Language, Record<string, string>> = {
     "visuals.trigger_pixels": "Píxeles de Disparo",
     "visuals.text_labels": "Etiquetas de Texto",
     "visuals.icon_style": "Estilo de Ícono",
+    "performance.title": "Rendimiento",
+    "performance.desc": "Modo Rendimiento (Zero-Lag)",
+    "performance.strict": "Rendimiento Estricto",
+
 
     // Errors & Status
     "status.executing": "Ejecutando...",
@@ -1022,6 +1034,10 @@ export const translations: Record<Language, Record<string, string>> = {
     "visuals.labels": "Légendes",
     "visuals.text_labels": "Étiquettes de Texte",
     "visuals.icon_style": "Style d'icône",
+    "performance.title": "Performance",
+    "performance.desc": "Mode Performance (Zero-Lag)",
+    "performance.strict": "Performance Stricte",
+
 
     // Errors & Status
     "status.executing": "Exécution...",
@@ -1327,6 +1343,10 @@ export const translations: Record<Language, Record<string, string>> = {
     "visuals.labels": "Bezeichnungen",
     "visuals.text_labels": "Textbeschriftungen",
     "visuals.icon_style": "Symbolstil",
+    "performance.title": "Leistung",
+    "performance.desc": "Leistungsmodus (Zero-Lag)",
+    "performance.strict": "Strikte Leistung",
+
 
     // Errors & Status
     "status.executing": "Ausführung...",
@@ -1631,6 +1651,10 @@ export const translations: Record<Language, Record<string, string>> = {
     "visuals.labels": "Etichette",
     "visuals.text_labels": "Etichette di Testo",
     "visuals.icon_style": "Stile icona",
+    "performance.title": "Prestazioni",
+    "performance.desc": "Modalità Prestazioni (Zero-Lag)",
+    "performance.strict": "Prestazioni Ferree",
+
 
     // Errors & Status
     "status.executing": "Esecuzione...",
@@ -1932,6 +1956,10 @@ export const translations: Record<Language, Record<string, string>> = {
     "visuals.labels": "ラベル",
     "visuals.text_labels": "テキストラベル",
     "visuals.icon_style": "アイコンスタイル",
+    "performance.title": "パフォーマンス",
+    "performance.desc": "パフォーマンスモード (ラグゼロ)",
+    "performance.strict": "厳格なパフォーマンス",
+
 
     // Errors & Status
     "status.executing": "実行中...",
@@ -2230,6 +2258,10 @@ export const translations: Record<Language, Record<string, string>> = {
     "visuals.labels": "标签",
     "visuals.text_labels": "文字标签",
     "visuals.icon_style": "图标样式",
+    "performance.title": "性能",
+    "performance.desc": "性能模式 (零延迟)",
+    "performance.strict": "严格性能",
+
 
     // Errors & Status
     "status.executing": "执行中...",
@@ -2527,6 +2559,10 @@ export const translations: Record<Language, Record<string, string>> = {
     "visuals.labels": "라벨",
     "visuals.text_labels": "텍스트 라벨",
     "visuals.icon_style": "아이콘 스타일",
+    "performance.title": "성능",
+    "performance.desc": "성능 털모드 (지연 없음)",
+    "performance.strict": "엄격한 성능",
+
 
     // Errors & Status
     "status.executing": "실행 중...",
@@ -2826,6 +2862,10 @@ export const translations: Record<Language, Record<string, string>> = {
     "visuals.labels": "Метки",
     "visuals.text_labels": "Текстовые Метки",
     "visuals.icon_style": "Стиль значков",
+    "performance.title": "Производительность",
+    "performance.desc": "Режим производительности (Zero-Lag)",
+    "performance.strict": "Строгая производительность",
+
 
     // Errors & Status
     "status.executing": "Выполнение...",

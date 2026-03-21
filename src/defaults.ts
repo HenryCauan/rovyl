@@ -34,6 +34,7 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   activeWorkspaceIndex: 0,
   enableMouseTrigger: true,
   language: "pt",
+  performanceMode: false,
 };
 
 export const AVAILABLE_WIDGETS: WidgetDefinition[] = [

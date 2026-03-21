@@ -934,6 +934,18 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                         </div>
                     </BentoCard>
 
+                    <BentoCard title={getTranslation(config, 'performance.title') || 'Performance'} icon={Zap} description={getTranslation(config, 'performance.desc') || 'Modo Desempenho (Zero-Lag)'}>
+                        <div className="flex items-center justify-between p-4 bg-white/[0.03] border border-white/5 rounded-2xl cursor-pointer group hover:bg-white/[0.05]" onClick={() => setConfig({ ...config, performanceMode: !config.performanceMode })}>
+                            <div className="space-y-1">
+                                <span className="text-sm font-semibold text-white/80 group-hover:text-white block">{getTranslation(config, 'performance.strict') || 'Desempenho Estrito'}</span>
+                                <span className="text-[10px] text-white/30 uppercase tracking-wider block font-bold leading-tight">Desativa Blur, pre-renderiza elementos pesados</span>
+                            </div>
+                            <div className={`w-11 h-6 rounded-full relative transition-all duration-500 ${config.performanceMode ? 'bg-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.3)]' : 'bg-white/10'}`}>
+                                <div className={`absolute top-1 w-4 h-4 rounded-full transition-all duration-500 ${config.performanceMode ? 'left-6 bg-black' : 'left-1 bg-white/40'}`} />
+                            </div>
+                        </div>
+                    </BentoCard>
+
                     <BentoCard
                         title={getTranslation(config, 'visuals.accent_color')}
                         icon={Palette}
