@@ -360,8 +360,18 @@ export default function App() {
       setIsDashboardOpen(true);
     });
 
-    const cleanupSettings = window.electron?.onOpenSettings(() => {
-      handleOpenSettings();
+    const cleanupSettings = window.electron?.onOpenSettings((args?: { overlay?: boolean }) => {
+      if (args?.overlay) {
+        if (isMenuOpen) setIsMenuOpen(false);
+        setIsSettingsOpen(true);
+        setIsDashboardOpen(false); // Force overlay mode
+        if (isDesktopMode && window.electron) {
+          window.electron.setWindowSize('fullscreen'); // Needs fullscreen to be transparent overlay
+          window.electron.showWindow();
+        }
+      } else {
+        handleOpenSettings();
+      }
     });
 
     const cleanupWindowState = window.electron?.onWindowState((state) => {

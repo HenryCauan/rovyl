@@ -1039,6 +1039,7 @@ app.whenReady().then(async () => {
 
   // 2. PowerShell Mouse Hook (C# Low Level Hook) for Global Reliability
   let mouseHook = null;
+  let lastMmbDownTime = 0;
 
   const startMouseHook = () => {
     if (mouseHook) return;
@@ -1058,7 +1059,18 @@ app.whenReady().then(async () => {
         if (!msg) continue;
 
         if (msg === "MIDDLE_DOWN") {
-          showMenuAtCursor("mmb");
+          const now = Date.now();
+          if (now - lastMmbDownTime < 400) {
+            // Double click: Open Settings
+            let mmbClickCount = 2; // Declared here to ensure it's defined
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send("open-settings", { overlay: true });
+            }
+          } else {
+            // Single click: Show Radial Menu
+            showMenuAtCursor("mmb");
+          }
+          lastMmbDownTime = now;
         } else if (msg === "MIDDLE_UP") {
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send("mmb-release");

@@ -26,7 +26,7 @@ contextBridge.exposeInMainWorld("electron", {
     return () => ipcRenderer.removeListener("mmb-release", listener);
   },
   onOpenSettings: (callback) => {
-    const listener = (event) => callback();
+    const listener = (event, args) => callback(args);
     ipcRenderer.on("open-settings", listener);
     return () => ipcRenderer.removeListener("open-settings", listener);
   },

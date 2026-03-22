@@ -871,7 +871,7 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                         </div>
                     </BentoCard>
 
-                    <BentoCard title={getTranslation(config, 'visuals.icon_density')} icon={Box} description={getTranslation(config, 'visuals.icon_scale') || 'Escala dos Atalhos'} className="lg:col-span-1">
+                    <BentoCard title={getTranslation(config, 'visuals.icon_density')} icon={Box} description={getTranslation(config, 'visuals.icon_scale') || 'Escala dos Atalhos'} className="md:col-span-1 lg:col-span-1">
                         <div className="space-y-6">
                             <div className="flex items-end justify-between">
                                 <span className="text-3xl font-black text-white tabular-nums">{config.iconSize}</span>
@@ -889,7 +889,7 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                         </div>
                     </BentoCard>
 
-                    <BentoCard title={getTranslation(config, 'visuals.transparency')} icon={Zap} description={getTranslation(config, 'visuals.glass_effect') || 'Efeito de Vidro'} className="lg:col-span-1">
+                    <BentoCard title={getTranslation(config, 'visuals.transparency')} icon={ImageIcon} description={getTranslation(config, 'visuals.glass_effect') || 'Efeito de Vidro'} className="md:col-span-1 lg:col-span-1">
                         <div className="space-y-6">
                             <div className="space-y-4">
                                 <div className="flex items-end justify-between">
@@ -934,18 +934,6 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                         </div>
                     </BentoCard>
 
-                    <BentoCard title={getTranslation(config, 'performance.title') || 'Performance'} icon={Zap} description={getTranslation(config, 'performance.desc') || 'Modo Desempenho (Zero-Lag)'}>
-                        <div className="flex items-center justify-between p-4 bg-white/[0.03] border border-white/5 rounded-2xl cursor-pointer group hover:bg-white/[0.05]" onClick={() => setConfig({ ...config, performanceMode: !config.performanceMode })}>
-                            <div className="space-y-1">
-                                <span className="text-sm font-semibold text-white/80 group-hover:text-white block">{getTranslation(config, 'performance.strict') || 'Desempenho Estrito'}</span>
-                                <span className="text-[10px] text-white/30 uppercase tracking-wider block font-bold leading-tight">Desativa Blur, pre-renderiza elementos pesados</span>
-                            </div>
-                            <div className={`w-11 h-6 rounded-full relative transition-all duration-500 ${config.performanceMode ? 'bg-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.3)]' : 'bg-white/10'}`}>
-                                <div className={`absolute top-1 w-4 h-4 rounded-full transition-all duration-500 ${config.performanceMode ? 'left-6 bg-black' : 'left-1 bg-white/40'}`} />
-                            </div>
-                        </div>
-                    </BentoCard>
-
                     <BentoCard
                         title={getTranslation(config, 'visuals.accent_color')}
                         icon={Palette}
@@ -978,7 +966,8 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                         </div>
                     </BentoCard>
 
-                    <BentoCard title={getTranslation(config, 'visuals.spacing')} icon={GripVertical} description={getTranslation(config, 'visuals.visual_rhythm') || 'Ritmo Visual'} className="lg:col-span-1">
+
+                    <BentoCard title={getTranslation(config, 'visuals.spacing')} icon={GripVertical} description={getTranslation(config, 'visuals.visual_rhythm') || 'Ritmo Visual'} className="md:col-span-1 lg:col-span-1">
                         <div className="space-y-6">
                             <div className="flex items-end justify-between">
                                 <span className="text-3xl font-black text-white tabular-nums">{config.appSpacing}</span>
@@ -996,7 +985,7 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                         </div>
                     </BentoCard>
 
-                    <BentoCard title={getTranslation(config, 'visuals.activation_limit')} icon={Zap} description={getTranslation(config, 'visuals.sensitivity') || 'Sensibilidade'} className="lg:col-span-1">
+                    <BentoCard title={getTranslation(config, 'visuals.activation_limit')} icon={Zap} description={getTranslation(config, 'visuals.sensitivity') || 'Sensibilidade'} className="md:col-span-1 lg:col-span-1">
                         <div className="space-y-6">
                             <div className="flex items-end justify-between">
                                 <span className="text-3xl font-black text-white tabular-nums">{config.activationThreshold}</span>
@@ -1014,7 +1003,7 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                         </div>
                     </BentoCard>
 
-                    <BentoCard title={getTranslation(config, 'visuals.labels') || 'Legendas'} icon={FileType} description={getTranslation(config, 'visuals.text_labels') || 'Rótulos de Texto'} className="lg:col-span-1">
+                    <BentoCard title={getTranslation(config, 'visuals.labels') || 'Legendas'} icon={FileType} description={getTranslation(config, 'visuals.text_labels') || 'Rótulos de Texto'} className="md:col-span-1 lg:col-span-1">
                         <div className="flex flex-col gap-4">
                             <button
                                 onClick={() => setConfig({ ...config, showLabels: !config.showLabels })}
@@ -1025,6 +1014,18 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                                 </span>
                                 <div className={`w-2 h-2 rounded-full ${config.showLabels ? 'bg-black animate-pulse' : 'bg-white/10'}`} />
                             </button>
+                        </div>
+                    </BentoCard>
+
+                    <BentoCard title={getTranslation(config, 'performance.title')} icon={Zap} description={getTranslation(config, 'performance.desc')} className="md:col-span-1 lg:col-span-3">
+                        <div className="flex items-center justify-between p-4 bg-white/[0.03] border border-white/5 rounded-2xl cursor-pointer group hover:bg-white/[0.05]" onClick={() => setConfig({ ...config, performanceMode: !config.performanceMode })}>
+                            <div className="space-y-1">
+                                <span className="text-sm font-semibold text-white/80 group-hover:text-white block">{getTranslation(config, 'performance.strict')}</span>
+                                <span className="text-[10px] text-white/30 uppercase tracking-wider block font-bold leading-tight">{getTranslation(config, 'performance.strict_desc')}</span>
+                            </div>
+                            <div className={`w-11 h-6 rounded-full relative transition-all duration-500 ${config.performanceMode ? 'bg-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.3)]' : 'bg-white/10'}`}>
+                                <div className={`absolute top-1 w-4 h-4 rounded-full transition-all duration-500 ${config.performanceMode ? 'left-6 bg-black' : 'left-1 bg-white/40'}`} />
+                            </div>
                         </div>
                     </BentoCard>
                 </div>

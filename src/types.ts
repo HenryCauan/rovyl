@@ -159,7 +159,7 @@ export interface ElectronAPI {
   onOpenDashboard: (callback: () => void) => () => void;
   onMouseUp: (callback: () => void) => () => void;
   onMmbRelease: (callback: () => void) => () => void;
-  onOpenSettings: (callback: () => void) => () => void;
+  onOpenSettings: (callback: (args?: { overlay?: boolean }) => void) => () => void;
   setWindowSize: (mode: "small" | "fullscreen" | "windowed") => void;
   setGameMode: (config: GameModeConfig) => void;
   getFileIcon: (path: string) => Promise<string | null>;

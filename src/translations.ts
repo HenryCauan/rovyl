@@ -119,6 +119,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "performance.title": "Desempenho",
     "performance.desc": "Modo Performance (Zero-Lag)",
     "performance.strict": "Performance Estrita",
+    "performance.strict_desc": "Desativa desfoque e pre-renderiza elementos pesados",
 
 
     "status.executing": "Executando...",
@@ -454,6 +455,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "performance.title": "Performance",
     "performance.desc": "Performance Mode (Zero-Lag)",
     "performance.strict": "Strict Performance",
+    "performance.strict_desc": "Disables blur and pre-renders heavy elements",
 
 
     "status.executing": "Executing...",
@@ -754,6 +756,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "performance.title": "Rendimiento",
     "performance.desc": "Modo Rendimiento (Zero-Lag)",
     "performance.strict": "Rendimiento Estricto",
+    "performance.strict_desc": "Desactiva desenfoque y pre-renderiza elementos pesadamente",
 
 
     // Errors & Status
@@ -1037,6 +1040,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "performance.title": "Performance",
     "performance.desc": "Mode Performance (Zero-Lag)",
     "performance.strict": "Performance Stricte",
+    "performance.strict_desc": "Désactive le flou et pré-rend les éléments lourds",
 
 
     // Errors & Status
@@ -1346,6 +1350,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "performance.title": "Leistung",
     "performance.desc": "Leistungsmodus (Zero-Lag)",
     "performance.strict": "Strikte Leistung",
+    "performance.strict_desc": "Deaktiviert Unschärfe und berechnet schwere Elemente vor",
 
 
     // Errors & Status
@@ -1654,6 +1659,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "performance.title": "Prestazioni",
     "performance.desc": "Modalità Prestazioni (Zero-Lag)",
     "performance.strict": "Prestazioni Ferree",
+    "performance.strict_desc": "Disattiva la sfocatura e pre-renderizza gli elementi pesanti",
 
 
     // Errors & Status
@@ -1959,6 +1965,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "performance.title": "パフォーマンス",
     "performance.desc": "パフォーマンスモード (ラグゼロ)",
     "performance.strict": "厳格なパフォーマンス",
+    "performance.strict_desc": "ぼかしを無効にし、重い要素を事前レンダリングします",
 
 
     // Errors & Status
@@ -2261,6 +2268,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "performance.title": "性能",
     "performance.desc": "性能模式 (零延迟)",
     "performance.strict": "严格性能",
+    "performance.strict_desc": "禁用模糊并预渲染重型元素",
 
 
     // Errors & Status
@@ -2560,8 +2568,9 @@ export const translations: Record<Language, Record<string, string>> = {
     "visuals.text_labels": "텍스트 라벨",
     "visuals.icon_style": "아이콘 스타일",
     "performance.title": "성능",
-    "performance.desc": "성능 털모드 (지연 없음)",
+    "performance.desc": "성능 모드 (지연 없음)",
     "performance.strict": "엄격한 성능",
+    "performance.strict_desc": "블러를 비활성화하고 무거운 요소를 미리 렌더링합니다",
 
 
     // Errors & Status
@@ -2865,6 +2874,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "performance.title": "Производительность",
     "performance.desc": "Режим производительности (Zero-Lag)",
     "performance.strict": "Строгая производительность",
+    "performance.strict_desc": "Отключает размытие и предварительно отрисовывает тяжелые элементы",
 
 
     // Errors & Status
