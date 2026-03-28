@@ -19,6 +19,81 @@ import {
 import { ZenithLogo } from './ZenithLogo';
 import { IconPicker } from './IconPicker';
 import { getTranslation, LANGUAGES } from '../translations';
+import { Tooltip } from './Tooltip';
+
+
+const TerminalCommandEditor = ({ commands, config, onChange, onAdd, onRemove, compact = false }) => {
+    return (
+        <div className="space-y-3">
+            {!compact && (
+                <div className="flex items-center justify-between mb-2">
+                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest">
+                        {getTranslation(config, 'editingApp.terminal_commands')}
+                    </label>
+                    <button
+                        onClick={onAdd}
+                        className="flex items-center gap-1 text-[10px] font-bold text-purple-400/80 hover:text-purple-400 transition-colors uppercase tracking-widest"
+                    >
+                        <Plus size={10} />
+                        {getTranslation(config, 'editingApp.add_command')}
+                    </button>
+                </div>
+            )}
+            
+            {commands.length === 0 ? (
+                <div className={compact ? "p-4 rounded-xl border border-dashed border-white/5 bg-white/[0.01] flex flex-col items-center justify-center gap-2" : "p-6 rounded-2xl border border-dashed border-white/5 bg-white/[0.01] flex flex-col items-center justify-center gap-2"}>
+                    <p className="text-[9px] text-white/10 uppercase font-bold tracking-widest">
+                        {getTranslation(config, 'status.no_app_selected') || 'Nenhum comando'}
+                    </p>
+                    {compact && (
+                        <button
+                            onClick={onAdd}
+                            className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-[9px] font-bold text-white/40 hover:text-white hover:bg-white/10 transition-all uppercase tracking-widest flex items-center gap-1.5"
+                        >
+                            <Plus size={12} />
+                            {getTranslation(config, 'editingApp.add_command')}
+                        </button>
+                    )}
+                </div>
+            ) : (
+                <div className="space-y-3">
+                    {commands.map((cmd, idx) => (
+                        <div key={idx} className="flex gap-2 group/cmd animate-in fade-in slide-in-from-left-2 duration-300">
+                            <div className="flex-1 relative">
+                                <input
+                                    type="text"
+                                    value={cmd}
+                                    onChange={(e) => onChange(idx, e.target.value)}
+                                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-xs font-mono text-purple-400/80 focus:border-purple-400/40 focus:bg-black/60 outline-none transition-all duration-300"
+                                    placeholder={getTranslation(config, 'editingApp.command_placeholder') || 'Ex: npm start'}
+                                />
+                                <div className="absolute right-3 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-purple-400/20" />
+                            </div>
+                            <Tooltip label={getTranslation(config, 'action.remove') || 'Remover'}>
+                                <button
+                                    onClick={() => onRemove(idx)}
+                                    className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/[0.02] border border-white/5 text-white/10 hover:text-red-400 hover:bg-red-400/10 transition-all active:scale-90"
+                                >
+                                    <X size={14} />
+                                </button>
+                            </Tooltip>
+
+                        </div>
+                    ))}
+                    {compact && commands.length > 0 && (
+                        <button
+                            onClick={onAdd}
+                            className="w-full py-2.5 rounded-xl border border-dashed border-white/5 bg-white/[0.01] text-[9px] font-bold text-white/20 hover:text-purple-400 hover:border-purple-400/20 hover:bg-purple-400/5 transition-all uppercase tracking-widest flex items-center justify-center gap-2 mt-2"
+                        >
+                            <Plus size={12} />
+                            {getTranslation(config, 'editingApp.add_command')}
+                        </button>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
 
 const AppEditorModal = React.memo(({
     editingApp,
@@ -40,6 +115,7 @@ const AppEditorModal = React.memo(({
     config: UIConfig
 }) => {
     const [isCompact, setIsCompact] = useState(() => window.innerWidth < 768);
+    const [expandedFolderId, setExpandedFolderId] = useState<string | null>(null);
     useEffect(() => {
         const onResize = () => setIsCompact(window.innerWidth < 768);
         window.addEventListener('resize', onResize);
@@ -184,25 +260,28 @@ const AppEditorModal = React.memo(({
                                                         </div>
                                                     ) : (
                                                         <>
-                                                            <button
-                                                                onClick={editingApp.app.commandType === 'folder' ? handlePickFolder : handlePickCommand}
-                                                                className="px-5 h-[52px] bg-white text-black font-bold text-xs rounded-xl hover:bg-gray-200 transition-all duration-300 shadow-xl active:scale-95 flex items-center justify-center gap-2 group"
-                                                                title={getTranslation(config, 'editingApp.explore_title')}
-                                                            >
-                                                                <Folder size={16} strokeWidth={2.5} />
-                                                                <span>{getTranslation(config, 'action.explore')}</span>
-                                                            </button>
-                                                            {editingApp.app.commandType === 'app' && (
+                                                            <Tooltip label={getTranslation(config, 'editingApp.explore_title')}>
                                                                 <button
-                                                                    onClick={() => setShowAppSelector(true)}
-                                                                    className="px-4 h-[52px] bg-white/[0.03] border border-white/10 flex items-center justify-center gap-2 text-white/40 hover:text-white hover:bg-white/[0.08] rounded-xl transition-all duration-300 active:scale-90"
-                                                                    title={getTranslation(config, 'editingApp.installed_apps_title')}
+                                                                    onClick={editingApp.app.commandType === 'folder' ? handlePickFolder : handlePickCommand}
+                                                                    className="px-5 h-[52px] bg-white text-black font-bold text-xs rounded-xl hover:bg-gray-200 transition-all duration-300 shadow-xl active:scale-95 flex items-center justify-center gap-2 group"
                                                                 >
-                                                                    <LayoutGrid size={18} strokeWidth={1.5} />
-                                                                    <span className="font-bold text-[10px] uppercase tracking-wider">{getTranslation(config, 'editingApp.installed_apps_label')}</span>
+                                                                    <Folder size={16} strokeWidth={2.5} />
+                                                                    <span>{getTranslation(config, 'action.explore')}</span>
                                                                 </button>
+                                                            </Tooltip>
+                                                            {editingApp.app.commandType === 'app' && (
+                                                                <Tooltip label={getTranslation(config, 'editingApp.installed_apps_title')}>
+                                                                    <button
+                                                                        onClick={() => setShowAppSelector(true)}
+                                                                        className="px-4 h-[52px] bg-white/[0.03] border border-white/10 flex items-center justify-center gap-2 text-white/40 hover:text-white hover:bg-white/[0.08] rounded-xl transition-all duration-300 active:scale-90"
+                                                                    >
+                                                                        <LayoutGrid size={18} strokeWidth={1.5} />
+                                                                        <span className="font-bold text-[10px] uppercase tracking-wider">{getTranslation(config, 'editingApp.installed_apps_label')}</span>
+                                                                    </button>
+                                                                </Tooltip>
                                                             )}
                                                         </>
+
                                                     )}
                                                 </div>
                                             </div>
@@ -258,9 +337,9 @@ const AppEditorModal = React.memo(({
 
                                     {/* Seção: Acesso Rápido (Pastas) */}
                                     {editingApp.app.type === 'app' && isIDE && (
-                                        <section className="space-y-3">
+                                        <section className="space-y-4 pt-1">
                                             <div className="flex items-center justify-between ml-1">
-                                                <label className="text-sm font-semibold text-white/60">{getTranslation(config, 'editingApp.quick_access')}</label>
+                                                <label className="text-[10px] font-bold text-white/20 uppercase tracking-[0.2em]">{getTranslation(config, 'editingApp.quick_access')}</label>
                                                 <button
                                                     onClick={async () => {
                                                         const path = await window.electron?.selectFolder?.();
@@ -275,7 +354,8 @@ const AppEditorModal = React.memo(({
                                                                 commandType: 'app',
                                                                 iconName: 'Folder',
                                                                 iconSource: 'lucide',
-                                                                description: 'Quick Access Folder'
+                                                                description: 'Quick Access Folder',
+                                                                terminalCommands: []
                                                             };
                                                             handleAppChange('children', [...(editingApp.app.children || []), newFolder]);
                                                         }
@@ -297,42 +377,98 @@ const AppEditorModal = React.memo(({
                                                         {editingApp.app.children
                                                             .filter(child => child.commandType === 'folder' || child.description === 'Quick Access Folder')
                                                             .map((child) => (
-                                                                <div key={child.id} className="group flex items-center gap-3 p-3 bg-white/[0.02] border border-white/5 rounded-xl hover:bg-white/[0.04] transition-all">
-                                                                    <div className="w-8 h-8 rounded-lg bg-black/40 flex items-center justify-center text-white/20">
-                                                                        <Folder size={16} />
+                                                                <React.Fragment key={child.id}>
+                                                                    <div className="group flex items-center gap-3 p-3 bg-white/[0.02] border border-white/5 rounded-xl hover:bg-white/[0.04] transition-all">
+                                                                        <div className="w-8 h-8 rounded-lg bg-black/40 flex items-center justify-center text-white/20">
+                                                                            <Folder size={16} />
+                                                                        </div>
+                                                                        <div className="flex-1 min-w-0">
+                                                                            <div className="text-xs font-semibold text-white truncate">{child.label}</div>
+                                                                            <div className="text-[9px] text-white/20 font-mono truncate">{child.command}</div>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                                                                            <Tooltip label={getTranslation(config, 'editingApp.terminal_commands')}>
+                                                                                <button
+                                                                                    onClick={() => setExpandedFolderId(expandedFolderId === child.id ? null : child.id)}
+                                                                                    className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                                                                                        expandedFolderId === child.id 
+                                                                                        ? 'text-purple-400 bg-purple-400/10' 
+                                                                                        : (child.terminalCommands?.length ? 'text-purple-400/50 bg-purple-400/5' : 'text-white/10 hover:text-white/40 hover:bg-white/5')
+                                                                                    }`}
+                                                                                >
+                                                                                    <Settings2 size={14} />
+                                                                                </button>
+                                                                            </Tooltip>
+                                                                            <Tooltip label={getTranslation(config, 'editingApp.toggle_terminal')}>
+                                                                                <button
+                                                                                    onClick={() => {
+                                                                                        const newChildren = editingApp.app.children?.map(c => 
+                                                                                            c.id === child.id ? { ...c, openTerminal: !c.openTerminal } : c
+                                                                                        );
+                                                                                        handleAppChange('children', newChildren);
+                                                                                    }}
+                                                                                    className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                                                                                        child.openTerminal 
+                                                                                        ? 'text-blue-400 bg-blue-400/10 hover:bg-blue-400/20' 
+                                                                                        : 'text-white/10 hover:text-white/40 hover:bg-white/5'
+                                                                                    }`}
+                                                                                >
+                                                                                    <Command size={14} />
+                                                                                </button>
+                                                                            </Tooltip>
+                                                                            <Tooltip label={getTranslation(config, 'action.remove') || 'Remover'}>
+                                                                                <button
+                                                                                    onClick={() => {
+                                                                                        const newChildren = editingApp.app.children?.filter(c => c.id !== child.id);
+                                                                                        handleAppChange('children', newChildren);
+                                                                                    }}
+                                                                                    className="w-8 h-8 rounded-lg flex items-center justify-center text-white/10 hover:text-red-400 hover:bg-red-400/10 transition-all"
+                                                                                >
+                                                                                    <Trash2 size={14} />
+                                                                                </button>
+                                                                            </Tooltip>
+                                                                        </div>
+
                                                                     </div>
-                                                                    <div className="flex-1 min-w-0">
-                                                                        <div className="text-xs font-semibold text-white truncate">{child.label}</div>
-                                                                        <div className="text-[9px] text-white/20 font-mono truncate">{child.command}</div>
-                                                                    </div>
-                                                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                                                                        <button
-                                                                            onClick={() => {
-                                                                                const newChildren = editingApp.app.children?.map(c => 
-                                                                                    c.id === child.id ? { ...c, openTerminal: !c.openTerminal } : c
-                                                                                );
-                                                                                handleAppChange('children', newChildren);
-                                                                            }}
-                                                                            title={getTranslation(config, 'editingApp.toggle_terminal') || 'Abrir com Terminal'}
-                                                                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                                                                                child.openTerminal 
-                                                                                ? 'text-blue-400 bg-blue-400/10 hover:bg-blue-400/20' 
-                                                                                : 'text-white/10 hover:text-white/40 hover:bg-white/5'
-                                                                            }`}
-                                                                        >
-                                                                            <Command size={14} />
-                                                                        </button>
-                                                                        <button
-                                                                            onClick={() => {
-                                                                                const newChildren = editingApp.app.children?.filter(c => c.id !== child.id);
-                                                                                handleAppChange('children', newChildren);
-                                                                            }}
-                                                                            className="w-8 h-8 rounded-lg flex items-center justify-center text-white/10 hover:text-red-400 hover:bg-red-400/10 transition-all"
-                                                                        >
-                                                                            <Trash2 size={14} />
-                                                                        </button>
-                                                                    </div>
-                                                                </div>
+                                                                    {expandedFolderId === child.id && (
+                                                                        <div className="mt-2 ml-1 p-4 bg-black/40 border border-white/5 rounded-2xl animate-in slide-in-from-top-2 duration-300">
+                                                                            <TerminalCommandEditor 
+                                                                                commands={child.terminalCommands || []}
+                                                                                config={config}
+                                                                                compact={true}
+                                                                                onChange={(tidx, val) => {
+                                                                                    const newChildren = editingApp.app.children?.map(c => {
+                                                                                        if (c.id === child.id) {
+                                                                                            const ncmds = [...(c.terminalCommands || [])];
+                                                                                            ncmds[tidx] = val;
+                                                                                            return { ...c, terminalCommands: ncmds };
+                                                                                        }
+                                                                                        return c;
+                                                                                    });
+                                                                                    handleAppChange('children', newChildren);
+                                                                                }}
+                                                                                onAdd={() => {
+                                                                                    const newChildren = editingApp.app.children?.map(c => {
+                                                                                        if (c.id === child.id) {
+                                                                                            return { ...c, terminalCommands: [...(c.terminalCommands || []), ''] };
+                                                                                        }
+                                                                                        return c;
+                                                                                    });
+                                                                                    handleAppChange('children', newChildren);
+                                                                                }}
+                                                                                onRemove={(tidx) => {
+                                                                                    const newChildren = editingApp.app.children?.map(c => {
+                                                                                        if (c.id === child.id) {
+                                                                                            return { ...c, terminalCommands: (c.terminalCommands || []).filter((_, i) => i !== tidx) };
+                                                                                        }
+                                                                                        return c;
+                                                                                    });
+                                                                                    handleAppChange('children', newChildren);
+                                                                                }}
+                                                                            />
+                                                                        </div>
+                                                                    )}
+                                                                </React.Fragment>
                                                             ))}
                                                     </div>
                                                 )}
@@ -411,25 +547,28 @@ const AppEditorModal = React.memo(({
                                                         </div>
                                                     ) : (
                                                         <>
-                                                            <button
-                                                                onClick={editingApp.app.commandType === 'folder' ? handlePickFolder : handlePickCommand}
-                                                                className="px-5 h-[52px] bg-white text-black font-bold text-xs rounded-xl hover:bg-gray-200 transition-all duration-300 shadow-xl active:scale-95 flex items-center justify-center gap-2 group"
-                                                                title={getTranslation(config, 'editingApp.explore_title')}
-                                                            >
-                                                                <Folder size={16} strokeWidth={2.5} />
-                                                                <span>{getTranslation(config, 'action.explore')}</span>
-                                                            </button>
-                                                            {editingApp.app.commandType === 'app' && (
+                                                            <Tooltip label={getTranslation(config, 'editingApp.explore_title')}>
                                                                 <button
-                                                                    onClick={() => setShowAppSelector(true)}
-                                                                    className="px-4 h-[52px] bg-white/[0.03] border border-white/10 flex items-center justify-center gap-2 text-white/40 hover:text-white hover:bg-white/[0.08] rounded-xl transition-all duration-300 active:scale-90"
-                                                                    title={getTranslation(config, 'editingApp.installed_apps_title')}
+                                                                    onClick={editingApp.app.commandType === 'folder' ? handlePickFolder : handlePickCommand}
+                                                                    className="px-5 h-[52px] bg-white text-black font-bold text-xs rounded-xl hover:bg-gray-200 transition-all duration-300 shadow-xl active:scale-95 flex items-center justify-center gap-2 group"
                                                                 >
-                                                                    <LayoutGrid size={18} strokeWidth={1.5} />
-                                                                    <span className="font-bold text-[10px] uppercase tracking-wider">{getTranslation(config, 'editingApp.installed_apps_label')}</span>
+                                                                    <Folder size={16} strokeWidth={2.5} />
+                                                                    <span>{getTranslation(config, 'action.explore')}</span>
                                                                 </button>
+                                                            </Tooltip>
+                                                            {editingApp.app.commandType === 'app' && (
+                                                                <Tooltip label={getTranslation(config, 'editingApp.installed_apps_title')}>
+                                                                    <button
+                                                                        onClick={() => setShowAppSelector(true)}
+                                                                        className="px-4 h-[52px] bg-white/[0.03] border border-white/10 flex items-center justify-center gap-2 text-white/40 hover:text-white hover:bg-white/[0.08] rounded-xl transition-all duration-300 active:scale-90"
+                                                                    >
+                                                                        <LayoutGrid size={18} strokeWidth={1.5} />
+                                                                        <span className="font-bold text-[10px] uppercase tracking-wider">{getTranslation(config, 'editingApp.installed_apps_label')}</span>
+                                                                    </button>
+                                                                </Tooltip>
                                                             )}
                                                         </>
+
                                                     )}
                                                 </div>
                                             </div>
@@ -501,16 +640,15 @@ const AppEditorModal = React.memo(({
                                                             
                                                             if (lowerParent.includes('antigravity') || lowerCmd.includes('antigravity')) idePrefix = 'antigravity';
                                                             else if (lowerParent.includes('cursor') || lowerCmd.includes('cursor')) idePrefix = 'cursor';
-                                                            else if (lowerParent.includes('code') || lowerCmd.includes('code')) idePrefix = 'code';
-
                                                             const newFolder: AppItem = {
                                                                 id: crypto.randomUUID(),
                                                                 label,
-                                                                command: `${idePrefix} "${path}"`,
+                                                                command: `${formattedParent} "${path}"`,
                                                                 commandType: 'app',
                                                                 iconName: 'Folder',
                                                                 iconSource: 'lucide',
-                                                                description: 'Quick Access Folder'
+                                                                description: 'Quick Access Folder',
+                                                                terminalCommands: []
                                                             };
                                                             handleAppChange('children', [...(editingApp.app.children || []), newFolder]);
                                                         }
@@ -532,47 +670,120 @@ const AppEditorModal = React.memo(({
                                                         {editingApp.app.children
                                                             .filter(child => child.commandType === 'folder' || child.description === 'Quick Access Folder')
                                                             .map((child) => (
-                                                                <div key={child.id} className="group flex items-center gap-3 p-3 bg-white/[0.02] border border-white/5 rounded-xl hover:bg-white/[0.04] transition-all">
-                                                                    <div className="w-8 h-8 rounded-lg bg-black/40 flex items-center justify-center text-white/20">
-                                                                        <Folder size={16} />
+                                                                <React.Fragment key={child.id}>
+                                                                    <div className="group flex items-center gap-3 p-3 bg-white/[0.02] border border-white/5 rounded-xl hover:bg-white/[0.04] transition-all">
+                                                                        <div className="w-8 h-8 rounded-lg bg-black/40 flex items-center justify-center text-white/20">
+                                                                            <Folder size={16} />
+                                                                        </div>
+                                                                        <div className="flex-1 min-w-0">
+                                                                            <div className="text-xs font-semibold text-white truncate">{child.label}</div>
+                                                                            <div className="text-[9px] text-white/20 font-mono truncate">{child.command}</div>
+                                                                        </div>
+                                                                          <div className="flex items-center gap-1 opacity-100 transition-all">
+                                                                              <Tooltip label={getTranslation(config, 'editingApp.terminal_commands')}>
+                                                                                  <button
+                                                                                      onClick={() => setExpandedFolderId(expandedFolderId === child.id ? null : child.id)}
+                                                                                      className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                                                                                          expandedFolderId === child.id 
+                                                                                          ? 'text-purple-400 bg-purple-400/10' 
+                                                                                          : (child.terminalCommands?.length ? 'text-purple-400/50 bg-purple-400/5' : 'text-white/10 hover:text-white/40 hover:bg-white/5')
+                                                                                      }`}
+                                                                                  >
+                                                                                      <Settings2 size={14} />
+                                                                                  </button>
+                                                                              </Tooltip>
+                                                                              <Tooltip label={getTranslation(config, 'editingApp.toggle_terminal')}>
+                                                                                  <button
+                                                                                      onClick={() => {
+                                                                                          const newChildren = editingApp.app.children?.map(c => 
+                                                                                              c.id === child.id ? { ...c, openTerminal: !c.openTerminal } : c
+                                                                                          );
+                                                                                          handleAppChange('children', newChildren);
+                                                                                      }}
+                                                                                      className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                                                                                          child.openTerminal 
+                                                                                          ? 'text-blue-400 bg-blue-400/10 hover:bg-blue-400/20' 
+                                                                                          : 'text-white/10 hover:text-white/40 hover:bg-white/5'
+                                                                                      }`}
+                                                                                  >
+                                                                                      <Command size={14} />
+                                                                                  </button>
+                                                                              </Tooltip>
+                                                                              <Tooltip label={getTranslation(config, 'action.remove') || 'Remover'}>
+                                                                                  <button
+                                                                                      onClick={() => {
+                                                                                          const newChildren = editingApp.app.children?.filter(c => c.id !== child.id);
+                                                                                          handleAppChange('children', newChildren);
+                                                                                      }}
+                                                                                      className="w-8 h-8 rounded-lg flex items-center justify-center text-white/10 hover:text-red-400 hover:bg-red-400/10 transition-all"
+                                                                                  >
+                                                                                      <Trash2 size={14} />
+                                                                                  </button>
+                                                                              </Tooltip>
+                                                                          </div>
+
                                                                     </div>
-                                                                    <div className="flex-1 min-w-0">
-                                                                        <div className="text-xs font-semibold text-white truncate">{child.label}</div>
-                                                                        <div className="text-[9px] text-white/20 font-mono truncate">{child.command}</div>
-                                                                    </div>
-                                                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                                                                        <button
-                                                                            onClick={() => {
-                                                                                const newChildren = editingApp.app.children?.map(c => 
-                                                                                    c.id === child.id ? { ...c, openTerminal: !c.openTerminal } : c
-                                                                                );
-                                                                                handleAppChange('children', newChildren);
-                                                                            }}
-                                                                            title={getTranslation(config, 'editingApp.toggle_terminal') || 'Abrir com Terminal'}
-                                                                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                                                                                child.openTerminal 
-                                                                                ? 'text-blue-400 bg-blue-400/10 hover:bg-blue-400/20' 
-                                                                                : 'text-white/10 hover:text-white/40 hover:bg-white/5'
-                                                                            }`}
-                                                                        >
-                                                                            <Command size={14} />
-                                                                        </button>
-                                                                        <button
-                                                                            onClick={() => {
-                                                                                const newChildren = editingApp.app.children?.filter(c => c.id !== child.id);
-                                                                                handleAppChange('children', newChildren);
-                                                                            }}
-                                                                            className="w-8 h-8 rounded-lg flex items-center justify-center text-white/10 hover:text-red-400 hover:bg-red-400/10 transition-all"
-                                                                        >
-                                                                            <Trash2 size={14} />
-                                                                        </button>
-                                                                    </div>
-                                                                </div>
+                                                                    {expandedFolderId === child.id && (
+                                                                        <div className="mt-2 ml-1 p-4 bg-black/40 border border-white/5 rounded-2xl animate-in slide-in-from-top-2 duration-300">
+                                                                            <TerminalCommandEditor 
+                                                                                commands={child.terminalCommands || []}
+                                                                                config={config}
+                                                                                compact={true}
+                                                                                onChange={(tidx, val) => {
+                                                                                    const newChildren = editingApp.app.children?.map(c => {
+                                                                                        if (c.id === child.id) {
+                                                                                            const ncmds = [...(c.terminalCommands || [])];
+                                                                                            ncmds[tidx] = val;
+                                                                                            return { ...c, terminalCommands: ncmds };
+                                                                                        }
+                                                                                        return c;
+                                                                                    });
+                                                                                    handleAppChange('children', newChildren);
+                                                                                }}
+                                                                                onAdd={() => {
+                                                                                    const newChildren = editingApp.app.children?.map(c => {
+                                                                                        if (c.id === child.id) {
+                                                                                            return { ...c, terminalCommands: [...(c.terminalCommands || []), ''] };
+                                                                                        }
+                                                                                        return c;
+                                                                                    });
+                                                                                    handleAppChange('children', newChildren);
+                                                                                }}
+                                                                                onRemove={(tidx) => {
+                                                                                    const newChildren = editingApp.app.children?.map(c => {
+                                                                                        if (c.id === child.id) {
+                                                                                            return { ...c, terminalCommands: (c.terminalCommands || []).filter((_, i) => i !== tidx) };
+                                                                                        }
+                                                                                        return c;
+                                                                                    });
+                                                                                    handleAppChange('children', newChildren);
+                                                                                }}
+                                                                            />
+                                                                        </div>
+                                                                    )}
+                                                                </React.Fragment>
                                                             ))}
                                                     </div>
                                                 )}
                                             </div>
                                             <p className="text-[10px] text-white/20 ml-1 italic">{getTranslation(config, 'editingApp.quick_access_desc')}</p>
+                                        </section>
+                                    )}
+
+                                    {/* Seção: Auto-run Command (Global) */}
+                                    {(editingApp.app.type === 'app' || isIDE) && (
+                                        <section className="space-y-4 pt-4 border-t border-white/5 mt-4">
+                                            <TerminalCommandEditor 
+                                                commands={editingApp.app.terminalCommands || []}
+                                                config={config}
+                                                onChange={(idx, val) => {
+                                                    const newCmds = [...(editingApp.app.terminalCommands || [])];
+                                                    newCmds[idx] = val;
+                                                    handleAppChange('terminalCommands', newCmds);
+                                                }}
+                                                onAdd={() => handleAppChange('terminalCommands', [...(editingApp.app.terminalCommands || []), ''])}
+                                                onRemove={(idx) => handleAppChange('terminalCommands', (editingApp.app.terminalCommands || []).filter((_, i) => i !== idx))}
+                                            />
                                         </section>
                                     )}
                                 </div>
@@ -1521,6 +1732,7 @@ interface SettingsModalProps {
     onReset: () => void;
     onOpenDashboard: () => void;
     user: UserProfile | null;
+    onLogout: () => void;
     isPage?: boolean;
 }
 
@@ -2297,7 +2509,8 @@ const UserTab = React.memo(({
     handleImport,
     isExporting,
     isImporting,
-    status
+    status,
+    onLogout
 }: {
     user: UserProfile | null,
     config: UIConfig,
@@ -2305,7 +2518,8 @@ const UserTab = React.memo(({
     handleImport: () => void,
     isExporting: boolean,
     isImporting: boolean,
-    status: { type: 'success' | 'error', message: string } | null
+    status: { type: 'success' | 'error', message: string } | null,
+    onLogout: () => void
 }) => {
     return (
         <motion.div
@@ -2358,6 +2572,11 @@ const UserTab = React.memo(({
                                     <div className={`inline-flex px-3 py-1 rounded-md text-[9px] font-semibold tracking-[0.15em] border self-center sm:self-auto ${user?.isPremium ? 'bg-white text-black border-white' : 'bg-white/5 text-white/40 border-white/10'}`}>
                                         {user?.isPremium ? getTranslation(config, 'user.zenith_pro') : getTranslation(config, 'user.free_plan')}
                                     </div>
+                                    {user?.isAdmin && (
+                                        <div className="inline-flex px-3 py-1 rounded-md text-[9px] font-bold tracking-[0.2em] bg-red-500/10 text-red-500 border border-red-500/20 self-center sm:self-auto">
+                                            {getTranslation(config, 'user.admin_badge')}
+                                        </div>
+                                    )}
                                 </div>
                                 <p className="text-white/40 font-normal mb-6">{user?.email || 'unlinked_identity@zenith.os'}</p>
 
@@ -2461,7 +2680,10 @@ const UserTab = React.memo(({
                                 <p className="text-[11px] leading-relaxed text-white/30 font-normal">{getTranslation(config, 'user.critical_operations_desc')}</p>
                             </div>
                         </div>
-                        <button className="w-full py-3 bg-red-500/10 text-red-500 font-semibold text-xs uppercase tracking-[0.2em] rounded-lg border border-red-500/20 hover:bg-red-500 hover:text-white transition-all duration-300">
+                        <button 
+                            onClick={onLogout}
+                            className="w-full py-3 bg-red-500/10 text-red-500 font-semibold text-xs uppercase tracking-[0.2em] rounded-lg border border-red-500/20 hover:bg-red-500 hover:text-white transition-all duration-300"
+                        >
                             {getTranslation(config, 'user.terminate_session')}
                         </button>
                     </motion.div>
@@ -2747,7 +2969,7 @@ const SearchResultsView = React.memo(({
 });
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
-    isOpen, onClose, apps, setApps, config, setConfig, onReset, onOpenDashboard, user, isPage = false
+    isOpen, onClose, apps, setApps, config, setConfig, onReset, onOpenDashboard, user, onLogout, isPage = false
 }) => {
     // --- LOAD & SAVE SETTINGS (Backend Sync) ---
     useEffect(() => {
@@ -3757,18 +3979,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     transition={!isPage ? { type: "spring", damping: 30, stiffness: 240, mass: 1 } : { duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
                 >
                     {/* Close Button — floating top-right */}
-                    <motion.button
-                        onClick={onClose}
-                        className={`absolute ${isPage ? 'top-12' : 'top-3'} right-3 z-[200] w-8 h-8 flex items-center justify-center rounded-lg bg-white/[0.04] border border-white/[0.08] text-white/30 hover:text-white hover:bg-white/[0.10] hover:border-white/20 transition-all duration-200 group`}
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: 0.3 }}
-                        title={isPage ? "Back to dashboard" : "Close settings"}
-                    >
-                        {isPage ? <ArrowLeft size={16} strokeWidth={2.5} /> : <X size={14} strokeWidth={2} />}
-                    </motion.button>
+                    <Tooltip label={isPage ? "Back to dashboard" : "Close settings"} position="left">
+                        <motion.button
+                            onClick={onClose}
+                            className={`absolute ${isPage ? 'top-4' : 'top-3'} right-3 z-[200] w-8 h-8 flex items-center justify-center rounded-lg bg-white/[0.04] border border-white/[0.08] text-white/30 hover:text-white hover:bg-white/[0.10] hover:border-white/20 transition-all duration-200 group`}
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ delay: 0.3 }}
+                        >
+                            {isPage ? <ArrowLeft size={16} strokeWidth={2.5} /> : <X size={14} strokeWidth={2} />}
+                        </motion.button>
+                    </Tooltip>
+
                     {/* Sidebar */}
                     <motion.div
                         className={`bg-white/[0.01] border-r p-4 pt-[52px] flex-col border-white/[0.06] shrink-0 flex gap-1.5 relative`}
@@ -3786,31 +4010,41 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             >
                                 <AnimatePresence mode="wait">
                                     {isSidebarExpanded ? (
-                                        <motion.div
-                                            key="expanded"
-                                            initial={{ opacity: 0, x: -10 }}
-                                            animate={{ opacity: 1, x: 0 }}
-                                            exit={{ opacity: 0, x: -10 }}
-                                            className="flex items-center gap-3"
-                                        >
-                                            <div className="w-8 h-8 bg-white text-black rounded-xl flex items-center justify-center shadow-lg">
-                                                <ZenithLogo size={18} />
-                                            </div>
-                                            <div className="flex flex-col">
-                                                <h2 className="text-[12px] font-bold text-white tracking-[0.1em] uppercase">Zenith</h2>
-                                                <span className="text-[8px] text-white/30 font-black tracking-widest uppercase">Kernel Settings</span>
-                                            </div>
-                                        </motion.div>
+                                        <Tooltip label={getTranslation(config, 'menu.back_to_home') || "Back to Home"} position="right">
+                                            <motion.div
+                                                key="expanded"
+                                                initial={{ opacity: 0, x: -10 }}
+                                                animate={{ opacity: 1, x: 0 }}
+                                                exit={{ opacity: 0, x: -10 }}
+                                                className="flex items-center gap-3 cursor-pointer group/logo"
+                                                onClick={onOpenDashboard}
+                                                whileHover={{ x: 2 }}
+                                                whileTap={{ scale: 0.98 }}
+                                            >
+                                                <div className="w-8 h-8 bg-white text-black rounded-xl flex items-center justify-center shadow-lg group-hover/logo:shadow-white/10 transition-shadow">
+                                                    <ZenithLogo size={18} />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <h2 className="text-[12px] font-bold text-white tracking-[0.1em] uppercase group-hover/logo:text-white transition-colors">Zenith</h2>
+                                                    <span className="text-[8px] text-white/30 font-black tracking-widest uppercase group-hover/logo:text-white/50 transition-colors">Kernel Settings</span>
+                                                </div>
+                                            </motion.div>
+                                        </Tooltip>
                                     ) : (
-                                        <motion.div
-                                            key="collapsed"
-                                            initial={{ opacity: 0, scale: 0.5 }}
-                                            animate={{ opacity: 1, scale: 1 }}
-                                            exit={{ opacity: 0, scale: 0.5 }}
-                                            className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center border border-white/10"
-                                        >
-                                            <ZenithLogo size={20} />
-                                        </motion.div>
+                                        <Tooltip label={getTranslation(config, 'menu.back_to_home') || "Back to Home"} position="right">
+                                            <motion.div
+                                                key="collapsed"
+                                                initial={{ opacity: 0, scale: 0.5 }}
+                                                animate={{ opacity: 1, scale: 1 }}
+                                                exit={{ opacity: 0, scale: 0.5 }}
+                                                className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center border border-white/10 cursor-pointer hover:bg-white/10 hover:border-white/20 transition-all"
+                                                onClick={onOpenDashboard}
+                                                whileHover={{ scale: 1.05 }}
+                                                whileTap={{ scale: 0.95 }}
+                                            >
+                                                <ZenithLogo size={20} />
+                                            </motion.div>
+                                        </Tooltip>
                                     )}
                                 </AnimatePresence>
                             </motion.div>
@@ -3842,7 +4076,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                         {/* Navigation Groups */}
                         <div className="flex flex-col gap-0.5">
+                            {/* Dashboard Button — Always at the top for easy navigation */}
+                            <NavButton 
+                                tab="dashboard" 
+                                label={getTranslation(config, 'sidebar.dashboard')} 
+                                icon={LayoutDashboard} 
+                                isSidebarExpanded={isCompact ? false : isSidebarExpanded} 
+                                activeTab={activeTab} 
+                                setActiveTab={() => onOpenDashboard()} 
+                                isCompact={isCompact} 
+                            />
+                            
+                            <div className="my-2 border-t border-white/[0.05]" />
+
                             {!isCompact && <SectionHeader label={getTranslation(config, 'sidebar.core')} isExpanded={isSidebarExpanded} />}
+
                             <NavButton tab="workspaces" label={getTranslation(config, 'sidebar.workspaces')} icon={LayoutGrid} isSidebarExpanded={isCompact ? false : isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} isCompact={isCompact} />
                             <NavButton tab="zenith_apps" label={getTranslation(config, 'sidebar.zenith_widgets')} icon={AppWindow} isSidebarExpanded={isCompact ? false : isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} isCompact={isCompact} />
 
@@ -3858,9 +4106,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                         {!isCompact && (
                             <div className="mt-auto pt-6 border-t border-white/[0.08] space-y-2.5">
-                                <NavButton tab="dashboard" label={getTranslation(config, 'sidebar.dashboard')} icon={LayoutDashboard} isSidebarExpanded={isSidebarExpanded} activeTab={activeTab} setActiveTab={() => onOpenDashboard()} />
-
                                 <button
+
                                     onClick={() => {
                                         if (window.electron && window.electron.openConfigFolder) {
                                             window.electron.openConfigFolder();
@@ -4001,6 +4248,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                             isExporting={isExporting}
                                             isImporting={isImporting}
                                             status={status}
+                                            onLogout={onLogout}
                                         />
                                     )}
                                 </>

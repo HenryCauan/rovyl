@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Play, Pause, SkipForward, RotateCcw, CheckCircle2, Circle, Plus, Settings2, Trash2 } from 'lucide-react';
-import { PomodoroState, PomodoroConfig, PomodoroTask, PomodoroMode, UIConfig } from '../types';
+import { X, Play, Pause, SkipForward, RotateCcw, CheckCircle2, Circle, Plus, Trash2, Settings2, ChevronDown } from 'lucide-react';
+import { PomodoroState, PomodoroConfig, PomodoroTask, UIConfig } from '../types';
 import { getTranslation } from '../translations';
 
 interface PomodoroWidgetProps {
@@ -22,79 +22,50 @@ interface PomodoroWidgetProps {
 
 export const PomodoroWidget: React.FC<PomodoroWidgetProps> = ({
   isOpen, onClose, state, config, tasks, activeTaskId,
-  toggleTimer, resetTimer, skipTimer, updateConfig, setTasks, setActiveTaskId,
-  uiConfig
+  toggleTimer, resetTimer, skipTimer, updateConfig, setTasks, setActiveTaskId, uiConfig
 }) => {
-  const [view, setView] = useState<'timer' | 'settings'>('timer');
+  const [showSettings, setShowSettings] = useState(false);
+  const [showTasks, setShowTasks] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
 
   const t = (key: string) => getTranslation(uiConfig, key);
+  const accent = uiConfig.accentColor || '#ffffff';
 
   if (!isOpen) return null;
 
-  // --- Helpers ---
-  const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-    const s = (seconds % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
-  };
+  const formatTime = (s: number) =>
+    `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
 
   const getProgress = () => {
-    let total = config.workDuration * 60;
-    if (state.mode === 'shortBreak') total = config.shortBreakDuration * 60;
-    if (state.mode === 'longBreak') total = config.longBreakDuration * 60;
+    const total = (state.mode === 'work' ? config.workDuration : state.mode === 'shortBreak' ? config.shortBreakDuration : config.longBreakDuration) * 60;
     return ((total - state.timeLeft) / total) * 100;
   };
 
-  const getModeLabel = () => {
-    switch (state.mode) {
-      case 'work': return t('pomodoro.focus_time');
-      case 'shortBreak': return t('pomodoro.short_break');
-      case 'longBreak': return t('pomodoro.long_break');
-    }
-  };
-
   const getModeColor = () => {
-    switch (state.mode) {
-      case 'work': return 'text-white';
-      case 'shortBreak': return 'text-emerald-400';
-      case 'longBreak': return 'text-blue-400';
-    }
-  };
-  
-  const getModeAccent = () => {
-    switch (state.mode) {
-      case 'work': return 'bg-white';
-      case 'shortBreak': return 'bg-emerald-500';
-      case 'longBreak': return 'bg-blue-500';
-    }
+    if (state.mode === 'shortBreak') return '#34d399';
+    if (state.mode === 'longBreak') return '#60a5fa';
+    return accent;
   };
 
-  // --- Task Handlers ---
+  const getModeLabel = () => {
+    if (state.mode === 'shortBreak') return t('pomodoro.short_break');
+    if (state.mode === 'longBreak') return t('pomodoro.long_break');
+    return t('pomodoro.focus_time');
+  };
+
   const addTask = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskTitle.trim()) return;
-    const newTask: PomodoroTask = {
-      id: crypto.randomUUID(),
-      title: newTaskTitle,
-      completed: false,
-      estimatedPomodoros: 1,
-      completedPomodoros: 0
-    };
-    setTasks([...tasks, newTask]);
+    setTasks([...tasks, { id: crypto.randomUUID(), title: newTaskTitle, completed: false, estimatedPomodoros: 1, completedPomodoros: 0 }]);
     setNewTaskTitle('');
   };
 
-  const toggleTask = (id: string) => {
-    setTasks(tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
-  };
+  const toggleTask = (id: string) => setTasks(tasks.map(tk => tk.id === id ? { ...tk, completed: !tk.completed } : tk));
+  const deleteTask = (id: string) => { setTasks(tasks.filter(tk => tk.id !== id)); if (activeTaskId === id) setActiveTaskId(null); };
 
-  const deleteTask = (id: string) => {
-    setTasks(tasks.filter(t => t.id !== id));
-    if (activeTaskId === id) setActiveTaskId(null);
-  };
-
-  const activeTask = tasks.find(t => t.id === activeTaskId);
+  const activeTask = tasks.find(tk => tk.id === activeTaskId);
+  const modeColor = getModeColor();
+  const completedTasks = tasks.filter(t => t.completed).length;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
@@ -102,260 +73,264 @@ export const PomodoroWidget: React.FC<PomodoroWidgetProps> = ({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="absolute inset-0 bg-black/60 backdrop-blur-2xl"
+        transition={{ duration: 0.18 }}
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
         onClick={onClose}
       />
 
       <motion.div
-        initial={{ scale: 0.98, opacity: 0, y: 10 }}
+        initial={{ scale: 0.96, opacity: 0, y: 6 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.98, opacity: 0, y: 10 }}
-        className="relative bg-[#080808] border border-white/10 rounded-[2.5rem] shadow-[0_50px_100px_-20px_rgba(0,0,0,1)] w-[920px] h-[640px] flex overflow-hidden z-[70]"
+        exit={{ scale: 0.96, opacity: 0, y: 6 }}
+        transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+        className="relative w-[420px] z-[70] overflow-hidden"
+        style={{
+          background: 'rgba(10, 10, 13, 0.92)',
+          backdropFilter: 'blur(40px) saturate(150%)',
+          WebkitBackdropFilter: 'blur(40px) saturate(150%)',
+          border: '1px solid rgba(255,255,255,0.07)',
+          borderRadius: '20px',
+          boxShadow: '0 32px 80px -8px rgba(0,0,0,0.9), inset 0 1px 0 rgba(255,255,255,0.05)',
+        }}
         onClick={e => e.stopPropagation()}
       >
-        {/* Sidebar: Task Explorer (30%) */}
-        <div className="w-[320px] bg-black/20 border-r border-white/5 flex flex-col">
-          <div className="p-8 pb-4">
-            <div className="flex items-center gap-3 mb-8">
-              <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-white/40">
-                <CheckCircle2 size={16} />
-              </div>
-              <h2 className="text-white text-sm font-bold tracking-[0.15em] uppercase opacity-40">{t('pomodoro.tasks_tab')}</h2>
-            </div>
-
-            <form onSubmit={addTask} className="relative group mb-6">
-              <input
-                type="text"
-                placeholder={t('pomodoro.add_task_placeholder')}
-                value={newTaskTitle}
-                onChange={e => setNewTaskTitle(e.target.value)}
-                className="w-full bg-white/[0.03] text-white placeholder:text-white/10 text-xs py-4 pl-5 pr-12 rounded-xl border border-white/5 focus:border-white/20 outline-none transition-all"
-              />
-              <button type="submit" className="absolute right-3 top-1/2 -translate-y-1/2 text-white/20 hover:text-white transition-colors">
-                <Plus size={18} />
-              </button>
-            </form>
+        {/* Header: Mode tabs + actions */}
+        <div className="flex items-center justify-between px-5 pt-4 pb-2">
+          <div className="flex items-center gap-1">
+            {(['work', 'shortBreak', 'longBreak'] as const).map(m => {
+              const mLabels: Record<string, string> = { work: t('pomodoro.focus_time'), shortBreak: t('pomodoro.short_break'), longBreak: t('pomodoro.long_break') };
+              const isActive = state.mode === m;
+              return (
+                <span
+                  key={m}
+                  className="px-2.5 py-1 rounded-lg text-[9px] font-semibold uppercase tracking-wider transition-all duration-200"
+                  style={{
+                    color: isActive ? modeColor : 'rgba(255,255,255,0.2)',
+                    background: isActive ? `${modeColor}14` : 'transparent',
+                  }}
+                >
+                  {mLabels[m]}
+                </span>
+              );
+            })}
           </div>
-
-          <div className="flex-1 overflow-y-auto custom-scrollbar px-6 space-y-2">
-            {tasks.length === 0 && (
-              <div className="text-center py-20 text-[10px] uppercase font-black tracking-widest text-white/10">
-                {t('pomodoro.no_tasks')}
-              </div>
-            )}
-            {tasks.map(task => (
-              <motion.div
-                layout
-                key={task.id}
-                onClick={() => setActiveTaskId(task.id)}
-                className={`
-                  group p-4 rounded-xl border border-transparent cursor-pointer transition-all
-                  ${activeTaskId === task.id ? 'bg-white/10 border-white/10' : 'hover:bg-white/[0.03]'}
-                  ${task.completed ? 'opacity-30' : ''}
-                `}
-              >
-                <div className="flex items-center gap-4">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); toggleTask(task.id); }}
-                    className={`transition-colors ${task.completed ? 'text-white' : 'text-white/10 hover:text-white/40'}`}
-                  >
-                    {task.completed ? <CheckCircle2 size={18} /> : <Circle size={18} />}
-                  </button>
-                  <div className="flex-1 min-w-0">
-                    <div className={`text-xs text-white/80 font-medium truncate ${task.completed ? 'line-through' : ''}`}>
-                      {task.title}
-                    </div>
-                  </div>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }}
-                    className="opacity-0 group-hover:opacity-100 p-1 text-white/20 hover:text-red-400 transition-all"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-
-          <div className="p-8 border-t border-white/5 bg-black/40">
-            <div className="flex flex-col gap-1">
-              <span className="text-[8px] font-black text-white/10 uppercase tracking-[0.3em]">Session Status</span>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-white/40">{state.cyclesCompleted} of {config.longBreakInterval}</span>
-                <div className="flex-1 h-1 bg-white/5 rounded-full overflow-hidden">
-                  <motion.div 
-                    className="h-full bg-white/20" 
-                    initial={{ width: 0 }}
-                    animate={{ width: `${(state.cyclesCompleted / config.longBreakInterval) * 100}%` }}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Main Content: Precision Timer (70%) */}
-        <div className="flex-1 flex flex-col relative overflow-visible">
-          {/* Header Actions */}
-          <div className="absolute top-0 left-0 right-0 p-8 flex justify-between items-center z-20">
-            <div className="flex bg-white/5 p-1 rounded-xl border border-white/5">
-              <button
-                onClick={() => setView('timer')}
-                className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${view === 'timer' ? 'bg-white/10 text-white' : 'text-white/20 hover:text-white/40'}`}
-              >
-                Instrument
-              </button>
-              <button
-                onClick={() => setView('settings')}
-                className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${view === 'settings' ? 'bg-white/10 text-white' : 'text-white/20 hover:text-white/40'}`}
-              >
-                Config
-              </button>
-            </div>
+          <div className="flex items-center gap-1">
             <button
-              onClick={onClose}
-              className="p-3 rounded-full bg-white/5 text-white/20 hover:text-white hover:bg-white/10 transition-all border border-transparent hover:border-white/10"
+              onClick={() => { setShowSettings(!showSettings); setShowTasks(false); }}
+              className="text-white/20 hover:text-white/60 transition-colors duration-150 p-1"
             >
-              <X size={20} />
+              <Settings2 size={14} />
+            </button>
+            <button onClick={onClose} className="text-white/20 hover:text-white/60 transition-colors duration-150 p-1">
+              <X size={15} />
             </button>
           </div>
-
-          <AnimatePresence mode="wait">
-            {view === 'timer' ? (
-              <motion.div
-                key="timer-view"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="flex-1 flex flex-col p-12 pt-32"
-              >
-                {/* Active Indicator */}
-                <div className="flex flex-col mb-12">
-                  <div className="flex items-center gap-3 mb-2">
-                    <motion.div 
-                      animate={{ opacity: state.isActive ? [1, 0.4, 1] : 1 }}
-                      transition={{ duration: 2, repeat: Infinity }}
-                      className={`w-2 h-2 rounded-full ${getModeAccent()}`} 
-                    />
-                    <span className="text-[10px] font-black uppercase tracking-[0.4em] text-white/40">{getModeLabel()}</span>
-                  </div>
-                  <h1 className="text-white text-3xl font-bold tracking-tight line-clamp-1">
-                    {activeTask ? activeTask.title : "Ready for focus session"}
-                  </h1>
-                </div>
-
-                {/* Main Instrument Display */}
-                <div className="relative flex-1 flex flex-col justify-center py-20 overflow-visible">
-                  <div className="absolute top-1/2 left-0 -translate-y-1/2 w-full h-[120%] bg-white/[0.01] blur-[150px] rounded-full pointer-events-none" />
-                  
-                  <motion.div 
-                    layoutId="pomodoroDigits"
-                    className={`text-[12rem] font-medium tracking-[-0.08em] tabular-nums leading-none ${getModeColor()}`}
-                    style={{ fontFamily: "'Space Grotesk', sans-serif" }}
-                  >
-                    {formatTime(state.timeLeft)}
-                  </motion.div>
-
-                  <div className="mt-8 h-2 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
-                    <motion.div 
-                      className={`h-full ${getModeAccent()}`}
-                      initial={false}
-                      animate={{ width: `${getProgress()}%` }}
-                      transition={{ duration: 0.5, ease: "linear" }}
-                    />
-                  </div>
-                </div>
-
-                {/* Pro Controls */}
-                <div className="mt-auto flex items-center justify-between">
-                  <div className="flex gap-4">
-                    <button onClick={resetTimer} className="p-4 rounded-2xl bg-white/5 border border-white/5 text-white/20 hover:text-white hover:bg-white/10 transition-all">
-                      <RotateCcw size={20} />
-                    </button>
-                    <button onClick={skipTimer} className="p-4 rounded-2xl bg-white/5 border border-white/5 text-white/20 hover:text-white hover:bg-white/10 transition-all">
-                      <SkipForward size={20} />
-                    </button>
-                  </div>
-                  
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={toggleTimer}
-                    className={`h-24 px-12 rounded-[2rem] flex items-center gap-4 transition-all shadow-2xl relative ${state.isActive ? 'bg-white/5 text-white border border-white/20' : 'bg-white text-black'}`}
-                  >
-                    {state.isActive ? (
-                      <>
-                        <Pause size={28} fill="currentColor" />
-                        <span className="text-xs font-bold uppercase tracking-widest">Pause Session</span>
-                      </>
-                    ) : (
-                      <>
-                        <Play size={28} fill="currentColor" className="ml-1" />
-                        <span className="text-xs font-bold uppercase tracking-widest">Start Focus</span>
-                      </>
-                    )}
-                  </motion.button>
-                </div>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="settings-view"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-                className="flex-1 p-16 pt-32 space-y-12 overflow-y-auto custom-scrollbar"
-              >
-                <div className="grid grid-cols-2 gap-12">
-                  {[
-                    { label: t('pomodoro.focus_time'), key: 'workDuration', range: [15, 60] },
-                    { label: t('pomodoro.short_break'), key: 'shortBreakDuration', range: [1, 15] },
-                    { label: t('pomodoro.long_break'), key: 'longBreakDuration', range: [10, 45] }
-                  ].map((item) => (
-                    <div key={item.key} className="space-y-6">
-                      <div className="flex justify-between items-center">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-white/30">{item.label}</label>
-                        <span className="text-2xl font-bold text-white tracking-tighter">
-                          {(config as any)[item.key]}
-                          <span className="text-[8px] text-white/20 ml-1">MIN</span>
-                        </span>
-                      </div>
-                      <input
-                        type="range" min={item.range[0]} max={item.range[1]} step="1"
-                        value={(config as any)[item.key]}
-                        onChange={e => updateConfig({ [item.key]: Number(e.target.value) })}
-                        className="w-full h-1.5 bg-white/5 rounded-full appearance-none cursor-pointer accent-white"
-                      />
-                    </div>
-                  ))}
-                </div>
-
-                <div className="pt-12 border-t border-white/5">
-                  <div className="flex items-center justify-between bg-white/[0.02] p-8 rounded-[2rem] border border-white/5">
-                    <div className="flex flex-col gap-1">
-                      <span className="text-sm font-bold text-white/80">{t('pomodoro.auto_start_breaks')}</span>
-                      <span className="text-[9px] text-white/20 font-black uppercase tracking-widest">Autonomous Workflow</span>
-                    </div>
-                    <button
-                      onClick={() => updateConfig({ autoStart: !config.autoStart })}
-                      className={`w-14 h-7 rounded-full relative transition-all duration-300 ${config.autoStart ? 'bg-white' : 'bg-white/10'}`}
-                    >
-                      <motion.div
-                        animate={{ x: config.autoStart ? 32 : 4 }}
-                        className={`absolute top-1 w-5 h-5 rounded-full shadow-md ${config.autoStart ? 'bg-black' : 'bg-white/40'}`}
-                        transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                      />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="pt-20 opacity-5 flex flex-col items-center select-none pointer-events-none grayscale">
-                  <div className="text-4xl font-extrabold tracking-tighter" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>ZENITH LABS</div>
-                  <div className="text-[8px] uppercase tracking-[0.6em] font-black mt-[-4px]">Precision Spec 2026</div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
+
+        {/* Main view */}
+        <AnimatePresence mode="wait">
+          {!showSettings ? (
+            <motion.div
+              key="timer"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+            >
+              {/* Active task */}
+              <div className="px-5 py-1">
+                <p className="text-[11px] text-white/35 font-medium truncate">
+                  {activeTask ? activeTask.title : 'No task selected'}
+                </p>
+              </div>
+
+              {/* Timer digits */}
+              <div className="px-5 py-4 select-none">
+                <div
+                  className="text-[72px] font-medium tabular-nums tracking-[-0.04em] leading-none"
+                  style={{
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    color: state.isActive ? '#fff' : 'rgba(255,255,255,0.5)',
+                  }}
+                >
+                  {formatTime(state.timeLeft)}
+                </div>
+              </div>
+
+              {/* Progress bar */}
+              <div className="px-5 pb-4">
+                <div className="h-[2px] rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                  <motion.div
+                    className="h-full rounded-full"
+                    style={{ backgroundColor: modeColor }}
+                    initial={false}
+                    animate={{ width: `${getProgress()}%` }}
+                    transition={{ duration: 0.5, ease: 'linear' }}
+                  />
+                </div>
+                <div className="flex justify-between mt-1.5">
+                  <span className="text-[9px] text-white/15">
+                    {state.cyclesCompleted}/{config.longBreakInterval} sessions
+                  </span>
+                  <span className="text-[9px]" style={{ color: state.isActive ? `${modeColor}aa` : 'rgba(255,255,255,0.15)' }}>
+                    {state.isActive ? getModeLabel() : 'Paused'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Controls */}
+              <div className="flex items-center justify-between px-5 pb-4">
+                <div className="flex gap-1">
+                  <button onClick={resetTimer} title="Reset" className="px-3 py-1.5 text-xs font-medium text-white/25 hover:text-white/60 transition-colors duration-150 rounded-lg">
+                    Reset
+                  </button>
+                  <button onClick={skipTimer} title="Skip" className="px-3 py-1.5 text-xs font-medium text-white/25 hover:text-white/60 transition-colors duration-150 rounded-lg">
+                    Skip
+                  </button>
+                </div>
+
+                <motion.button
+                  whileHover={{ scale: 1.04 }}
+                  whileTap={{ scale: 0.96 }}
+                  onClick={toggleTimer}
+                  className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold transition-all duration-200"
+                  style={
+                    state.isActive
+                      ? { background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.75)', border: '1px solid rgba(255,255,255,0.1)' }
+                      : { backgroundColor: modeColor, color: '#000', border: `1px solid ${modeColor}` }
+                  }
+                >
+                  {state.isActive
+                    ? <><Pause size={14} fill="currentColor" />Pause</>
+                    : <><Play size={14} fill="currentColor" className="ml-0.5" />Start</>
+                  }
+                </motion.button>
+              </div>
+
+              {/* Task queue collapsible */}
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+                <button
+                  onClick={() => setShowTasks(!showTasks)}
+                  className="w-full flex items-center justify-between px-5 py-3 text-white/25 hover:text-white/50 transition-colors duration-150"
+                >
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 size={12} />
+                    <span className="text-[10px] font-semibold uppercase tracking-widest">
+                      Tasks {tasks.length > 0 && `· ${completedTasks}/${tasks.length}`}
+                    </span>
+                  </div>
+                  <motion.div animate={{ rotate: showTasks ? 180 : 0 }} transition={{ duration: 0.2 }}>
+                    <ChevronDown size={13} />
+                  </motion.div>
+                </button>
+
+                <AnimatePresence>
+                  {showTasks && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.22 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="px-4 pb-3">
+                        <form onSubmit={addTask} className="relative mb-2">
+                          <input
+                            type="text"
+                            placeholder="Add task…"
+                            value={newTaskTitle}
+                            onChange={e => setNewTaskTitle(e.target.value)}
+                            className="w-full bg-white/[0.04] text-white/60 placeholder:text-white/15 text-xs py-2.5 pl-3.5 pr-9 rounded-xl outline-none transition-all duration-200 focus:bg-white/[0.07]"
+                          />
+                          <button type="submit" className="absolute right-3 top-1/2 -translate-y-1/2 text-white/20 hover:text-white/60 transition-colors duration-150">
+                            <Plus size={13} strokeWidth={2} />
+                          </button>
+                        </form>
+
+                        <div className="space-y-px max-h-[140px] overflow-y-auto custom-scrollbar">
+                          {tasks.length === 0 && (
+                            <div className="text-center py-4 text-[10px] text-white/15 font-medium">{t('pomodoro.no_tasks')}</div>
+                          )}
+                          {tasks.map(task => (
+                            <div
+                              key={task.id}
+                              onClick={() => setActiveTaskId(task.id)}
+                              className={`group flex items-center gap-2.5 px-2 py-2 rounded-lg cursor-pointer transition-all duration-150 ${activeTaskId === task.id ? 'bg-white/[0.06]' : 'hover:bg-white/[0.03]'}`}
+                            >
+                              <button
+                                onClick={e => { e.stopPropagation(); toggleTask(task.id); }}
+                                style={{ color: task.completed ? modeColor : 'rgba(255,255,255,0.15)' }}
+                                className="shrink-0 transition-colors duration-150"
+                              >
+                                {task.completed ? <CheckCircle2 size={14} /> : <Circle size={14} />}
+                              </button>
+                              <span className={`text-xs flex-1 truncate transition-colors duration-150 ${task.completed ? 'text-white/25 line-through' : 'text-white/60'}`}>
+                                {task.title}
+                              </span>
+                              <button
+                                onClick={e => { e.stopPropagation(); deleteTask(task.id); }}
+                                className="opacity-0 group-hover:opacity-100 text-white/15 hover:text-red-400/60 transition-all duration-150 active:scale-95"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="settings"
+              initial={{ opacity: 0, x: 8 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 8 }}
+              transition={{ duration: 0.18 }}
+              className="px-5 pb-5 pt-2 space-y-4"
+            >
+              {[
+                { label: t('pomodoro.focus_time'), key: 'workDuration', range: [15, 60] as [number, number] },
+                { label: t('pomodoro.short_break'), key: 'shortBreakDuration', range: [1, 15] as [number, number] },
+                { label: t('pomodoro.long_break'), key: 'longBreakDuration', range: [10, 45] as [number, number] },
+              ].map(item => (
+                <div key={item.key}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-semibold text-white/30 uppercase tracking-widest">{item.label}</span>
+                    <span className="text-sm font-medium text-white/70 tabular-nums" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                      {(config as any)[item.key]}<span className="text-white/25 text-[10px] ml-0.5">m</span>
+                    </span>
+                  </div>
+                  <input
+                    type="range" min={item.range[0]} max={item.range[1]} step="1"
+                    value={(config as any)[item.key]}
+                    onChange={e => updateConfig({ [item.key]: Number(e.target.value) })}
+                    className="w-full h-[2px] rounded-full appearance-none cursor-pointer"
+                    style={{ background: `linear-gradient(to right, ${accent} ${((config as any)[item.key] - item.range[0]) / (item.range[1] - item.range[0]) * 100}%, rgba(255,255,255,0.1) 0%)`, accentColor: accent }}
+                  />
+                </div>
+              ))}
+
+              <div className="flex items-center justify-between pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+                <span className="text-xs font-medium text-white/50">{t('pomodoro.auto_start_breaks')}</span>
+                <button
+                  onClick={() => updateConfig({ autoStart: !config.autoStart })}
+                  className="w-10 h-[22px] rounded-full relative transition-all duration-300 shrink-0"
+                  style={{ backgroundColor: config.autoStart ? accent : 'rgba(255,255,255,0.08)' }}
+                >
+                  <motion.div
+                    animate={{ x: config.autoStart ? 20 : 3 }}
+                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                    className="absolute top-[3px] w-4 h-4 rounded-full shadow"
+                    style={{ backgroundColor: config.autoStart ? '#000' : 'rgba(255,255,255,0.4)' }}
+                  />
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
     </div>
   );

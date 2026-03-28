@@ -5,6 +5,7 @@ export interface UserProfile {
   name: string;
   email: string;
   isPremium: boolean;
+  isAdmin?: boolean;
   trialEndsAt?: string; // ISO Date string
   avatarUrl?: string;
 }
@@ -24,6 +25,7 @@ export interface AppItem {
   children?: AppItem[];
   hasRecents?: boolean; // New: indicates if the app should show recent folders
   openTerminal?: boolean; // New: indicates if opening this item should also open a terminal
+  terminalCommands?: string[]; // New: list of commands to run automatically in the terminal
 }
 
 export interface WidgetDefinition {
@@ -145,7 +147,7 @@ export interface ElectronAPI {
   executeCommand: (
     command: string,
     commandType: "app" | "url" | "folder",
-    options?: { openTerminal?: boolean },
+    options?: { openTerminal?: boolean; terminalCommands?: string[] },
   ) => void;
   hideWindow: () => void;
   showWindow: () => void;
@@ -159,7 +161,7 @@ export interface ElectronAPI {
   onOpenDashboard: (callback: () => void) => () => void;
   onMouseUp: (callback: () => void) => () => void;
   onMmbRelease: (callback: () => void) => () => void;
-  onOpenSettings: (callback: (args?: { overlay?: boolean }) => void) => () => void;
+  onOpenSettings: (callback: () => void) => () => void;
   setWindowSize: (mode: "small" | "fullscreen" | "windowed") => void;
   setGameMode: (config: GameModeConfig) => void;
   getFileIcon: (path: string) => Promise<string | null>;
@@ -208,6 +210,8 @@ export interface ElectronAPI {
   setWorkspaceShortcutsState: (isOpen: boolean) => void;
   exportConfig: () => Promise<{ success: boolean; error?: string }>;
   importConfig: () => Promise<{ success: boolean; error?: string }>;
+  startGoogleAuth: () => void;
+  onGoogleAuthSuccess: (callback: (user: any) => void) => () => void;
 }
 
 declare global {

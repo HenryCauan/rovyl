@@ -15,6 +15,21 @@ const { exec, spawn } = require("child_process");
 const os = require("os");
 const fs = require("fs");
 const { GlobalKeyboardListener } = require("node-global-key-listener");
+const http = require("http");
+const https = require("https");
+const url = require("url");
+
+// Load .env.local manually
+const envPath = path.join(__dirname, "..", ".env.local");
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, "utf8");
+  envContent.split(/\r?\n/).forEach(line => {
+    const [key, value] = line.split("=");
+    if (key && value) {
+      process.env[key.trim()] = value.trim();
+    }
+  });
+}
 
 const isDev = !app.isPackaged;
 const logDir = isDev
@@ -63,22 +78,28 @@ const diagLog = (msg) => {
 setInterval(processLogQueue, 5000);
 
 // Helper function to detect preferred terminal emulator
+let cachedTerminal = null;
 const getPreferredTerminal = () => {
+  if (cachedTerminal) return cachedTerminal;
+  
   try {
     const { execSync } = require("child_process");
     // 1. Windows Terminal (wt.exe)
     try {
       execSync("where wt.exe", { stdio: "ignore" });
-      return "wt.exe";
+      cachedTerminal = "wt.exe";
+      return cachedTerminal;
     } catch (e) {}
     // 2. PowerShell
     try {
       execSync("where powershell.exe", { stdio: "ignore" });
-      return "powershell.exe";
+      cachedTerminal = "powershell.exe";
+      return cachedTerminal;
     } catch (e) {}
   } catch (e) {}
   // 3. Fallback to CMD
-  return "cmd.exe";
+  cachedTerminal = "cmd.exe";
+  return cachedTerminal;
 };
 
 const getAssetPath = (...paths) => {
@@ -373,8 +394,10 @@ function setupMainWindow(window) {
 function showMenuAtCursor(source = "shortcut") {
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
-  // 1. Force state updates in one block
-  mainWindow.setSkipTaskbar(true);
+  // 1. Force state updates
+  // NOTE: On Windows, setting skipTaskbar BEFORE show/focus can sometimes 
+  // prevent the window from taking foreground focus correctly.
+  mainWindow.setSkipTaskbar(false); 
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
   // 2. Window Position & Size (Only update if needed)
@@ -382,36 +405,32 @@ function showMenuAtCursor(source = "shortcut") {
     updateWindowSize("fullscreen");
   }
 
-  // 3. Visibility & Interaction - CRITICAL FIX
-  // First, ensure the window is fully transparent before showing it.
-  mainWindow.setOpacity(0);
+  // 3. Visibility & Interaction
   mainWindow.setIgnoreMouseEvents(false);
-
-  // 4. Aggressive Focus
-  // Show the window. Because opacity is 0, it will be invisible. This prevents
-  // the user from seeing the stale content from the previous view.
+  mainWindow.setOpacity(1); 
   mainWindow.show();
+  
+  // 4. Force Focus (Steal from other apps)
   mainWindow.focus();
   mainWindow.webContents.focus();
+  if (process.platform === 'win32') {
+    mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
+  }
 
   // 5. Send IPC to Renderer
-  // Tell the React app to render the radial menu.
   const cursorPoint = screen.getCursorScreenPoint();
   mainWindow.webContents.send("open-menu", {
     x: cursorPoint.x,
     y: cursorPoint.y,
     source: source,
   });
-
-  // 6. Fade In
-  // After a small delay, fade the window in. This gives the renderer time
-  // to process the 'open-menu' event and draw the new UI, avoiding the flash.
-  // 32ms is used as it's a safe value used elsewhere in the app.
+  
+  // 6. Post-focus cleanup: skip taskbar now that we have focus
   setTimeout(() => {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.setOpacity(1);
+      mainWindow.setSkipTaskbar(true);
     }
-  }, 32);
+  }, 100);
 }
 
 function updateWindowSize(mode) {
@@ -429,6 +448,7 @@ function updateWindowSize(mode) {
       height: screenHeight,
     });
     mainWindow.setResizable(true);
+    mainWindow.setBackgroundColor("#00000000"); // FORCE TRANSPARENCY
     mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
     mainWindow.setIgnoreMouseEvents(false);
   } else if (mode === "windowed") {
@@ -439,6 +459,7 @@ function updateWindowSize(mode) {
     isUpdatingBounds = true;
     mainWindow.setBounds(lastWindowedBounds);
     isUpdatingBounds = false;
+    mainWindow.setBackgroundColor("#00000000"); // Maintain transparency mask
     mainWindow.setAlwaysOnTop(false);
     mainWindow.setIgnoreMouseEvents(false);
   } else if (mode === "small") {
@@ -449,6 +470,7 @@ function updateWindowSize(mode) {
     mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
     // Keep it large/fullscreen but transparent and ignore mouse to avoid resize flashes
     // We use setBounds to ensure it covers the whole screen even if not "fullscreen" mode
+    mainWindow.setBackgroundColor("#00000000"); // ESSENTIAL for zero-lag transparency
     mainWindow.setBounds({
       x: 0,
       y: 0,
@@ -459,12 +481,22 @@ function updateWindowSize(mode) {
 }
 
 // Function to check if a specific process is running (Basic implementation)
+let cachedProcessOutput = "";
+let lastProcessCheckTime = 0;
+const PROCESS_CACHE_TTL = 2000; // 2 seconds
+
 const isProcessRunning = (processNames) => {
   return new Promise((resolve) => {
     const platform = process.platform;
-    let cmd = "";
+    const now = Date.now();
 
-    // Normalize input list
+    // Skip heavy CMD call if we checked recently
+    if (now - lastProcessCheckTime < PROCESS_CACHE_TTL && cachedProcessOutput) {
+      const targets = processNames.toLowerCase().split(",").map(s => s.trim()).filter(s => s.length > 0);
+      const isRunning = targets.some((target) => cachedProcessOutput.includes(target));
+      return resolve(isRunning);
+    }
+
     const targets = processNames
       .toLowerCase()
       .split(",")
@@ -476,11 +508,7 @@ const isProcessRunning = (processNames) => {
       return;
     }
 
-    if (platform === "win32") {
-      cmd = "tasklist /FO CSV";
-    } else {
-      cmd = "ps -ax -o comm";
-    }
+    const cmd = platform === "win32" ? "tasklist /FO CSV" : "ps -ax -o comm";
 
     exec(cmd, (err, stdout, stderr) => {
       if (err) {
@@ -488,8 +516,10 @@ const isProcessRunning = (processNames) => {
         return;
       }
 
-      const output = stdout.toLowerCase();
-      const isRunning = targets.some((target) => output.includes(target));
+      cachedProcessOutput = stdout.toLowerCase();
+      lastProcessCheckTime = Date.now();
+      
+      const isRunning = targets.some((target) => cachedProcessOutput.includes(target));
       resolve(isRunning);
     });
   });
@@ -671,19 +701,39 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle("get-app-recents", async (event, appName, appCommand) => {
+    diagLog(`[Recents] Fetching for appName: "${appName}", appCommand: "${appCommand}"`);
     const appData = process.env.APPDATA;
     let storagePath = "";
 
     const lowerName = appName ? appName.toLowerCase() : "";
     const lowerCommand = appCommand ? appCommand.toLowerCase() : "";
 
-    if (lowerName.includes("antigravity") || lowerCommand.includes("antigravity")) {
+    // 1. Precise Match (by Name)
+    if (lowerName === "antigravity") {
       storagePath = path.join(appData, "Antigravity", "User", "globalStorage", "storage.json");
-    } else if (lowerName.includes("cursor") || lowerCommand.includes("cursor")) {
+    } else if (lowerName === "cursor") {
       storagePath = path.join(appData, "Cursor", "User", "globalStorage", "storage.json");
-    } else if (lowerName.includes("code") || lowerName.includes("vs code") || lowerCommand.includes("code")) {
+    } else if (lowerName === "code" || lowerName === "visual studio code") {
+      storagePath = path.join(appData, "Code", "User", "globalStorage", "storage.json");
+    } 
+    // 2. Inclusion Match (if name match failed)
+    else if (lowerName.includes("antigravity")) {
+      storagePath = path.join(appData, "Antigravity", "User", "globalStorage", "storage.json");
+    } else if (lowerName.includes("cursor")) {
+      storagePath = path.join(appData, "Cursor", "User", "globalStorage", "storage.json");
+    } else if (lowerName.includes("code")) {
       storagePath = path.join(appData, "Code", "User", "globalStorage", "storage.json");
     }
+    // 3. Command Path Match (Final fallback)
+    else if (lowerCommand.includes("\\antigravity\\") || lowerCommand.includes("antigravity.exe")) {
+      storagePath = path.join(appData, "Antigravity", "User", "globalStorage", "storage.json");
+    } else if (lowerCommand.includes("\\cursor\\") || lowerCommand.includes("cursor.exe")) {
+      storagePath = path.join(appData, "Cursor", "User", "globalStorage", "storage.json");
+    } else if (lowerCommand.includes("\\code\\") || lowerCommand.includes("code.exe")) {
+      storagePath = path.join(appData, "Code", "User", "globalStorage", "storage.json");
+    }
+    
+    diagLog(`[Recents] Selected storagePath: "${storagePath}" (Exists: ${fs.existsSync(storagePath)})`);
 
     if (!storagePath || !fs.existsSync(storagePath)) {
       return [];
@@ -926,7 +976,50 @@ app.whenReady().then(async () => {
         registerAppShortcutsRecursive(ws.apps);
       });
     }
+
+    // Only re-register workspace shortcuts if they are currently supposed to be active (menu open)
+    if (workspaceShortcutsActive) {
+      registerWorkspaceShortcuts();
+    }
   };
+
+  const unregisterWorkspaceShortcuts = () => {
+    diagLog("[Shortcuts] Unregistering global numeric workspace shortcuts (1-9)");
+    for (let i = 1; i <= 9; i++) {
+      globalShortcut.unregister(i.toString());
+    }
+  };
+
+  // PERF: Workspace shortcuts registered via permanent listeners — flag gates IPC send
+  // We extract this to a function so it can be re-called when main shortcuts are refreshed (unregisterAll)
+  const registerWorkspaceShortcuts = () => {
+    diagLog("[Shortcuts] Registering global numeric workspace shortcuts (1-9)");
+    // RESTORED: Registration of 1-9 as global shortcuts is the ONLY reliable way
+    // to capture keys when the Zenith window fails to take keyboard focus away 
+    // from a background text field.
+    for (let i = 1; i <= 9; i++) {
+      try {
+        // Unregister first if already registered to avoid double-registration errors (though Electron handles it gracefully)
+        if (globalShortcut.isRegistered(i.toString())) {
+            globalShortcut.unregister(i.toString());
+        }
+
+        const success = globalShortcut.register(i.toString(), () => {
+          diagLog(`[Shortcuts] Global numeric shortcut triggered: ${i}`);
+          // workspaceShortcutsActive is set via IPC by the RadialMenu.tsx when it's open
+          if (workspaceShortcutsActive && mainWindow && !mainWindow.isDestroyed()) {
+            diagLog(`[Shortcuts] Sending switch-workspace IPC: ${i - 1}`);
+            mainWindow.webContents.send("switch-workspace", i - 1);
+          }
+        });
+        if (!success) diagLog(`[Shortcuts] Failed to register workspace shortcut ${i}`);
+      } catch (e) {
+        diagLog(`[Shortcuts] Exception registering workspace shortcut ${i}: ${e.message}`);
+      }
+    }
+  };
+
+  let workspaceShortcutsActive = false;
 
   // Register initial shortcut
   registerGlobalShortcut();
@@ -1004,30 +1097,172 @@ app.whenReady().then(async () => {
     stopShortcutRecording();
   });
 
-  ipcMain.on("set-workspace-shortcuts", (event, isOpen) => {
-    for (let i = 1; i <= 9; i++) {
-      try {
-        globalShortcut.unregister(i.toString());
-      } catch (e) {}
+  // GOOGLE AUTH REAL OAuth 2.0 Flow
+  let authServer = null;
+  ipcMain.on("start-google-auth", () => {
+    if (authServer) {
+        try { authServer.close(); } catch(e) {}
     }
 
-    if (isOpen) {
-      for (let i = 1; i <= 9; i++) {
-        try {
-          const success = globalShortcut.register(i.toString(), () => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send("switch-workspace", i - 1);
-            }
-          });
-          if (!success) {
-            diagLog(`[Shortcuts] Failed to register workspace shortcut ${i}`);
-          }
-        } catch (e) {
-          diagLog(`[Shortcuts] Exception registering workspace shortcut ${i}: ${e.message}`);
+    const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } = process.env;
+    
+    if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+        diagLog("[Auth] Error: Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET in .env.local");
+        return;
+    }
+
+    diagLog("[Auth] Starting REAL Google OAuth flow...");
+    
+    const REDIRECT_URI = "http://localhost:3892/callback";
+    
+    authServer = http.createServer((req, res) => {
+      const parsedUrl = url.parse(req.url, true);
+      
+      if (parsedUrl.pathname === '/callback') {
+        const { code } = parsedUrl.query;
+        if (!code) {
+            res.end("Error: No code received.");
+            return;
         }
+
+        diagLog(`[Auth] Received code, exchanging for tokens...`);
+        
+        // Exchange code for tokens
+        const postData = new URLSearchParams({
+            code,
+            client_id: GOOGLE_CLIENT_ID,
+            client_secret: GOOGLE_CLIENT_SECRET,
+            redirect_uri: REDIRECT_URI,
+            grant_type: 'authorization_code'
+        }).toString();
+
+        const options = {
+            hostname: 'oauth2.googleapis.com',
+            port: 443,
+            path: '/token',
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Content-Length': postData.length
+            }
+        };
+
+        const tokenReq = https.request(options, (tokenRes) => {
+            let body = '';
+            tokenRes.on('data', (d) => body += d);
+            tokenRes.on('end', () => {
+                let tokenData;
+                try {
+                    tokenData = JSON.parse(body);
+                } catch (e) {
+                    diagLog("[Auth] Error parsing token response: " + body);
+                    res.end("Authentication failed.");
+                    return;
+                }
+
+                if (tokenData.access_token) {
+                    diagLog("[Auth] Access token received, fetching user info...");
+                    
+                    // Fetch user info
+                    https.get(`https://www.googleapis.com/oauth2/v3/userinfo?access_token=${tokenData.access_token}`, (userRes) => {
+                        let userBody = '';
+                        userRes.on('data', (d) => userBody += d);
+                        userRes.on('end', () => {
+                            const userInfo = JSON.parse(userBody);
+                            const { email, name, picture } = userInfo;
+                            
+                            diagLog(`[Auth] Successfully authenticated as ${email}`);
+                            const isAdmin = email === 'henrycauan3222@gmail.com';
+
+                            if (mainWindow && !mainWindow.isDestroyed()) {
+                                mainWindow.webContents.send("google-auth-success", { 
+                                    email, 
+                                    name, 
+                                    avatarUrl: picture,
+                                    isAdmin,
+                                    isPremium: isAdmin
+                                });
+                                mainWindow.show();
+                                mainWindow.focus();
+                            }
+
+                            res.writeHead(200, { 'Content-Type': 'text/html' });
+                            res.end(`
+                              <html>
+                                <body style="font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #f8f9fa;">
+                                  <div style="background: white; padding: 40px; border-radius: 28px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); text-align: center; max-width: 400px;">
+                                    <div style="width: 60px; height: 60px; background: #34A853; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">
+                                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                    </div>
+                                    <h1 style="color: #1f1f1f; margin-bottom: 8px; font-size: 24px;">Success!</h1>
+                                    <p style="color: #444746; line-height: 1.5; font-size: 14px;">You have successfully signed in to Zenith OS. You can close this window now.</p>
+                                    <script>setTimeout(() => window.close(), 3000);</script>
+                                  </div>
+                                </body>
+                              </html>
+                            `);
+                            
+                            if (authServer) {
+                                authServer.close();
+                                authServer = null;
+                            }
+                        });
+                    });
+                } else {
+                    diagLog("[Auth] Error: Failed to exchange code for token: " + body);
+                    res.end("Authentication failed.");
+                }
+            });
+        });
+
+        tokenReq.on('error', (e) => {
+            diagLog("[Auth] Request error: " + e.message);
+            res.end("Network error.");
+        });
+
+        tokenReq.write(postData);
+        tokenReq.end();
+
+      } else {
+        res.writeHead(404);
+        res.end();
       }
+    });
+
+    authServer.listen(3892, () => {
+      diagLog("[Auth] Local callback server listening on port 3892");
+      
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` + 
+        `client_id=${GOOGLE_CLIENT_ID}&` +
+        `redirect_uri=${encodeURIComponent(REDIRECT_URI)}&` +
+        `response_type=code&` +
+        `scope=${encodeURIComponent('email profile')}&` +
+        `prompt=select_account`;
+      
+      diagLog(`[Auth] Opening browser: ${authUrl}`);
+      shell.openExternal(authUrl);
+    });
+
+    setTimeout(() => {
+        if (authServer) {
+            authServer.close();
+            authServer = null;
+            diagLog("[Auth] Server timed out after 5 minutes");
+        }
+    }, 5 * 60 * 1000);
+  });
+
+  ipcMain.on("set-workspace-shortcuts", (event, isOpen) => {
+    if (workspaceShortcutsActive === isOpen) return; // No state change
+    
+    workspaceShortcutsActive = isOpen;
+    if (isOpen) {
+      registerWorkspaceShortcuts();
+    } else {
+      unregisterWorkspaceShortcuts();
     }
   });
+
 
   // Open Settings Window Handler
 
@@ -1064,7 +1299,7 @@ app.whenReady().then(async () => {
             // Double click: Open Settings
             let mmbClickCount = 2; // Declared here to ensure it's defined
             if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send("open-settings", { overlay: true });
+              mainWindow.webContents.send("open-settings");
             }
           } else {
             // Single click: Show Radial Menu
@@ -1441,10 +1676,72 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
     });
   };
 
+  // Helper to run terminal commands in a specific directory
+  const runAutoCommands = async (cmds, targetPath, openEmptyIfNoCmds = false) => {
+    const commandsToRun = (cmds && Array.isArray(cmds) && cmds.length > 0) 
+      ? cmds.filter(c => c && c.trim() !== "") 
+      : [];
+    
+    // If we have no specific commands but openTerminal was requested, open one empty terminal
+    const finalCmds = (commandsToRun.length === 0 && openEmptyIfNoCmds) ? [""] : commandsToRun;
+    
+    if (finalCmds.length === 0) return;
+    
+    const terminal = getPreferredTerminal();
+    let workingDir = process.cwd();
+    
+    // Try to extract a directory from the path if it's a file or complex command
+    if (targetPath) {
+      try {
+        const stats = fs.statSync(targetPath);
+        workingDir = stats.isDirectory() ? targetPath : path.dirname(targetPath);
+      } catch (e) {
+        // If stat fails, it might be a complex command, try to find a path in quotes
+        const match = targetPath.match(/"([^"]+)"/);
+        if (match && fs.existsSync(match[1])) {
+          try {
+            const s = fs.statSync(match[1]);
+            workingDir = s.isDirectory() ? match[1] : path.dirname(match[1]);
+          } catch(e2) {}
+        }
+      }
+    }
+
+    diagLog(`  → [AutoCommands] Starting execution of ${finalCmds.length} command(s) in ${workingDir}`);
+
+    for (const cmd of finalCmds) {
+      let shellCmd;
+      const safeWorkingDir = workingDir.replace(/"/g, '""'); // Double quotes for CMD escape
+
+      if (terminal === "wt.exe") {
+        // Windows Terminal: Use PowerShell instead of CMD as the default shell for running commands
+        shellCmd = cmd 
+          ? `wt.exe -d "${workingDir}" powershell.exe -NoExit -Command "${cmd}"` 
+          : `wt.exe -d "${workingDir}"`;
+      } else if (terminal === "powershell.exe") {
+        // PowerShell: cd first, then run command if present. Use -NoExit to keep window open.
+        shellCmd = cmd 
+          ? `start powershell.exe -NoExit -Command "Set-Location '${workingDir}'; ${cmd}"` 
+          : `start powershell.exe -NoExit -Command "Set-Location '${workingDir}'"`;
+      } else {
+        // CMD: Use "" as a blank title so 'start' doesn't think the quoted path is the title
+        shellCmd = cmd 
+          ? `start "" cmd.exe /k "cd /d "${workingDir}" && ${cmd}"` 
+          : `start "" cmd.exe /k "cd /d "${workingDir}""`;
+      }
+      
+      diagLog(`  → [AutoCommands] Spawning window: ${shellCmd}`);
+      // Use spawn with shell: true for faster, more reliable execution on Windows
+      spawn(shellCmd, { shell: true, detached: true, stdio: 'ignore' }).unref();
+    }
+  };
+
+
   try {
     if (commandType === "url") {
       diagLog("  → Detected: Explicit URL (from commandType)");
       await tryExecution("shell.openExternal", resolvedCommand);
+      runAutoCommands(options.terminalCommands, resolvedCommand, options?.openTerminal);
       diagLog(
         `\n✓✓✓ EXEC_SUCCESS: Launched URL with 'shell.openExternal' ✓✓✓\n`,
       );
@@ -1454,31 +1751,13 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
     if (commandType === "folder") {
       diagLog("  → Detected: Explicit Folder (from commandType)");
       
-      if (options?.openTerminal) {
-        diagLog("  → Folder + Open Terminal requested");
-        const terminal = getPreferredTerminal();
-        let termCmd;
-        
-        // Ensure path is quoted for terminal
-        const safePath = resolvedCommand.includes(" ") && !resolvedCommand.startsWith('"') 
-          ? `"${resolvedCommand}"` 
-          : resolvedCommand;
-
-        if (terminal === "wt.exe") {
-          // Windows Terminal explicitly opens in directory with -d
-          termCmd = `wt.exe -d ${safePath}`;
-        } else {
-          // cmd or powershell: start in directory
-          termCmd = `start "" /D ${safePath} ${terminal}`;
-        }
-
-        diagLog(`[Exec] Spawning terminal in folder: ${termCmd}`);
+      if (options?.openTerminal || (options?.terminalCommands && options.terminalCommands.length > 0)) {
+        diagLog("  → Folder + Open Terminal (or AutoCommands) requested");
         try {
-          // We can use the existing exec_direct which runs the terminal
-          await tryExecution("exec_silent_spawn", termCmd);
-          diagLog(`\n✓✓✓ EXEC_SUCCESS: Terminal spawned for folder ✓✓✓\n`);
+          await runAutoCommands(options.terminalCommands, resolvedCommand, options?.openTerminal);
+          diagLog(`\n✓✓✓ EXEC_SUCCESS: Terminal(s) spawned for folder ✓✓✓\n`);
         } catch (err) {
-          diagLog(`[Exec] Failed to spawn terminal, falling back to basic folder open: ${err.message}`);
+          diagLog(`[Exec] Failed to run auto-commands, falling back to basic folder open: ${err.message}`);
           await tryExecution("shell.openPath", resolvedCommand);
         }
       } else {
@@ -1561,14 +1840,8 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
               pathArg = pathArg.replace(/^"|"$/g, '').trim();
               const safePath = `"${pathArg}"`;
 
-              if (terminal === "wt.exe") {
-                termCmd = `wt.exe -d ${safePath}`;
-              } else {
-                termCmd = `start "" /D ${safePath} ${terminal}`;
-              }
-              
-              diagLog(`[Exec] Also spawning terminal in IDE folder: ${termCmd}`);
-              await tryExecution("exec_silent_spawn", termCmd).catch(e => diagLog(`[Exec] Failed to spawn terminal: ${e.message}`));
+              diagLog(`[Exec] Launching IDE Folder with AutoCommands: ${finalCommand}`);
+              await runAutoCommands(options?.terminalCommands, pathArg || finalCommand, options?.openTerminal);
             }
             
             return;
@@ -1577,12 +1850,8 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
           }
         }
         
-        if (options && options.openTerminal) {
-          // Attempt to extract path and open terminal. This is harder with raw AUMIDs
-          // like google.antigravity!Antigravity followed by a path.
-          const terminal = getPreferredTerminal();
-          let termCmd;
-          
+        // Generic handle for other IDEs/Apps with terminal options
+        if (options?.openTerminal || (options?.terminalCommands && options.terminalCommands.length > 0)) {
           let pathArg = "";
           if (finalCommand.startsWith('"')) {
              const secondQuote = finalCommand.indexOf('"', 1);
@@ -1603,17 +1872,8 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
           pathArg = pathArg.replace(/^"|"$/g, '').trim();
           
           if (pathArg && (pathArg.includes(":\\") || pathArg.startsWith("\\") || pathArg.startsWith("/"))) {
-              const safePath = `"${pathArg}"`;
-
-              if (terminal === "wt.exe") {
-                termCmd = `wt.exe -d ${safePath}`;
-              } else {
-                termCmd = `start "" /D ${safePath} ${terminal}`;
-              }
-              
-              diagLog(`[Exec] Also spawning terminal in IDE AUMID folder: ${termCmd}`);
-              // Fire and forget terminal spawn
-              tryExecution("exec_silent_spawn", termCmd).catch(e => diagLog(`[Exec] Failed to spawn terminal: ${e.message}`));
+              diagLog(`[Exec] Spawning terminal for IDE AUMID: ${pathArg}`);
+              runAutoCommands(options.terminalCommands, pathArg, options.openTerminal);
           }
         }
         
@@ -1681,6 +1941,7 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
     for (const method of methodsToTry) {
       try {
         await tryExecution(method, resolvedCommand);
+        runAutoCommands(options.terminalCommands, resolvedCommand, options?.openTerminal);
         console.log(`\n✓✓✓ EXEC_SUCCESS: Launched with '${method}' ✓✓✓\n`);
         return; // Success! Exit early
       } catch (err) {

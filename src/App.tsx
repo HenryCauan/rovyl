@@ -64,7 +64,13 @@ export default function App() {
 
   const [config, setConfig] = useState<UIConfig>(DEFAULT_UI_CONFIG);
   const configRef = useRef(config);
-  useEffect(() => { configRef.current = config; }, [config]);
+  const targetWorkspaceIndexRef = useRef(config.activeWorkspaceIndex);
+  const switchDebounceTimer = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => { 
+    configRef.current = config; 
+    targetWorkspaceIndexRef.current = config.activeWorkspaceIndex;
+  }, [config]);
 
   const [notes, setNotes] = useState<Note[]>([]);
   const [alarms, setAlarms] = useState<Alarm[]>([]);
@@ -357,21 +363,13 @@ export default function App() {
     });
 
     const cleanupDashboard = window.electron?.onOpenDashboard(() => {
+      setIsSettingsOpen(false); // Reset to Welcome Screen
       setIsDashboardOpen(true);
     });
 
-    const cleanupSettings = window.electron?.onOpenSettings((args?: { overlay?: boolean }) => {
-      if (args?.overlay) {
-        if (isMenuOpen) setIsMenuOpen(false);
-        setIsSettingsOpen(true);
-        setIsDashboardOpen(false); // Force overlay mode
-        if (isDesktopMode && window.electron) {
-          window.electron.setWindowSize('fullscreen'); // Needs fullscreen to be transparent overlay
-          window.electron.showWindow();
-        }
-      } else {
-        handleOpenSettings();
-      }
+
+    const cleanupSettings = window.electron?.onOpenSettings(() => {
+      handleOpenSettings();
     });
 
     const cleanupWindowState = window.electron?.onWindowState((state) => {
@@ -396,10 +394,6 @@ export default function App() {
       setTimeout(() => setLastLaunched(null), 6000);
     });
 
-    const cleanupSwitchWorkspace = window.electron?.onSwitchWorkspace((index: number) => {
-      handleWorkspaceSwitch(index);
-    });
-
     // FIRST RUN CHECK
     const hasRunBefore = localStorage.getItem('zenith_first_run_complete');
     if (!hasRunBefore) {
@@ -415,9 +409,34 @@ export default function App() {
       cleanupWindowState?.();
       cleanupMouseUp?.();
       cleanupExecutionError?.();
-      cleanupSwitchWorkspace?.();
     };
   }, [isSettingsOpen, isDashboardOpen]);
+ 
+  // Listen for Google Auth Success
+  useEffect(() => {
+    if (window.electron?.onGoogleAuthSuccess) {
+      return window.electron.onGoogleAuthSuccess((authData: any) => {
+        const trialDate = new Date();
+        trialDate.setDate(trialDate.getDate() + 7);
+
+        const newUser: UserProfile = {
+          id: authData.isAdmin ? 'admin-001' : crypto.randomUUID(),
+          name: authData.name,
+          email: authData.email,
+          isPremium: authData.isPremium,
+          isAdmin: authData.isAdmin,
+          trialEndsAt: trialDate.toISOString(),
+          avatarUrl: authData.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(authData.name)}&background=0D8ABC&color=fff`,
+        };
+        setUser(newUser);
+        
+        // Ensure settings reflecting the login
+        setIsDashboardOpen(true); 
+      });
+    }
+  }, []);
+
+
 
   // Window State Management (Interactable vs Passive)
   // TRACK WINDOW STATE TO PREVENT REDUNDANT IPC CALLS (Reduces Lag/Flicker)
@@ -462,24 +481,11 @@ export default function App() {
             clearTimeout(hideTimeout.current);
             hideTimeout.current = null;
           }
-          
-          // Flash Prevention phase 1: Cover everything with black
-          setIsAppReady(false);
-
-          setTimeout(() => {
-             window.electron.showWindow();
-             
-             // Flash Prevention phase 2: Reveal the app only after the native window 
-             // is fully opaque and Chromium has had time to paint the first frame.
-             setTimeout(() => setIsAppReady(true), 150);
-          }, 60);
+          window.electron.showWindow();
         } else {
-          // Immediately cover with black to avoid flashing of stale exit frames
-          setIsAppReady(false);
-
           hideTimeout.current = setTimeout(() => {
             window.electron.hideWindow();
-          }, 500); // 500ms safety margin for all exit animations
+          }, 300); // allow exit animations to complete
         }
         lastVisibility.current = isAnyInteractive;
       }
@@ -488,8 +494,7 @@ export default function App() {
 
   const openMenu = (x: number, y: number, source: 'mmb' | 'shortcut' = 'shortcut') => {
     // console.log(`[App.tsx] openMenu called. Source: ${source}`);
-    console.log(`[App.tsx] Current config activeWorkspaceIndex: ${config.activeWorkspaceIndex}`);
-    console.log(`[App.tsx] Config workspaces length: ${config.workspaces?.length}`);
+    console.warn(`[App.tsx] openMenu. Source: ${source}, index: ${config.activeWorkspaceIndex}, wsLength: ${config.workspaces?.length}`);
     // IMPACT: Force fullscreen immediately to avoid "inside app" feel
     if (window.electron && isDesktopMode) {
       // Avoid redundant IPC if already in fullscreen
@@ -515,21 +520,94 @@ export default function App() {
     setTriggerSource(source);
     setIsMenuOpen(true);
     isHolding.current = true;
-    // setIsDashboardOpen(false); // REMOVED: Keep dashboard state open so it persists behind radial menu
+    
+    // CRITICAL: Clear focus from any background element (Dashboard buttons, etc.) 
+    // to ensure keyboard events reach the window/menu correctly.
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+
+    // IMPACT: Close dashboard when menu opens to reduce UI complexity/layering hits
+    // We do this AFTER setIsMenuOpen(true) so the window size logic in App.tsx 
+    // correctly prioritizes 'fullscreen' mode.
+    setIsDashboardOpen(false);
   };
 
-  // Workspace Switching Handler
+  // Workspace Switching Handler (Debounced)
+  // Uses a debounce so that rapid presses collapse into a single switch
+  // to the LAST pressed workspace after 80ms of inactivity — no flickering.
   const handleWorkspaceSwitch = React.useCallback((workspaceIndex: number) => {
-    if (workspaceIndex >= 0 && workspaceIndex < configRef.current.workspaces.length) {
-      const workspace = configRef.current.workspaces[workspaceIndex];
-      if (workspace && workspace.enabled) {
-        setConfig(prev => ({
-          ...prev,
-          activeWorkspaceIndex: workspaceIndex
-        }));
-      }
+    const configData = configRef.current;
+    
+    if (workspaceIndex < 0 || workspaceIndex >= configData.workspaces.length) {
+      console.warn(`[App.tsx] Invalid workspace index requested: ${workspaceIndex}. Total workspaces: ${configData.workspaces.length}`);
+      return;
     }
-  }, []); // Stable reference since we use configRef.current inside if needed, or just let setConfig handle it
+
+    const workspace = configData.workspaces[workspaceIndex];
+    if (!workspace || !workspace.enabled) {
+      console.warn(`[App.tsx] Cannot switch to disabled or non-existent workspace: ${workspaceIndex}`);
+      return;
+    }
+
+    // Update the target ref synchronously so repeated presses to same workspace are a no-op
+    if (workspaceIndex === targetWorkspaceIndexRef.current) return;
+    
+    console.warn(`[App.tsx] Proceeding with workspace switch to: ${workspace.name} (Index: ${workspaceIndex})`);
+    targetWorkspaceIndexRef.current = workspaceIndex;
+
+    // Cancel any pending switch and restart the debounce window
+    if (switchDebounceTimer.current) {
+      clearTimeout(switchDebounceTimer.current);
+    }
+
+    switchDebounceTimer.current = setTimeout(() => {
+      setConfig(prev => ({
+        ...prev,
+        activeWorkspaceIndex: targetWorkspaceIndexRef.current
+      }));
+      switchDebounceTimer.current = null;
+    }, 80); // 80ms: imperceptible for single presses, collapses rapid sequences into one switch
+  }, []);
+
+  // Workspace switch IPC listener — ISOLATED in its own stable effect
+  // CRITICAL: NOT inside [isSettingsOpen, isDashboardOpen] effect — that effect re-runs on settings/dashboard
+  // changes and would accumulate multiple IPC listeners, causing 2-3x fires per keypress (the flicker root cause).
+  useEffect(() => {
+    const cleanup = window.electron?.onSwitchWorkspace((index: number) => {
+      console.warn(`[App.tsx] switch-workspace IPC received for index: ${index}`);
+      handleWorkspaceSwitch(index);
+    });
+    return () => cleanup?.();
+  }, [handleWorkspaceSwitch]);
+
+  // STABLE KEYBOARD LISTENER - PARENT LEVEL (Robust Fallback for Production)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // Only handle numeric keys if menu is open
+      if (!isMenuOpen) return;
+
+      // Log the event as warn so it shows in diagnostic.log in production
+      console.warn(`[App.tsx] Local keyboard event: key=${e.key}, code=${e.code}`);
+
+      let num = parseInt(e.key);
+      
+      // Fallback to e.code for different keyboard layouts (Digit1, Digit2, etc.)
+      if (isNaN(num) && e.code && e.code.startsWith('Digit')) {
+        num = parseInt(e.code.replace('Digit', ''));
+      }
+
+      if (!isNaN(num) && num >= 1 && num <= 9) {
+        console.warn(`[App.tsx] Valid numeric key detected: ${num}. Switching...`);
+        e.preventDefault();
+        e.stopPropagation();
+        handleWorkspaceSwitch(num - 1);
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown, { capture: true });
+  }, [isMenuOpen, handleWorkspaceSwitch]);
 
   // Centralized function to open settings and handle dashboard logic
   const handleOpenSettings = () => {
@@ -578,7 +656,12 @@ export default function App() {
     }
   }, []);
 
-  const executeAction = (command: string, commandType: "app" | "url" | "folder", itemForToast?: AppItem, options?: { openTerminal?: boolean }) => {
+  const executeAction = (
+    command: string,
+    commandType: "app" | "url" | "folder",
+    itemForToast?: AppItem,
+    options?: { openTerminal?: boolean; terminalCommands?: string[] }
+  ) => {
     // console.log("🚀 Zenith executing:", command, "Type:", commandType, itemForToast);
     if (!command) {
       console.warn("Attempted to execute an empty command");
@@ -650,7 +733,10 @@ export default function App() {
         const targetApp = findAppRecursive(currentWorkspaceApps, centerConfig.target);
         const command = targetApp ? targetApp.command : centerConfig.target;
         console.log("Center action, target command:", command);
-        executeAction(command, targetApp?.commandType || 'app', targetApp);
+        executeAction(command, targetApp?.commandType || 'app', targetApp, { 
+          openTerminal: targetApp?.openTerminal, 
+          terminalCommands: targetApp?.terminalCommands 
+        });
         return;
       } else if (centerConfig.type === 'command') {
         executeAction(centerConfig.target, centerConfig.commandType || 'app');
@@ -665,7 +751,10 @@ export default function App() {
       console.log("Selected app found in active workspace:", app);
       if (app) {
         console.log("Attempting to execute app command:", app.command);
-        executeAction(app.command, app.commandType || 'app', app, { openTerminal: app.openTerminal });
+        executeAction(app.command, app.commandType || 'app', app, { 
+          openTerminal: app.openTerminal,
+          terminalCommands: app.terminalCommands
+        });
       } else {
         console.warn("Could not find app with ID in active workspace:", selectedId);
       }
@@ -677,19 +766,31 @@ export default function App() {
 
   {/* Auth Functions */ }
   const handleLogin = (provider: 'google' | 'email') => {
-    // Simulate API Call
+    if (provider === 'google' && window.electron?.startGoogleAuth) {
+      window.electron.startGoogleAuth();
+      return;
+    }
+
+    // Simulate Email Login (fallback)
     const trialDate = new Date();
     trialDate.setDate(trialDate.getDate() + 7); // 7 Days Trial
 
     const newUser: UserProfile = {
-      id: '123',
-      name: provider === 'google' ? 'Google User' : 'Email User',
+      id: 'user-123',
+      name: 'Email User',
       isPremium: false,
+      isAdmin: false,
       trialEndsAt: trialDate.toISOString(),
       avatarUrl: undefined,
       email: 'user@example.com'
     };
     setUser(newUser);
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    setIsSettingsOpen(false);
+    setIsDashboardOpen(true);
   };
 
   // Check if any modal is open
@@ -713,11 +814,13 @@ export default function App() {
 
 
 
-      {/* Visibility Wrapper for the whole app content */}
+      {/* Visibility Wrapper — ONLY for opaque content (Dashboard, Settings, Widgets) */}
+      {/* RadialMenu renders OUTSIDE this wrapper to stay truly transparent */}
       <div className={`
-        relative w-full h-full transition-opacity duration-200 overflow-hidden
-        ${isAnyModalOpen ? 'opacity-100' : 'opacity-0'}
+        absolute inset-0 transition-all duration-300 overflow-hidden
+        ${(isDashboardOpen || isSettingsOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || ringingAlarm) ? 'opacity-100' : 'opacity-0 pointer-events-none'}
         ${(isDashboardOpen || isSettingsOpen) ? 'border border-white/10 rounded-xl shadow-[0_0_50px_rgba(0,0,0,0.5)] bg-[#0A0A0A]' : ''}
+        ${isMenuOpen ? 'opacity-0 pointer-events-none' : ''}
       `}>
         {/* CUSTOM TITLE BAR OVERLAY (for drag region + app name) */}
         {(isDashboardOpen || isSettingsOpen) && !isMenuOpen && (
@@ -764,28 +867,57 @@ export default function App() {
         {/* BACKGROUND (Simulator Only OR First Run Dashboard) */}
         {/* DELETED: Removed redundant background to allow RadialMenu to handle it exclusively */}
 
-        {/* WELCOME SCREEN / DASHBOARD */}
-        <AnimatePresence>
-          {isDashboardOpen && !isSettingsOpen && !isNotesOpen && !isAlarmWidgetOpen && !isStopwatchOpen && !isPomodoroOpen && !ringingAlarm && (
-            <motion.div
-              key="welcome"
-              initial={{ opacity: 0, filter: 'blur(10px)' }}
-              animate={{ opacity: 1, filter: 'blur(0px)' }}
-              exit={{ opacity: 0, scale: 0.95, filter: 'blur(10px)' }}
-              transition={{ duration: 0.4 }}
-              className={`absolute inset-0 z-10 ${isMenuOpen ? 'hidden' : ''}`} // Double safety: CSS hide
-              id="dashboard-container"
-            >
-              <WelcomeScreen
-                onOpenSettings={handleOpenSettings}
-                onClose={() => setIsDashboardOpen(false)}
-                config={config}
-                user={user}
-                onLogin={handleLogin}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* WELCOME SCREEN / DASHBOARD CONTENT AREA */}
+        {!isMenuOpen && (
+          <AnimatePresence mode="wait">
+            {isDashboardOpen && !isSettingsOpen && !isNotesOpen && !isAlarmWidgetOpen && !isStopwatchOpen && !isPomodoroOpen && !ringingAlarm && (
+              <motion.div
+                key="welcome"
+                initial={{ opacity: 0, x: -20, filter: 'blur(10px)' }}
+                animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+                exit={{ opacity: 0, x: -20, filter: 'blur(10px)' }}
+                transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                className="absolute inset-0 z-10"
+                id="dashboard-container"
+              >
+                <WelcomeScreen
+                  onOpenSettings={handleOpenSettings}
+                  onClose={() => setIsDashboardOpen(false)}
+                  config={config}
+                  user={user}
+                  onLogin={handleLogin}
+                  onLogout={handleLogout}
+                />
+              </motion.div>
+            )}
+
+            {isSettingsOpen && (
+              <motion.div
+                key="settings-page"
+                initial={{ opacity: 0, x: 20, filter: 'blur(10px)' }}
+                animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+                exit={{ opacity: 0, x: 20, filter: 'blur(10px)' }}
+                transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                className="absolute inset-0 z-20"
+              >
+                <SettingsModal
+                  isOpen={isSettingsOpen}
+                  isPage={true}
+                  onClose={() => {
+                    setIsSettingsOpen(false);
+                  }}
+                  apps={apps} setApps={setApps} config={config} setConfig={setConfig} onReset={() => { setApps(DEFAULT_APPS); setConfig(DEFAULT_UI_CONFIG); }}
+                  onOpenDashboard={() => {
+                    setIsSettingsOpen(false);
+                    setIsDashboardOpen(true);
+                  }}
+                  user={user}
+                  onLogout={handleLogout}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        )}
 
         {/* ALARM OVERLAY */}
         <AnimatePresence>
@@ -804,6 +936,19 @@ export default function App() {
           )}
         </AnimatePresence>
 
+
+
+        <NotesWidget isOpen={isNotesOpen} onClose={() => { setIsNotesOpen(false); }} notes={notes} setNotes={setNotes} config={config} />
+        <AlarmWidget isOpen={isAlarmWidgetOpen} onClose={() => { setIsAlarmWidgetOpen(false); }} alarms={alarms} setAlarms={setAlarms} config={config} />
+        <StopwatchWidget isOpen={isStopwatchOpen} onClose={() => { setIsStopwatchOpen(false); }} config={config} />
+        <PomodoroWidget isOpen={isPomodoroOpen} onClose={() => { setIsPomodoroOpen(false); }} {...pomodoro} uiConfig={config} />
+
+
+      </div>
+      {/* ------------------------------------------------------------------ */}
+      {/* TRANSPARENT LAYER — no background, RadialMenu + toasts live here    */}
+      {/* ------------------------------------------------------------------ */}
+
         <RadialMenu
           isOpen={isMenuOpen}
           position={menuPosition}
@@ -813,25 +958,6 @@ export default function App() {
           triggerSource={triggerSource}
           onWorkspaceSwitch={handleWorkspaceSwitch}
           currentWorkspace={config.workspaces[config.activeWorkspaceIndex]}
-        />
-
-        <NotesWidget isOpen={isNotesOpen} onClose={() => { setIsNotesOpen(false); }} notes={notes} setNotes={setNotes} config={config} />
-        <AlarmWidget isOpen={isAlarmWidgetOpen} onClose={() => { setIsAlarmWidgetOpen(false); }} alarms={alarms} setAlarms={setAlarms} config={config} />
-        <StopwatchWidget isOpen={isStopwatchOpen} onClose={() => { setIsStopwatchOpen(false); }} config={config} />
-        <PomodoroWidget isOpen={isPomodoroOpen} onClose={() => { setIsPomodoroOpen(false); }} {...pomodoro} uiConfig={config} />
-
-        <SettingsModal
-          isOpen={isSettingsOpen}
-          isPage={isDashboardOpen}
-          onClose={() => {
-            setIsSettingsOpen(false);
-          }}
-          apps={apps} setApps={setApps} config={config} setConfig={setConfig} onReset={() => { setApps(DEFAULT_APPS); setConfig(DEFAULT_UI_CONFIG); }}
-          onOpenDashboard={() => {
-            setIsSettingsOpen(false);
-            setIsDashboardOpen(true);
-          }}
-          user={user}
         />
 
         <Toast app={lastLaunched} />
@@ -871,7 +997,6 @@ export default function App() {
         <style>{`
           .group:active { cursor: ${isAnyModalOpen ? 'default' : 'crosshair'}; }
         `}</style>
-      </div>
 
     </div>
   );

@@ -26,7 +26,7 @@ contextBridge.exposeInMainWorld("electron", {
     return () => ipcRenderer.removeListener("mmb-release", listener);
   },
   onOpenSettings: (callback) => {
-    const listener = (event, args) => callback(args);
+    const listener = (event) => callback();
     ipcRenderer.on("open-settings", listener);
     return () => ipcRenderer.removeListener("open-settings", listener);
   },
@@ -85,6 +85,12 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.invoke("get-app-recents", appName, appCommand),
   setWorkspaceShortcutsState: (isOpen) =>
     ipcRenderer.send("set-workspace-shortcuts", isOpen),
+  startGoogleAuth: () => ipcRenderer.send("start-google-auth"),
+  onGoogleAuthSuccess: (callback) => {
+    const listener = (event, user) => callback(user);
+    ipcRenderer.on("google-auth-success", listener);
+    return () => ipcRenderer.removeListener("google-auth-success", listener);
+  },
 });
 
 // Intercept console messages from the renderer process and send them to the main process

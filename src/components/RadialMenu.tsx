@@ -6,6 +6,60 @@ import { Settings2, CornerUpLeft } from 'lucide-react';
 import { SmartIcon } from './SmartIcon';
 import { getTranslation } from '../translations';
 
+// PERF FIX #3: Module-level weather cache — persists across menu open/close cycles
+// Prevents a new HTTP fetch on every menu open; refreshes only after 10 minutes or location change
+const weatherCache: { data: { temp: number; condition: string } | null; lastFetch: number; location: string } = {
+  data: null, lastFetch: 0, location: ''
+};
+const WEATHER_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+// Helper to extract a normalized path from a command string for deduplication
+const normalizePathForDedup = (item: any): string => {
+  if (!item) return '';
+  // NEVER use item.description as it might be "Quick Access Folder" or "Application"
+  let pathStr = item.command || '';
+  
+  // 1. Handle commands with multiple arguments (e.g. "exe" "path" or code "path")
+  // We want the LAST argument which is usually the file/folder path
+  const allQuotes = [...pathStr.matchAll(/"([^"]+)"/g)];
+  if (allQuotes.length > 0) {
+    // If multiple quotes, take the last one (the folder path)
+    // If one quote and it's an IDE command, take that quote
+    pathStr = allQuotes[allQuotes.length - 1][1];
+  } else {
+    // No quotes, handle unquoted IDE prefixes (e.g., code C:\Path)
+    const lower = pathStr.toLowerCase();
+    const ideCommands = ['antigravity', 'cursor', 'code', 'vs code', 'vscode', 'code.exe', 'cursor.exe', 'antigravity.exe'];
+    for (const cmd of ideCommands) {
+      if (lower.startsWith(cmd + ' ')) {
+        pathStr = pathStr.substring(cmd.length + 1).trim();
+        break;
+      }
+    }
+  }
+  
+  // 3. Absolute Normalization
+  // - Lowercase for case-insensitivity
+  // - Replace all backslashes with forward slashes
+  // - Trim any trailing slashes or spaces
+  // - Ensure drive letter is consistent (c: vs C:)
+  let normalized = pathStr
+    .toLowerCase()
+    .trim()
+    .replace(/[\\/]+/g, '/')     // Multiple slashes to single forward slash
+    .replace(/\/+$/, '')         // Remove trailing slashes
+    .replace(/^(['"]+)|(['"]+)$/g, ''); // Remove wrapping quotes if they managed to survive
+    
+  // Handle Windows Drive Letter consistency (e.g., c:/path -> c:/path)
+  // We keep it lowercase as we already called .toLowerCase()
+  if (/^[a-z]:/.test(normalized)) {
+    // Already lowercased, just return
+    return normalized;
+  }
+  
+  return normalized;
+};
+
 interface RadialMenuProps {
   isOpen: boolean;
   position: Coordinates;
@@ -42,8 +96,8 @@ const RadialMenuItem = React.memo(({
     y: actualMenuRadius * Math.sin(angleRad),
   };
 
-  const shouldUseCustomIcon = (() => {
-    // Lista de apps que devem usar ícone Lucide em vez do nativo por serem problemáticos ou feios
+  // PERF FIX #2: useMemo instead of IIFE so this only recomputes when app.command/label/iconSource change
+  const shouldUseCustomIcon = React.useMemo(() => {
     const LUCIDE_ICON_EXCEPTIONS = [
       'Microsoft.WindowsTerminal',
       'WindowsTerminal',
@@ -51,23 +105,21 @@ const RadialMenuItem = React.memo(({
       'cmd.exe',
       'powershell.exe'
     ];
-
     const isException = LUCIDE_ICON_EXCEPTIONS.some(exception =>
       app.command?.toLowerCase().includes(exception.toLowerCase()) ||
       app.label?.toLowerCase().includes(exception.toLowerCase())
     );
     if (isException) return false;
-
     return app.iconSource === 'native' && !!app.customIconUrl;
-  })();
+  }, [app.command, app.label, app.iconSource, app.customIconUrl]);
 
-  // Capped delay: scale it based on total apps but cap at maximum 150ms total stagger time
-  const maxDelay = 0.15;
+  // Fast stagger: max 50ms total across all items for near-instant bloom
+  const maxDelay = 0.05;
   const staggerDelay = Math.min((index / Math.max(totalApps, 1)) * maxDelay, maxDelay);
 
   return (
     <motion.div
-      key={`${app.id}-${folderStackLength}`} // Key change triggers animation
+      key={`${app.id}-${folderStackLength}`}
       initial={{ scale: 0, opacity: 0, x: 0, y: 0 }}
       animate={isOpen ? {
         scale: isActive ? 1.15 : 1,
@@ -77,13 +129,13 @@ const RadialMenuItem = React.memo(({
       } : {
         scale: 0, opacity: 0, x: 0, y: 0
       }}
-      exit={{ scale: 0, opacity: 0, transition: { duration: 0.06 } }}
+      exit={{ scale: 0, opacity: 0, transition: { duration: 0.1 } }}
       transition={{
         type: 'spring',
-        stiffness: 300,
-        damping: 22,
-        mass: 0.7,
-        delay: isOpen ? staggerDelay : 0 // Faster Staggered "bloom" entrance
+        stiffness: 400,
+        damping: 25,
+        mass: 0.8,
+        delay: isOpen ? staggerDelay : 0
       }}
       className="absolute top-0 left-0 pointer-events-auto cursor-pointer"
       style={{ zIndex: isActive ? 200 : 100, willChange: 'transform, opacity' }}
@@ -166,11 +218,9 @@ const RadialMenuItem = React.memo(({
             <div
               className="flex items-center gap-2 px-3 py-1.5 rounded-xl whitespace-nowrap"
               style={{
-                background: 'rgba(8, 8, 10, 0.72)',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
+                background: 'rgba(10, 10, 13, 0.90)',
                 border: `1px solid rgba(255,255,255,0.09)`,
-                boxShadow: `0 8px 32px rgba(0,0,0,0.55), 0 0 0 0.5px rgba(255,255,255,0.04) inset`,
+                boxShadow: `0 4px 16px rgba(0,0,0,0.45)`,
               }}
             >
               <span
@@ -194,6 +244,8 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
   const isCenterActiveRef = useRef(isCenterActive);
   const openingTimeRef = useRef<number>(0);
   const [currentTime, setCurrentTime] = useState(new Date());
+  // PERF FIX #4: Only update clock state when the displayed HH:MM string changes (once/minute vs once/second)
+  const lastDisplayedMinute = useRef('');
 
   useEffect(() => {
     isCenterActiveRef.current = isCenterActive;
@@ -271,11 +323,19 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
   const CenterIcon = !isRoot ? CornerUpLeft : (config.centerButton?.iconName ? getIcon(config.centerButton.iconName) : Settings2);
   const centerLabel = !isRoot ? t('menu.back') : (config.centerButton?.label || t('menu.center'));
 
-  // Timer for Clock
+  // PERF FIX #4: Clock — only trigger re-render when the displayed minute changes
   useEffect(() => {
     if (!isOpen) return;
-    setCurrentTime(new Date());
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    const tick = () => {
+      const now = new Date();
+      const hhmm = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+      if (hhmm !== lastDisplayedMinute.current) {
+        lastDisplayedMinute.current = hhmm;
+        setCurrentTime(now);
+      }
+    };
+    tick(); // run immediately on open
+    const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
   }, [isOpen]);
 
@@ -384,6 +444,9 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
     const handleMouseUp = (e: MouseEvent) => {
       if (e.button !== 0 && e.button !== 1) return;
       const { isCenterActive, folderStack, apps, currentLevelApps, activeIndex, onClose } = stateRef.current;
+      
+      const selectedItemObj = activeIndex !== null ? currentLevelApps[activeIndex] : null;
+      console.error(`[Zenith] MouseUp! ActiveIndex: ${activeIndex}, Item: ${selectedItemObj?.label}`);
 
       if (isCenterActive) {
         if (folderStack.length > 0) {
@@ -404,9 +467,8 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
         return;
       }
 
-      const selectedItem = activeIndex !== null ? currentLevelApps[activeIndex] : null;
-
-      if (selectedItem) {
+      const selectedItem = selectedItemObj as any;
+      if (!selectedItem) return;
         // Core Folder Integration Logic
         const isKnownIDE = (item: any) => {
           const l = item.label?.toLowerCase() || '';
@@ -430,8 +492,39 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
           if (hasRecentFetch) {
             window.electron!.getAppRecents(selectedItem.label, selectedItem.command).then(recents => {
               setIsLoadingRecents(false);
-              const seenPaths = new Set(manualFolders.map(c => c.command));
-              const uniqueRecents = recents.filter(r => !seenPaths.has(r.command));
+              const seenPathsMap = new Map();
+              const seenLabels = new Set();
+              manualFolders.forEach(c => {
+                 const norm = normalizePathForDedup(c);
+                 if (norm) seenPathsMap.set(norm, c.label || c.command);
+                 if (c.label) seenLabels.add(c.label.toLowerCase());
+              });
+              
+              const seenPaths = new Set(seenPathsMap.keys());
+              
+              const seenNormalized = new Set(seenPaths); // Start with manual folders
+              const uniqueRecents = recents.filter(r => {
+                const normalized = normalizePathForDedup(r);
+                if (!normalized) return false;
+                
+                const isDuplicatePath = seenNormalized.has(normalized);
+                const rLabelLower = (r.label || '').toLowerCase();
+                const isDuplicateLabel = rLabelLower && seenLabels.has(rLabelLower);
+                
+                if (isDuplicatePath || isDuplicateLabel) {
+                   if (isDuplicatePath) {
+                     console.error(`[Zenith] Deduplicated "${r.label}" (Path Match)`);
+                   } else {
+                     console.error(`[Zenith] Deduplicated "${r.label}" (Visual Label Match)`);
+                   }
+                   return false;
+                }
+                
+                seenNormalized.add(normalized);
+                if (rLabelLower) seenLabels.add(rLabelLower);
+                return true;
+              });
+              
               const combined = [...manualFolders, ...uniqueRecents];
 
               if (combined.length > 0) {
@@ -457,9 +550,6 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
         } else {
           onClose(selectedItem.id);
         }
-      } else {
-        onClose(null);
-      }
     };
 
     const handleMouseDown = (e: MouseEvent) => {
@@ -523,6 +613,8 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
   }, [isOpen]);
 
   // STABLE KEYBOARD LISTENER (Decoupled from interaction states to avoid missing events)
+  // NOTE: Workspace switching (1-9) is handled exclusively by global shortcuts registered in
+  // the backend (set-workspace-shortcuts IPC). Having a duplicate listener here caused double-firing.
   useEffect(() => {
     if (!isOpen) return;
 
@@ -534,22 +626,21 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
         return;
       }
 
-
-
-      // Workspace Switching (1-9)
+      // Workspace Switching (1-9) - LOCAL LISTENER (Managed here for faster feedback if focused)
       if (onWorkspaceSwitch) {
         const num = parseInt(e.key);
-        if (num >= 1 && num <= 9) {
-          // console.log('🔄 Stable Listener Switching to workspace:', num - 1, 'Current config.activeWorkspaceIndex:', config.activeWorkspaceIndex);
+        if (!isNaN(num) && num >= 1 && num <= 9) {
+          console.warn(`[RadialMenu.tsx] Numeric key in menu: ${e.key}`);
+          // App.tsx also has a listener, but having it here doesn't hurt as App.tsx debounces it.
           e.preventDefault();
-          onWorkspaceSwitch(num - 1); // Convert to 0-indexed
+          onWorkspaceSwitch(num - 1);
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
-  }, [isOpen, onWorkspaceSwitch, onClose]);
+  }, [isOpen, onClose]);
 
   // MMB Release Logic (Hold to Open -> Release to Execute)
   useEffect(() => {
@@ -600,8 +691,11 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
             if (selectedItem.hasRecents && window.electron?.getAppRecents) {
               window.electron!.getAppRecents(selectedItem.label, selectedItem.command).then(recents => {
                 setIsLoadingRecents(false);
-                const seenPaths = new Set(manualFolders.map(c => c.command));
-                const uniqueRecents = recents.filter(r => !seenPaths.has(r.command));
+                const seenPaths = new Set(manualFolders.map(c => normalizePathForDedup(c)));
+                const uniqueRecents = recents.filter(r => {
+                  const normalized = normalizePathForDedup(r);
+                  return normalized && !seenPaths.has(normalized);
+                });
                 const combined = [...manualFolders, ...uniqueRecents];
 
                 if (combined.length > 0) {
@@ -662,32 +756,37 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
       });
     }
 
-    // Real Weather Logic (wttr.in)
+    // Real Weather Logic (wttr.in) with 10-minute cache
     if (config.showWeather) {
-      const fetchWeather = async () => {
-        try {
-          const loc = config.weatherLocation || '';
-          // Using wttr.in with JSON format. 
-          // loc can be "Sao Paulo" or a CEP (like 01310100)
-          const response = await fetch(`https://wttr.in/${encodeURIComponent(loc)}?format=j1`);
-          if (!response.ok) throw new Error('Weather fetch failed');
+      const loc = config.weatherLocation || '';
+      const now = Date.now();
+      const cacheValid = weatherCache.data &&
+        weatherCache.location === loc &&
+        (now - weatherCache.lastFetch) < WEATHER_TTL_MS;
 
-          const data = await response.json();
-          const current = data.current_condition[0];
-          setWeather({
-            temp: parseInt(current.temp_C),
-            condition: current.weatherDesc[0].value
-          });
-        } catch (err) {
-          console.error("Failed to fetch weather:", err);
-          // Fallback if fetch fails but keep it silent or show old data
-          if (!weather) setWeather({ temp: 0, condition: '---' });
-        }
-      };
-
-      fetchWeather();
-      // Update weather every 30 minutes while menu is open? 
-      // Actually, since menu is open only for short bursts, fetching on open is enough.
+      if (cacheValid) {
+        // Serve from cache immediately — no network
+        setWeather(weatherCache.data);
+      } else {
+        const fetchWeather = async () => {
+          try {
+            const response = await fetch(`https://wttr.in/${encodeURIComponent(loc)}?format=j1`);
+            if (!response.ok) throw new Error('Weather fetch failed');
+            const data = await response.json();
+            const current = data.current_condition[0];
+            const result = { temp: parseInt(current.temp_C), condition: current.weatherDesc[0].value };
+            // Update cache
+            weatherCache.data = result;
+            weatherCache.lastFetch = Date.now();
+            weatherCache.location = loc;
+            setWeather(result);
+          } catch (err) {
+            console.error("Failed to fetch weather:", err);
+            if (!weatherCache.data) setWeather({ temp: 0, condition: '---' });
+          }
+        };
+        fetchWeather();
+      }
     }
   }, [isOpen, config.showBattery, config.showWeather, config.weatherLocation]);
 
@@ -750,12 +849,17 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
   };
 
   return (
-    <div
-      className="fixed inset-0 z-40 transition-opacity duration-200"
-      style={{
-        opacity: isOpen ? 1 : 0,
+    <motion.div
+      className="fixed inset-0 z-40"
+      initial={false}
+      animate={{ 
+        visibility: isOpen ? 'visible' : 'hidden' 
+      }}
+      transition={{
+        visibility: { delay: isOpen ? 0 : 0.25 }
+      }}
+      style={{ 
         pointerEvents: isOpen ? 'auto' : 'none',
-        visibility: isOpen ? 'visible' : 'hidden'
       }}
     >
         <>
@@ -867,8 +971,8 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
           <motion.div
             ref={menuRef}
             initial={false}
-            animate={{ opacity: isOpen ? 1 : 0, scale: isOpen ? 1 : 0.92 }}
-            transition={{ type: 'spring', damping: 24, stiffness: 260, mass: 0.8 }}
+            animate={{ opacity: isOpen ? 1 : 0, scale: isOpen ? 1 : 0.8 }}
+            transition={{ type: 'spring', damping: 24, stiffness: 350, mass: 0.8 }}
             style={{
               left: Math.round(position.x),
               top: Math.round(position.y),
@@ -1019,6 +1123,6 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
             </AnimatePresence>
           </motion.div>
         </>
-    </div>
+    </motion.div>
   );
 };

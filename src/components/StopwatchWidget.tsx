@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Play, Pause, RotateCcw, Flag, Clock } from 'lucide-react';
+import { X, Play, Pause, RotateCcw, Flag } from 'lucide-react';
 import { UIConfig } from '../types';
 import { getTranslation } from '../translations';
 
@@ -19,13 +19,12 @@ export const StopwatchWidget: React.FC<StopwatchWidgetProps> = ({ isOpen, onClos
   const previousTimeRef = useRef<number>(0);
 
   const t = (key: string) => getTranslation(config, key);
+  const accent = config.accentColor || '#ffffff';
 
   const animate = (timeNow: number) => {
-    if (startTimeRef.current !== undefined) {
-      const deltaTime = timeNow - startTimeRef.current;
-      setTime(previousTimeRef.current + deltaTime);
-      requestRef.current = requestAnimationFrame(animate);
-    }
+    const deltaTime = timeNow - startTimeRef.current;
+    setTime(previousTimeRef.current + deltaTime);
+    requestRef.current = requestAnimationFrame(animate);
   };
 
   const handleStart = () => {
@@ -53,26 +52,21 @@ export const StopwatchWidget: React.FC<StopwatchWidgetProps> = ({ isOpen, onClos
   };
 
   const handleLap = () => {
-    if (isRunning) {
-      setLaps([time, ...laps]);
-    }
+    if (isRunning) setLaps([time, ...laps]);
   };
 
-  const formatDigits = (ms: number) => {
-    const minutes = Math.floor(ms / 60000).toString().padStart(2, '0');
-    const seconds = Math.floor((ms % 60000) / 1000).toString().padStart(2, '0');
-    const milliseconds = Math.floor((ms % 1000) / 10).toString().padStart(2, '0');
-    return { minutes, seconds, milliseconds };
-  };
-
-  const formatLapTime = (ms: number) => {
-    const { minutes, seconds, milliseconds } = formatDigits(ms);
-    return `${minutes}:${seconds}.${milliseconds}`;
+  const fmt = (ms: number) => {
+    const min = Math.floor(ms / 60000).toString().padStart(2, '0');
+    const sec = Math.floor((ms % 60000) / 1000).toString().padStart(2, '0');
+    const cs = Math.floor((ms % 1000) / 10).toString().padStart(2, '0');
+    return { min, sec, cs, full: `${min}:${sec}.${cs}` };
   };
 
   if (!isOpen) return null;
 
-  const { minutes, seconds, milliseconds } = formatDigits(time);
+  const { min, sec, cs } = fmt(time);
+  const bestLap = laps.length > 1 ? Math.min(...laps) : null;
+  const worstLap = laps.length > 1 ? Math.max(...laps) : null;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
@@ -80,138 +74,135 @@ export const StopwatchWidget: React.FC<StopwatchWidgetProps> = ({ isOpen, onClos
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="absolute inset-0 bg-black/60 backdrop-blur-2xl"
+        transition={{ duration: 0.18 }}
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
         onClick={onClose}
       />
 
       <motion.div
-        initial={{ scale: 0.98, opacity: 0, y: 10 }}
+        initial={{ scale: 0.96, opacity: 0, y: 6 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.98, opacity: 0, y: 10 }}
-        className="relative bg-[#080808] border border-white/10 rounded-[2.5rem] shadow-[0_50px_100px_-20px_rgba(0,0,0,1)] w-[920px] h-[580px] flex overflow-hidden z-[70]"
+        exit={{ scale: 0.96, opacity: 0, y: 6 }}
+        transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+        className="relative w-[420px] z-[70] overflow-hidden"
+        style={{
+          background: 'rgba(10, 10, 13, 0.92)',
+          backdropFilter: 'blur(40px) saturate(150%)',
+          WebkitBackdropFilter: 'blur(40px) saturate(150%)',
+          border: '1px solid rgba(255,255,255,0.07)',
+          borderRadius: '20px',
+          boxShadow: '0 32px 80px -8px rgba(0,0,0,0.9), inset 0 1px 0 rgba(255,255,255,0.05)',
+        }}
         onClick={e => e.stopPropagation()}
       >
-        {/* Main: Instrument Area (60%) */}
-        <div className="flex-1 flex flex-col p-12 relative overflow-visible">
-          <div className="flex items-center gap-4 mb-12">
-            <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white/40">
-              <Clock size={20} />
-            </div>
-            <div>
-              <h2 className="text-white font-bold text-lg tracking-tight leading-none mb-1">{t('stopwatch.chronograph')}</h2>
-              <p className="text-[9px] text-white/20 font-black uppercase tracking-[0.3em]">{t('stopwatch.precision_module_v')}</p>
-            </div>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-4 pb-2">
+          <div className="flex items-center gap-2">
+            <motion.div
+              animate={{ opacity: isRunning ? [1, 0.3, 1] : 0.25 }}
+              transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+              className="w-1.5 h-1.5 rounded-full"
+              style={{ backgroundColor: isRunning ? accent : 'rgba(255,255,255,0.3)' }}
+            />
+            <span className="text-[10px] font-semibold text-white/30 uppercase tracking-widest">
+              {t('stopwatch.chronograph')}
+            </span>
           </div>
-
-          <div className="flex-1 flex flex-col justify-center py-10 relative overflow-visible">
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[140%] h-[140%] bg-white/[0.015] blur-[120px] rounded-full pointer-events-none" />
-            
-            <div className="flex items-baseline font-medium tracking-tight tabular-nums text-white leading-none justify-center" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-              <span className="text-[12rem] tracking-[-0.05em]">{minutes}</span>
-              <span className="text-[12rem] opacity-20 mx-[-0.1em]">:</span>
-              <span className="text-[12rem] tracking-[-0.05em]">{seconds}</span>
-              <span className="text-6xl opacity-40 ml-4">.{milliseconds}</span>
-            </div>
-          </div>
-
-          <div className="mt-auto flex items-center justify-between">
-            <div className="flex gap-4">
-              <button 
-                onClick={handleReset}
-                className="p-5 rounded-2xl bg-white/5 border border-white/5 text-white/20 hover:text-white hover:bg-white/10 transition-all"
-              >
-                <RotateCcw size={22} />
-              </button>
-              <button 
-                onClick={handleLap}
-                disabled={!isRunning}
-                className="p-5 rounded-2xl bg-white/5 border border-white/5 text-white/20 hover:text-white hover:bg-white/10 transition-all disabled:opacity-10"
-              >
-                <Flag size={22} />
-              </button>
-            </div>
-
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={isRunning ? handlePause : handleStart}
-              className={`h-24 px-16 rounded-[2rem] flex items-center gap-4 transition-all shadow-2xl ${isRunning ? 'bg-white/5 text-white border border-white/20' : 'bg-white text-black'}`}
-            >
-              {isRunning ? (
-                <>
-                  <Pause size={32} fill="currentColor" />
-                  <span className="text-xs font-black uppercase tracking-[0.2em]">{t('stopwatch.halt_session')}</span>
-                </>
-              ) : (
-                <>
-                  <Play size={32} fill="currentColor" className="ml-1" />
-                  <span className="text-xs font-black uppercase tracking-[0.2em]">{t('stopwatch.initiate_trace')}</span>
-                </>
-              )}
-            </motion.button>
-          </div>
+          <button onClick={onClose} className="text-white/20 hover:text-white/60 transition-colors duration-150">
+            <X size={15} />
+          </button>
         </div>
 
-        {/* Sidebar: Lap Grid (40%) */}
-        <div className="w-[360px] bg-black/20 border-l border-white/5 flex flex-col">
-          <header className="p-10 pb-6">
-            <div className="flex justify-between items-center mb-8">
-              <span className="text-[10px] font-black uppercase tracking-[0.3em] text-white/30">{t('stopwatch.telemetry')}</span>
-              <button onClick={onClose} className="text-white/20 hover:text-white transition-colors">
-                <X size={20} />
-              </button>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-white/[0.03] p-5 rounded-2xl border border-white/5">
-                <div className="text-[8px] font-black uppercase tracking-widest text-white/20 mb-1">{t('stopwatch.total_laps')}</div>
-                <div className="text-2xl font-bold text-white tracking-tighter">{laps.length}</div>
-              </div>
-              <div className="bg-white/[0.03] p-5 rounded-2xl border border-white/5">
-                <div className="text-[8px] font-black uppercase tracking-widest text-white/20 mb-1">{t('stopwatch.status')}</div>
-                <div className={`text-[10px] font-black uppercase tracking-widest transition-colors ${isRunning ? 'text-emerald-400' : 'text-rose-400'}`}>
-                   {isRunning ? t('status.active') : t('stopwatch.standby')}
+        {/* Main digits */}
+        <div className="px-6 py-4 flex items-baseline gap-0 select-none" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+          <span className="text-[72px] font-medium text-white tracking-[-0.04em] tabular-nums leading-none">{min}</span>
+          <span className="text-[72px] font-medium leading-none" style={{ color: 'rgba(255,255,255,0.18)', margin: '0 -2px' }}>:</span>
+          <span className="text-[72px] font-medium text-white tracking-[-0.04em] tabular-nums leading-none">{sec}</span>
+          <span className="text-[32px] font-medium tabular-nums leading-none ml-2 mb-1" style={{ color: 'rgba(255,255,255,0.3)' }}>.{cs}</span>
+        </div>
+
+        {/* Controls */}
+        <div className="flex items-center justify-between px-6 pb-4">
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleReset}
+              title="Reset"
+              className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/30 hover:text-white/70 transition-colors duration-150"
+            >
+              Reset
+            </button>
+            <button
+              onClick={handleLap}
+              disabled={!isRunning}
+              title="Lap"
+              className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/30 hover:text-white/70 transition-colors duration-150 disabled:opacity-20 disabled:cursor-not-allowed"
+            >
+              Lap
+            </button>
+          </div>
+
+          <motion.button
+            whileHover={{ scale: 1.04 }}
+            whileTap={{ scale: 0.96 }}
+            onClick={isRunning ? handlePause : handleStart}
+            className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold transition-all duration-200"
+            style={
+              isRunning
+                ? { background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.75)', border: '1px solid rgba(255,255,255,0.1)' }
+                : { backgroundColor: accent, color: '#000', border: `1px solid ${accent}` }
+            }
+          >
+            {isRunning
+              ? <><Pause size={14} fill="currentColor" />Pause</>
+              : <><Play size={14} fill="currentColor" className="ml-0.5" />Start</>
+            }
+          </motion.button>
+        </div>
+
+        {/* Lap list — only when there are laps */}
+        <AnimatePresence>
+          {laps.length > 0 && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.22 }}
+              className="overflow-hidden"
+            >
+              <div
+                className="mx-4 mb-4 rounded-xl overflow-hidden"
+                style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.05)' }}
+              >
+                <div className="max-h-[160px] overflow-y-auto custom-scrollbar">
+                  {laps.map((lapTime, index) => {
+                    const lapNum = (laps.length - index).toString().padStart(2, '0');
+                    const isBest = lapTime === bestLap;
+                    const isWorst = lapTime === worstLap;
+                    return (
+                      <motion.div
+                        key={laps.length - index}
+                        initial={{ opacity: 0, x: 8 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.15 }}
+                        className="flex items-center justify-between px-4 py-2.5 border-b border-white/[0.03] last:border-0"
+                      >
+                        <span className="text-[10px] font-medium text-white/25 tabular-nums" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                          LAP {lapNum}
+                          {isBest && <span className="ml-2 text-emerald-400/60">↓</span>}
+                          {isWorst && <span className="ml-2 text-red-400/40">↑</span>}
+                        </span>
+                        <span className="text-xs font-medium text-white/70 tabular-nums" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                          {fmt(lapTime).full}
+                        </span>
+                      </motion.div>
+                    );
+                  })}
                 </div>
               </div>
-            </div>
-          </header>
-
-          <div className="flex-1 overflow-y-auto custom-scrollbar px-10 space-y-2">
-            <AnimatePresence mode="popLayout">
-              {laps.map((lapTime, index) => (
-                <motion.div
-                  key={laps.length - index}
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className="group flex justify-between items-center py-4 px-5 rounded-xl border border-white/[0.02] bg-white/[0.01] hover:bg-white/[0.05] hover:border-white/10 transition-all"
-                >
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[8px] font-black text-white/10 uppercase tracking-widest">LAP {laps.length - index}</span>
-                    <span className="text-lg font-medium text-white tracking-tight tabular-nums" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                      {formatLapTime(lapTime)}
-                    </span>
-                  </div>
-                  <div className="h-2 w-2 rounded-full bg-white/5 group-hover:bg-white/20 transition-colors" />
-                </motion.div>
-              ))}
-            </AnimatePresence>
-            
-            {laps.length === 0 && (
-              <div className="h-full flex flex-col items-center justify-center opacity-10 py-20 grayscale">
-                <Flag size={48} strokeWidth={1} />
-                <span className="text-[9px] font-black uppercase tracking-[0.5em] mt-6">NO TELEMETRY</span>
-              </div>
-            )}
-          </div>
-
-          <div className="p-10 border-t border-white/5 bg-black/40">
-            <div className="flex flex-col items-center select-none pointer-events-none grayscale opacity-5">
-              <div className="text-2xl font-extrabold tracking-tighter" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>ZENITH LABS</div>
-              <div className="text-[6px] uppercase tracking-[1em] font-black mt-[-2px]">INSTRUMENT SPEC</div>
-            </div>
-          </div>
-        </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
     </div>
   );
-};
+};
