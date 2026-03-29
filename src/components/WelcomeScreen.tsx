@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-    Play, Settings, MessageSquare,
-    Crown, LogIn, Command, Book, X, User
+    Settings, MessageSquare,
+    Crown, LogIn, Command, Book, X, User, CreditCard, Home
 } from 'lucide-react';
 import { ZenithLogo } from './ZenithLogo';
+import { PlansScreen } from './PlansScreen';
 import { UIConfig, UserProfile } from '../types';
 import { getTranslation } from '../translations';
 
@@ -27,6 +28,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
 }) => {
     const [showLogin, setShowLogin] = useState(false);
     const [showFeedback, setShowFeedback] = useState(false);
+    const [view, setView] = useState<'home' | 'plans'>('home');
 
     // Auth Helpers
     const isPremiumOrTrial = user ? (user.isPremium || (user.trialEndsAt && new Date(user.trialEndsAt) > new Date())) : false;
@@ -63,60 +65,65 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
             </div>
 
             {/* CENTRAL APP WIDGET (LAUNCHER CARD) */}
-            <motion.div
-                initial={{ scale: 0.9, opacity: 0, y: 30, filter: 'blur(10px)' }}
-                animate={{ scale: 1, opacity: 1, y: 0, filter: 'blur(0px)' }}
-                transition={{ duration: 0.6, type: "spring", stiffness: 100 }}
-                className="relative z-10 w-full sm:w-[90%] max-w-lg min-w-[300px] sm:min-w-[400px] max-h-[90vh] overflow-y-auto custom-scrollbar bg-[#0A0A0A]/95 backdrop-blur-xl border border-white/20 rounded-xl shadow-[0_0_120px_rgba(0,0,0,0.5)] flex flex-col items-center text-center pointer-events-auto"
-            >
-                {/* Top Glow */}
-                <div className="absolute top-0 w-full h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+            <AnimatePresence mode="wait">
+                <motion.div
+                    key={view}
+                    initial={{ opacity: 0, y: 16, filter: 'blur(6px)' }}
+                    animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                    exit={{ opacity: 0, y: -12, filter: 'blur(6px)' }}
+                    transition={{ duration: 0.35, ease: 'easeOut' }}
+                    className="relative z-10 w-full sm:w-[90%] max-w-lg min-w-[300px] sm:min-w-[400px] max-h-[90vh] overflow-y-auto custom-scrollbar bg-[#0A0A0A]/95 backdrop-blur-xl border border-white/20 rounded-xl shadow-[0_0_120px_rgba(0,0,0,0.5)] flex flex-col items-center text-center pointer-events-auto"
+                >
+                    {/* Top Glow */}
+                    <div className="absolute top-0 w-full h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
 
-
-                <div className="p-6 sm:p-10 pb-8 flex flex-col items-center w-full">
-                    {/* Logo */}
-                    <div className="w-16 h-16 sm:w-20 sm:h-20 bg-black rounded-2xl flex items-center justify-center mb-6 shadow-2xl overflow-hidden border border-white/10">
-                        <ZenithLogo size={70} />
-                    </div>
-
-                    {/* Title */}
-                    <h1 className="text-3xl sm:text-4xl font-light tracking-[0.25em] text-white mb-2 pl-2">ZENITH</h1>
-
-                    {/* Version Badge */}
-                    <div className="flex items-center gap-2 bg-white/5 border border-white/5 rounded-full px-3 py-1 mb-6">
-                        <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-                        <span className="text-[10px] text-white/40 font-mono tracking-widest uppercase">{t('welcome.system_operational')}</span>
-                    </div>
-
-                    {/* Divider */}
-                    <div className="w-full h-px bg-gradient-to-r from-transparent via-white/10 to-transparent my-2" />
-                </div>
-
-                {/* Instructions Grid (HUD) */}
-                <div className="w-full bg-[#050505]/50 grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-white/5 border-t border-white/5 overflow-hidden">
-                    <div className="p-4 sm:p-6 flex flex-col items-center gap-3 group cursor-help transition-colors hover:bg-white/5">
-                        <div className="w-8 h-10 border border-white/20 rounded-t-lg rounded-b-sm relative flex justify-center pt-1.5 transition-colors group-hover:border-white/50">
-                            <div className="w-1 h-3 bg-white/40 rounded-full" />
-                        </div>
-                        <span className="text-[9px] text-white/30 tracking-[0.2em] font-medium group-hover:text-white/60">{t('welcome.open_menu')}</span>
-                    </div>
-                    <div className="p-4 sm:p-6 flex flex-col items-center gap-3 group cursor-help transition-colors hover:bg-white/5">
-                        <div className="w-8 h-10 border border-white/20 rounded-t-lg rounded-b-sm relative flex justify-center pt-1.5 transition-colors group-hover:border-white/50">
-                            <div className="w-1 h-3 bg-white/40 rounded-full" />
-                            <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 text-[7px] font-bold border border-white/20 px-1 rounded bg-black text-white/80">2x</div>
-                        </div>
-                        <span className="text-[9px] text-white/30 tracking-[0.2em] font-medium group-hover:text-white/60">{t('welcome.adjustments')}</span>
-                    </div>
-                    <div className="p-4 sm:p-6 flex flex-col items-center gap-3 group cursor-help transition-colors hover:bg-white/5">
-                        <div className="h-10 flex items-center justify-center gap-1">
-                            {[1, 2, 3].map(i => (
-                                <div key={i} className="w-6 h-6 rounded border border-white/20 flex items-center justify-center text-[10px] text-white/50 font-mono bg-white/5">{i}</div>
-                            ))}
-                        </div>
-                        <span className="text-[9px] text-white/30 tracking-[0.2em] font-medium group-hover:text-white/60">{t('welcome.workspaces')}</span>
-                    </div>
-                </div>
-            </motion.div>
+                    {view === 'home' ? (
+                        <>
+                            <div className="p-6 sm:p-10 pb-8 flex flex-col items-center w-full">
+                                {/* Logo */}
+                                <div className="w-16 h-16 sm:w-20 sm:h-20 bg-black rounded-2xl flex items-center justify-center mb-6 shadow-2xl overflow-hidden border border-white/10">
+                                    <ZenithLogo size={70} />
+                                </div>
+                                {/* Title */}
+                                <h1 className="text-3xl sm:text-4xl font-light tracking-[0.25em] text-white mb-2 pl-2">ZENITH</h1>
+                                {/* Version Badge */}
+                                <div className="flex items-center gap-2 bg-white/5 border border-white/5 rounded-full px-3 py-1 mb-6">
+                                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                                    <span className="text-[10px] text-white/40 font-mono tracking-widest uppercase">{t('welcome.system_operational')}</span>
+                                </div>
+                                {/* Divider */}
+                                <div className="w-full h-px bg-gradient-to-r from-transparent via-white/10 to-transparent my-2" />
+                            </div>
+                            {/* Instructions Grid (HUD) */}
+                            <div className="w-full bg-[#050505]/50 grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-white/5 border-t border-white/5 overflow-hidden">
+                                <div className="p-4 sm:p-6 flex flex-col items-center gap-3 group cursor-help transition-colors hover:bg-white/5">
+                                    <div className="w-8 h-10 border border-white/20 rounded-t-lg rounded-b-sm relative flex justify-center pt-1.5 transition-colors group-hover:border-white/50">
+                                        <div className="w-1 h-3 bg-white/40 rounded-full" />
+                                    </div>
+                                    <span className="text-[9px] text-white/30 tracking-[0.2em] font-medium group-hover:text-white/60">{t('welcome.open_menu')}</span>
+                                </div>
+                                <div className="p-4 sm:p-6 flex flex-col items-center gap-3 group cursor-help transition-colors hover:bg-white/5">
+                                    <div className="w-8 h-10 border border-white/20 rounded-t-lg rounded-b-sm relative flex justify-center pt-1.5 transition-colors group-hover:border-white/50">
+                                        <div className="w-1 h-3 bg-white/40 rounded-full" />
+                                        <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 text-[7px] font-bold border border-white/20 px-1 rounded bg-black text-white/80">2x</div>
+                                    </div>
+                                    <span className="text-[9px] text-white/30 tracking-[0.2em] font-medium group-hover:text-white/60">{t('welcome.adjustments')}</span>
+                                </div>
+                                <div className="p-4 sm:p-6 flex flex-col items-center gap-3 group cursor-help transition-colors hover:bg-white/5">
+                                    <div className="h-10 flex items-center justify-center gap-1">
+                                        {[1, 2, 3].map(i => (
+                                            <div key={i} className="w-6 h-6 rounded border border-white/20 flex items-center justify-center text-[10px] text-white/50 font-mono bg-white/5">{i}</div>
+                                        ))}
+                                    </div>
+                                    <span className="text-[9px] text-white/30 tracking-[0.2em] font-medium group-hover:text-white/60">{t('welcome.workspaces')}</span>
+                                </div>
+                            </div>
+                        </>
+                    ) : (
+                        <PlansScreen config={config} />
+                    )}
+                </motion.div>
+            </AnimatePresence>
 
             {/* BOTTOM: ACTION DOCK */}
             <motion.div
@@ -147,6 +154,15 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                     <DockButton onClick={onClose} label={t('welcome.ready')} icon={Command} />
                     <DockButton onClick={() => window.open('https://docs.zenith-os.com', '_blank')} label={t('welcome.help')} icon={Book} />
                     <DockButton onClick={handleFeedbackClick} label={t('welcome.feedback')} icon={MessageSquare} />
+
+                    <div className="w-px h-6 bg-white/10 mx-1" />
+
+                    <DockButton
+                        onClick={() => setView(v => v === 'plans' ? 'home' : 'plans')}
+                        label={view === 'plans' ? t('welcome.home') : t('welcome.plans')}
+                        icon={view === 'plans' ? Home : CreditCard}
+                        active={view === 'plans'}
+                    />
 
                 </div>
             </motion.div>
