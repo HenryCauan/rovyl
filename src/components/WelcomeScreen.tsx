@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Settings, MessageSquare,
-    Crown, LogIn, Command, Book, X, User, CreditCard, Home
+    Crown, LogIn, Book, X, User, CreditCard, Home
 } from 'lucide-react';
 import { ZenithLogo } from './ZenithLogo';
 import { PlansScreen } from './PlansScreen';
@@ -151,7 +151,6 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                     <div className="w-px h-6 bg-white/10 mx-1" />
 
                     <DockButton onClick={onOpenSettings} label={t('sidebar.interface')} icon={Settings} />
-                    <DockButton onClick={onClose} label={t('welcome.ready')} icon={Command} />
                     <DockButton onClick={() => window.open('https://docs.zenith-os.com', '_blank')} label={t('welcome.help')} icon={Book} />
                     <DockButton onClick={handleFeedbackClick} label={t('welcome.feedback')} icon={MessageSquare} />
 
