@@ -162,6 +162,11 @@ export interface UIConfig {
   globalShortcut: string; // New: Global keyboard shortcut (e.g. 'Alt+Space')
   workspaces: Workspace[]; // New: Workspace configurations
   activeWorkspaceIndex: number; // New: Currently active workspace (0-indexed)
+  /**
+   * hotkeys: teclas 1–9 (e roda do rato) mudam de workspace com o menu aberto.
+   * picker: ao abrir o radial vê-se primeiro a roda de espaços; ao escolher, os apps desse espaço; o centro volta atrás (como pastas).
+   */
+  workspaceSwitchMode?: 'hotkeys' | 'picker';
   openAtLogin?: boolean; // New: Start app at login
   enableMouseTrigger: boolean;
   language: "pt" | "en" | "es" | "fr" | "de" | "it" | "ja" | "zh" | "ko" | "ru";
@@ -213,7 +218,11 @@ export interface ElectronAPI {
       mode: "small" | "fullscreen" | "windowed";
     }) => void,
   ) => () => void;
-  setWindowSize: (mode: "small" | "fullscreen" | "windowed") => void;
+  setWindowSize: (
+    mode: "small" | "fullscreen" | "windowed",
+    /** Screen coordinates (e.g. cursor) — which monitor should receive the fullscreen/small overlay */
+    anchorScreenPoint?: { x: number; y: number },
+  ) => void;
   /** 0–1; used to hide the window during fullscreen resize to avoid DWM stretching the old settings frame (flash). */
   setWindowOpacity: (opacity: number) => void;
   setGameMode: (config: GameModeConfig) => void;
@@ -268,7 +277,10 @@ export interface ElectronAPI {
   saveFullConfigSync?: (config: any) => void;
   getFullConfig: () => Promise<any>;
   getAppRecents: (appName: string, appCommand?: string) => Promise<AppItem[]>;
-  setWorkspaceShortcutsState: (isOpen: boolean) => void;
+  setWorkspaceShortcutsState: (
+    isOpen: boolean,
+    workspaceSwitchMode?: 'hotkeys' | 'picker',
+  ) => void;
   exportConfig: () => Promise<{ success: boolean; error?: string }>;
   importConfig: () => Promise<{ success: boolean; error?: string }>;
   startGoogleAuth: () => void;

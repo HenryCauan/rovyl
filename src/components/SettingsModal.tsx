@@ -1597,6 +1597,46 @@ const WorkspacesTab = React.memo(({
                                 className="flex flex-col gap-8"
                             >
 
+                                <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 max-w-3xl">
+                                    <div className="text-[10px] font-bold text-white/35 uppercase tracking-widest mb-3">
+                                        {getTranslation(config, 'workspaces.switch_mode') || 'Workspace menu'}
+                                    </div>
+                                    <div className="flex flex-col sm:flex-row gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => setConfig({ ...config, workspaceSwitchMode: 'hotkeys' })}
+                                            className={`flex-1 text-left rounded-xl border px-4 py-3 transition-all ${
+                                                (config.workspaceSwitchMode ?? 'hotkeys') === 'hotkeys'
+                                                    ? 'border-white/25 bg-white/[0.06] text-white'
+                                                    : 'border-white/5 bg-transparent text-white/40 hover:border-white/10 hover:text-white/70'
+                                            }`}
+                                        >
+                                            <div className="text-[12px] font-semibold">
+                                                {getTranslation(config, 'workspaces.switch_mode_hotkeys') || '1–9'}
+                                            </div>
+                                            <p className="text-[10px] text-white/35 mt-1 leading-snug">
+                                                {getTranslation(config, 'workspaces.switch_mode_hotkeys_hint') || ''}
+                                            </p>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setConfig({ ...config, workspaceSwitchMode: 'picker' })}
+                                            className={`flex-1 text-left rounded-xl border px-4 py-3 transition-all ${
+                                                config.workspaceSwitchMode === 'picker'
+                                                    ? 'border-white/25 bg-white/[0.06] text-white'
+                                                    : 'border-white/5 bg-transparent text-white/40 hover:border-white/10 hover:text-white/70'
+                                            }`}
+                                        >
+                                            <div className="text-[12px] font-semibold">
+                                                {getTranslation(config, 'workspaces.switch_mode_picker') || 'Picker'}
+                                            </div>
+                                            <p className="text-[10px] text-white/35 mt-1 leading-snug">
+                                                {getTranslation(config, 'workspaces.switch_mode_picker_hint') || ''}
+                                            </p>
+                                        </button>
+                                    </div>
+                                </div>
+
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 auto-rows-[200px] pb-12">
                                     {config.workspaces.map((workspace, index) => (
                                         <WorkspaceCard

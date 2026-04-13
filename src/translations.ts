@@ -136,6 +136,13 @@ export const translations: Record<Language, Record<string, string>> = {
 
     "workspaces.title": "Meus Espaços",
     "workspaces.desc": "Crie e gerencie ambientes de trabalho personalizados.",
+    "workspaces.switch_mode": "Alternância de espaços no menu radial",
+    "workspaces.switch_mode_hotkeys": "Teclas 1–9",
+    "workspaces.switch_mode_hotkeys_hint":
+      "Com o menu aberto, use os números ou a roda do rato para mudar de espaço.",
+    "workspaces.switch_mode_picker": "Escolher espaço na roda",
+    "workspaces.switch_mode_picker_hint":
+      "Ao abrir o menu, escolha primeiro o espaço; depois aparecem os atalhos. O botão central volta à lista de espaços (como nas pastas).",
     "workspaces.root_cluster": "Cluster Raiz",
     "workspaces.back_to_workspaces": "Voltar para Espaços",
     "workspaces.confirm_delete": "Excluir permanentemente este espaço?",
@@ -658,6 +665,13 @@ export const translations: Record<Language, Record<string, string>> = {
 
     "workspaces.title": "My Workspaces",
     "workspaces.desc": "Create and manage custom work environments.",
+    "workspaces.switch_mode": "Workspace switching in the radial menu",
+    "workspaces.switch_mode_hotkeys": "Number keys 1–9",
+    "workspaces.switch_mode_hotkeys_hint":
+      "With the menu open, use number keys or the mouse wheel to change workspace.",
+    "workspaces.switch_mode_picker": "Pick workspace on the wheel",
+    "workspaces.switch_mode_picker_hint":
+      "When you open the menu, pick a workspace first; shortcuts appear next. The center button goes back to the workspace list (like folders).",
     "workspaces.root_cluster": "Root Cluster",
     "workspaces.back_to_workspaces": "Back to Workspaces",
     "workspaces.confirm_delete": "Permanently delete this workspace?",
@@ -1279,6 +1293,13 @@ export const translations: Record<Language, Record<string, string>> = {
     "workspaces.title": "Mis Espacios",
     "workspaces.desc":
       "Crea y gestiona diferentes entornos de trabajo con atajos personalizados.",
+    "workspaces.switch_mode": "Cambio de espacio en el menú radial",
+    "workspaces.switch_mode_hotkeys": "Teclas 1–9",
+    "workspaces.switch_mode_hotkeys_hint":
+      "Con el menú abierto, usa números o la rueda para cambiar de espacio.",
+    "workspaces.switch_mode_picker": "Elegir espacio en la rueda",
+    "workspaces.switch_mode_picker_hint":
+      "Al abrir el menú, elige primero el espacio; luego aparecen los atajos. El botón central vuelve a la lista (como carpetas).",
     "workspaces.root_cluster": "Clúster Raíz",
     "workspaces.back_to_workspaces": "Volver a Espacios",
     "workspaces.confirm_delete": "¿Eliminar este espacio permanentemente?",

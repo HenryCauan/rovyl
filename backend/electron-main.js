@@ -608,21 +608,33 @@ function showMenuAtCursor(source = "shortcut") {
   });
 }
 
-function updateWindowSize(mode) {
+/**
+ * @param {string} mode
+ * @param {{ x: number, y: number } | undefined} anchorScreenPoint — screen coordinates (e.g. cursor). Picks the monitor with getDisplayNearestPoint so multi-monitor matches the radial overlay.
+ */
+function updateWindowSize(mode, anchorScreenPoint) {
   if (!mainWindow) return;
 
   nativeWindowSizeMode = mode;
 
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width: screenWidth, height: screenHeight } = primaryDisplay.bounds;
+  let point =
+    anchorScreenPoint &&
+    typeof anchorScreenPoint.x === "number" &&
+    typeof anchorScreenPoint.y === "number" &&
+    !Number.isNaN(anchorScreenPoint.x) &&
+    !Number.isNaN(anchorScreenPoint.y)
+      ? anchorScreenPoint
+      : screen.getCursorScreenPoint();
+
+  const targetDisplay = screen.getDisplayNearestPoint(point);
+  const b = targetDisplay.bounds;
 
   if (mode === "fullscreen") {
-    // Fill the entire screen
     mainWindow.setBounds({
-      x: primaryDisplay.bounds.x,
-      y: primaryDisplay.bounds.y,
-      width: screenWidth,
-      height: screenHeight,
+      x: b.x,
+      y: b.y,
+      width: b.width,
+      height: b.height,
     });
     mainWindow.setResizable(true);
     mainWindow.setBackgroundColor("#00000000"); // FORCE TRANSPARENCY
@@ -645,14 +657,12 @@ function updateWindowSize(mode) {
     }
     mainWindow.setIgnoreMouseEvents(true, { forward: true });
     mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
-    // Keep it large/fullscreen but transparent and ignore mouse to avoid resize flashes
-    // We use setBounds to ensure it covers the whole screen even if not "fullscreen" mode
     mainWindow.setBackgroundColor("#00000000"); // ESSENTIAL for zero-lag transparency
     mainWindow.setBounds({
-      x: 0,
-      y: 0,
-      width: screenWidth,
-      height: screenHeight,
+      x: b.x,
+      y: b.y,
+      width: b.width,
+      height: b.height,
     });
   }
 }
@@ -1327,8 +1337,8 @@ app.whenReady().then(async () => {
       });
     }
 
-    // Only re-register workspace shortcuts if they are currently supposed to be active (menu open)
-    if (workspaceShortcutsActive) {
+    // Only re-register workspace shortcuts if menu is open and user uses numeric mode
+    if (workspaceShortcutsMenuOpen && workspaceShortcutsUseNumeric) {
       registerWorkspaceShortcuts();
     }
   };
@@ -1356,8 +1366,7 @@ app.whenReady().then(async () => {
 
         const success = globalShortcut.register(i.toString(), () => {
           diagLog(`[Shortcuts] Global numeric shortcut triggered: ${i}`);
-          // workspaceShortcutsActive is set via IPC by the RadialMenu.tsx when it's open
-          if (workspaceShortcutsActive && mainWindow && !mainWindow.isDestroyed()) {
+          if (workspaceShortcutsMenuOpen && mainWindow && !mainWindow.isDestroyed()) {
             diagLog(`[Shortcuts] Sending switch-workspace IPC: ${i - 1}`);
             mainWindow.webContents.send("switch-workspace", i - 1);
           }
@@ -1369,7 +1378,9 @@ app.whenReady().then(async () => {
     }
   };
 
-  let workspaceShortcutsActive = false;
+  let workspaceShortcutsMenuOpen = false;
+  /** When false (picker mode), 1–9 are not registered while the radial is open. */
+  let workspaceShortcutsUseNumeric = true;
 
   // Register initial shortcut
   registerGlobalShortcut();
@@ -1741,11 +1752,17 @@ app.whenReady().then(async () => {
     }, 5 * 60 * 1000);
   });
 
-  ipcMain.on("set-workspace-shortcuts", (event, isOpen) => {
-    if (workspaceShortcutsActive === isOpen) return; // No state change
-    
-    workspaceShortcutsActive = isOpen;
-    if (isOpen) {
+  ipcMain.on("set-workspace-shortcuts", (event, isOpen, mode) => {
+    const useNumeric = mode !== "picker";
+    if (
+      workspaceShortcutsMenuOpen === isOpen &&
+      workspaceShortcutsUseNumeric === useNumeric
+    ) {
+      return;
+    }
+    workspaceShortcutsMenuOpen = isOpen;
+    workspaceShortcutsUseNumeric = useNumeric;
+    if (isOpen && useNumeric) {
       registerWorkspaceShortcuts();
     } else {
       unregisterWorkspaceShortcuts();
@@ -2770,8 +2787,8 @@ ipcMain.handle("get-startup-apps", async () => {
 });
 
 // IPC: Toggle Window Size
-ipcMain.on("set-window-size", (event, mode) => {
-  updateWindowSize(mode);
+ipcMain.on("set-window-size", (event, mode, anchorScreenPoint) => {
+  updateWindowSize(mode, anchorScreenPoint);
 });
 
 // IPC: Minimize — hide from taskbar (tray-only), same idea as old “close” that stayed in the tray.

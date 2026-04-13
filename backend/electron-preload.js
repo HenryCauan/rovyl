@@ -43,7 +43,8 @@ contextBridge.exposeInMainWorld("electron", {
     return () =>
       ipcRenderer.removeListener("window-native-display-restored", listener);
   },
-  setWindowSize: (mode) => ipcRenderer.send("set-window-size", mode),
+  setWindowSize: (mode, anchorScreenPoint) =>
+    ipcRenderer.send("set-window-size", mode, anchorScreenPoint),
   setWindowOpacity: (opacity) => ipcRenderer.send("set-window-opacity", opacity),
   setGameMode: (config) => ipcRenderer.send("set-game-mode", config),
   setLoginItemSettings: (settings) =>
@@ -110,8 +111,8 @@ contextBridge.exposeInMainWorld("electron", {
   importConfig: () => ipcRenderer.invoke("import-config"),
   getAppRecents: (appName, appCommand) =>
     ipcRenderer.invoke("get-app-recents", appName, appCommand),
-  setWorkspaceShortcutsState: (isOpen) =>
-    ipcRenderer.send("set-workspace-shortcuts", isOpen),
+  setWorkspaceShortcutsState: (isOpen, workspaceSwitchMode) =>
+    ipcRenderer.send("set-workspace-shortcuts", isOpen, workspaceSwitchMode),
   startGoogleAuth: () => ipcRenderer.send("start-google-auth"),
   onGoogleAuthSuccess: (callback) => {
     const listener = (event, user) => callback(user);

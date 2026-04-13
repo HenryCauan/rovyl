@@ -124,6 +124,8 @@ export default function App() {
   const stopAlarmAudioRef = useRef<(() => void) | null>(null);
 
   const [menuPosition, setMenuPosition] = useState<Coordinates>({ x: 0, y: 0 });
+  /** Screen-space anchor for the radial center — keeps client coords correct after fullscreen + multi-monitor. */
+  const menuAnchorScreenRef = useRef<{ x: number; y: number } | null>(null);
   const [triggerSource, setTriggerSource] = useState<'mmb' | 'shortcut'>('shortcut');
   const [lastLaunched, setLastLaunched] = useState<AppItem | null>(null);
   const [executionError, setExecutionError] = useState<string | null>(null);
@@ -760,9 +762,36 @@ export default function App() {
     }
   }, [isMenuOpen, isSettingsOpen, isNotesOpen, isAlarmWidgetOpen, isStopwatchOpen, isPomodoroOpen, alarmRinging, pomodoroEndOverlay, isDashboardOpen, isDesktopMode]);
 
-  const openMenu = (x: number, y: number, source: 'mmb' | 'shortcut' = 'shortcut') => {
-    // console.log(`[App.tsx] openMenu called. Source: ${source}`);
+  const openMenu = (
+    x: number,
+    y: number,
+    source: 'mmb' | 'shortcut' = 'shortcut',
+    /** IPC sends screen coords from the main process; MMB uses client coords relative to the current window. */
+    coordSpace: 'client' | 'screen' = 'client',
+  ) => {
     console.warn(`[App.tsx] openMenu. Source: ${source}, index: ${config.activeWorkspaceIndex}, wsLength: ${config.workspaces?.length}`);
+
+    const fixed = configRef.current.fixedPosition;
+    if (fixed) {
+      menuAnchorScreenRef.current = null;
+    } else if (coordSpace === 'screen') {
+      menuAnchorScreenRef.current = { x, y };
+    } else {
+      menuAnchorScreenRef.current = {
+        x: window.screenX + x,
+        y: window.screenY + y,
+      };
+    }
+
+    const anchorForFullscreen: { x: number; y: number } = fixed
+      ? {
+          x: window.screenX + window.innerWidth / 2,
+          y: window.screenY + window.innerHeight / 2,
+        }
+      : (menuAnchorScreenRef.current ?? {
+          x: window.screenX + window.innerWidth / 2,
+          y: window.screenY + window.innerHeight / 2,
+        });
 
     // Unmount settings/dashboard and commit menu-open state BEFORE resizing the native window.
     // If setWindowSize('fullscreen') runs first, Windows stretches the old windowed framebuffer (settings UI) for a frame — visible flash.
@@ -771,12 +800,17 @@ export default function App() {
       setIsMenuOpen(true);
       setIsDashboardOpen(false);
       setTriggerSource(source);
-      if (configRef.current.fixedPosition) {
-        if (isDesktopModeRef.current && typeof window !== 'undefined' && window.screen) {
-          setMenuPosition({ x: window.screen.width / 2, y: window.screen.height / 2 });
-        } else {
-          setMenuPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
-        }
+      if (fixed) {
+        setMenuPosition({
+          x: window.innerWidth / 2,
+          y: window.innerHeight / 2,
+        });
+      } else if (isDesktopModeRef.current && menuAnchorScreenRef.current) {
+        const a = menuAnchorScreenRef.current;
+        setMenuPosition({
+          x: a.x - window.screenX,
+          y: a.y - window.screenY,
+        });
       } else {
         setMenuPosition({ x, y });
       }
@@ -795,10 +829,8 @@ export default function App() {
 
     requestAnimationFrame(() => {
       if (window.electron && isDesktopModeRef.current) {
-        if (lastWindowState.current !== 'fullscreen') {
-          window.electron.setWindowSize('fullscreen');
-          lastWindowState.current = 'fullscreen';
-        }
+        window.electron.setWindowSize('fullscreen', anchorForFullscreen);
+        lastWindowState.current = 'fullscreen';
       }
       requestAnimationFrame(() => {
         window.electron?.setWindowOpacity?.(1);
@@ -809,6 +841,40 @@ export default function App() {
   const openMenuRef = useRef(openMenu);
   openMenuRef.current = openMenu;
 
+  // After setBounds(fullscreen), inner/outer window metrics update a frame late — re-map screen anchor → client so the radial is not clipped (multi-monitor / half-screen).
+  useEffect(() => {
+    if (!isMenuOpen || !isDesktopMode) return;
+
+    const sync = () => {
+      if (configRef.current.fixedPosition) {
+        setMenuPosition({
+          x: window.innerWidth / 2,
+          y: window.innerHeight / 2,
+        });
+        return;
+      }
+      const ax = menuAnchorScreenRef.current;
+      if (ax) {
+        setMenuPosition({
+          x: ax.x - window.screenX,
+          y: ax.y - window.screenY,
+        });
+      }
+    };
+
+    sync();
+    let rafB = 0;
+    const rafA = requestAnimationFrame(() => {
+      rafB = requestAnimationFrame(sync);
+    });
+    window.addEventListener('resize', sync);
+    return () => {
+      cancelAnimationFrame(rafA);
+      cancelAnimationFrame(rafB);
+      window.removeEventListener('resize', sync);
+    };
+  }, [isMenuOpen, isDesktopMode]);
+
   // IPC: menu / dashboard / settings — must run after openMenu exists; use openMenuRef so handler always calls latest openMenu.
   useEffect(() => {
     if (window.electron) {
@@ -817,7 +883,7 @@ export default function App() {
     }
 
     const cleanupMenu = window.electron?.onOpenMenu((data: { x: number, y: number, source?: 'mmb' | 'shortcut' }) => {
-      openMenuRef.current(data.x, data.y, data.source);
+      openMenuRef.current(data.x, data.y, data.source ?? 'shortcut', 'screen');
     });
 
     const cleanupDashboard = window.electron?.onOpenDashboard(() => {
@@ -954,6 +1020,8 @@ export default function App() {
       // Only handle numeric keys if menu is open
       if (!isMenuOpen) return;
 
+      if (configRef.current.workspaceSwitchMode === 'picker') return;
+
       // Log the event as warn so it shows in diagnostic.log in production
       console.warn(`[App.tsx] Local keyboard event: key=${e.key}, code=${e.code}`);
 
@@ -992,7 +1060,7 @@ export default function App() {
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button === 1) { // Botão do meio
       e.preventDefault();
-      openMenu(e.clientX, e.clientY);
+      openMenu(e.clientX, e.clientY, 'mmb', 'client');
     }
   };
 
@@ -1203,6 +1271,7 @@ export default function App() {
       config.clockPosition,
       config.workspaces,
       config.activeWorkspaceIndex,
+      config.workspaceSwitchMode,
       config.language,
       config.performanceMode,
     ]

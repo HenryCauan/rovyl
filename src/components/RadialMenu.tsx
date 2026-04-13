@@ -5,6 +5,11 @@ import { getIcon } from '../iconMap';
 import { Settings2, CornerUpLeft } from 'lucide-react';
 import { SmartIcon } from './SmartIcon';
 import { getTranslation } from '../translations';
+import {
+  getRootRadialApps,
+  isWorkspacePickItem,
+  parseWorkspacePickIndex,
+} from '../utils/workspaceRadial';
 
 // PERF FIX #3: Module-level weather cache — persists across menu open/close cycles
 // Prevents a new HTTP fetch on every menu open; refreshes only after 10 minutes or location change
@@ -390,12 +395,11 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose,
     };
   }, [config.menuRadius, numberOfApps, iconSizePx, minGap]);
 
-  // Sync props to internal state when menu opens or props change
+  // Sync root radial when workspace config / active workspace apps change while menu stays open
   useEffect(() => {
-    if (isOpen && folderStack.length === 0) {
-      setCurrentLevelApps(apps);
-    }
-  }, [apps, isOpen, folderStack.length]);
+    if (!isOpen || folderStack.length > 0) return;
+    setCurrentLevelApps(getRootRadialApps(config, apps));
+  }, [isOpen, folderStack.length, apps, config.workspaceSwitchMode, config.workspaces, config]);
 
   const t = (key: string) => getTranslation(config, key);
 
@@ -428,7 +432,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose,
       setHasMoved(false);
       setIsCenterActive(false);
       setFolderStack([]);
-      setCurrentLevelApps(apps);
+      setCurrentLevelApps(getRootRadialApps(configRef.current, apps));
       setActiveIndex(null);
 
       // CRITICAL: Focus window and body to ensure keyboard events are captured
@@ -525,18 +529,18 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose,
 
     const handleMouseUp = (e: MouseEvent) => {
       if (e.button !== 0 && e.button !== 1) return;
-      const { isCenterActive, folderStack, apps, currentLevelApps, activeIndex, onClose } = stateRef.current;
-      
+      const { isCenterActive, folderStack, apps, currentLevelApps, activeIndex, onClose, config } = stateRef.current;
+
       const selectedItemObj = activeIndex !== null ? currentLevelApps[activeIndex] : null;
 
       if (isCenterActive) {
         if (folderStack.length > 0) {
           const newStack = [...folderStack];
-          const popped = newStack.pop();
+          newStack.pop();
           setFolderStack(newStack);
 
           if (newStack.length === 0) {
-            setCurrentLevelApps(apps);
+            setCurrentLevelApps(getRootRadialApps(config, apps));
           } else {
             setCurrentLevelApps(newStack[newStack.length - 1].apps);
           }
@@ -544,6 +548,19 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose,
           setIsCenterActive(false);
         } else {
           onClose('__CENTER__');
+        }
+        return;
+      }
+
+      if (selectedItemObj && isWorkspacePickItem(selectedItemObj)) {
+        const idx = parseWorkspacePickIndex(selectedItemObj.id);
+        if (onWorkspaceSwitch) onWorkspaceSwitch(idx);
+        const ws = config.workspaces[idx];
+        if (ws?.enabled) {
+          setFolderStack([{ label: ws.name, apps: ws.apps }]);
+          setCurrentLevelApps(ws.apps);
+          setHasMoved(false);
+          setActiveIndex(null);
         }
         return;
       }
@@ -658,7 +675,8 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose,
 
     const handleWheel = (e: WheelEvent) => {
       if (!onWorkspaceSwitch) return;
-      const { config } = stateRef.current;
+      const { config, folderStack } = stateRef.current;
+      if (config.workspaceSwitchMode === 'picker' && folderStack.length === 0) return;
       const numWorkspaces = config.workspaces.length;
       if (numWorkspaces <= 1) return;
 
@@ -672,10 +690,12 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose,
       }
 
       if (nextIndex !== currentIndex) {
-        // Reset folders so we see the new workspace's root apps
+        const nextWs = config.workspaces[nextIndex];
+        if (!nextWs) return;
         setFolderStack([]);
         setActiveIndex(null);
         setHasMoved(false);
+        setCurrentLevelApps(nextWs.apps);
         onWorkspaceSwitch(nextIndex);
       }
     };
@@ -699,9 +719,12 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose,
   // Sync workspace shortcuts state with main process (Fix for initial focus issue)
   useEffect(() => {
     if (window.electron?.setWorkspaceShortcutsState) {
-      window.electron.setWorkspaceShortcutsState(isOpen);
+      window.electron.setWorkspaceShortcutsState(
+        isOpen,
+        config.workspaceSwitchMode === 'picker' ? 'picker' : 'hotkeys',
+      );
     }
-  }, [isOpen]);
+  }, [isOpen, config.workspaceSwitchMode]);
 
   // STABLE KEYBOARD LISTENER (Decoupled from interaction states to avoid missing events)
   // NOTE: Workspace switching (1-9) is handled exclusively by global shortcuts registered in
@@ -717,11 +740,13 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose,
         return;
       }
 
-      // Workspace Switching (1-9) - LOCAL LISTENER (Managed here for faster feedback if focused)
-      if (onWorkspaceSwitch) {
+      // Workspace Switching (1-9) — disabled in picker mode (user chooses workspace on the radial)
+      if (
+        onWorkspaceSwitch &&
+        configRef.current.workspaceSwitchMode !== 'picker'
+      ) {
         const num = parseInt(e.key);
         if (!isNaN(num) && num >= 1 && num <= 9) {
-          // App.tsx also has a listener, but having it here doesn't hurt as App.tsx debounces it.
           e.preventDefault();
           onWorkspaceSwitch(num - 1);
         }
@@ -730,7 +755,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose,
 
     window.addEventListener('keydown', handleKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, onWorkspaceSwitch]);
 
   // MMB Release Logic (Hold to Open -> Release to Execute)
   // Uses stateRef so the native listener is not torn down on every hover (activeIndex) update.
@@ -742,13 +767,13 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose,
       const GRACE_PERIOD_MS = 250; // Ensure menu stays open for at least 250ms to prevent flickers
 
       const executeClose = () => {
-        const { isCenterActive, folderStack, currentLevelApps, activeIndex, apps, onClose } = stateRef.current;
+        const { isCenterActive, folderStack, currentLevelApps, activeIndex, apps, onClose, config } = stateRef.current;
 
         if (isCenterActive) {
           if (folderStack.length > 0) {
             const newStack = folderStack.slice(0, -1);
             setFolderStack(newStack);
-            if (newStack.length === 0) setCurrentLevelApps(apps);
+            if (newStack.length === 0) setCurrentLevelApps(getRootRadialApps(config, apps));
             else setCurrentLevelApps(newStack[newStack.length - 1].apps);
             setHasMoved(false);
             setIsCenterActive(false);
@@ -759,6 +784,19 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose,
         }
 
         const selectedItem = activeIndex !== null ? currentLevelApps[activeIndex] : null;
+
+        if (selectedItem && isWorkspacePickItem(selectedItem)) {
+          const idx = parseWorkspacePickIndex(selectedItem.id);
+          if (onWorkspaceSwitch) onWorkspaceSwitch(idx);
+          const ws = config.workspaces[idx];
+          if (ws?.enabled) {
+            setFolderStack([{ label: ws.name, apps: ws.apps }]);
+            setCurrentLevelApps(ws.apps);
+            setHasMoved(false);
+            setActiveIndex(null);
+          }
+          return;
+        }
 
         if (selectedItem) {
           const hasRecentFetch = (selectedItem.hasRecents) && window.electron?.getAppRecents;
@@ -837,7 +875,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose,
     return () => {
       if (cleanup) cleanup();
     };
-  }, [isOpen, triggerSource]);
+  }, [isOpen, triggerSource, onWorkspaceSwitch]);
 
   const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
   const [weather, setWeather] = useState<{ temp: number; condition: string } | null>(null);
@@ -892,6 +930,18 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose,
 
   const handleAppClick = React.useCallback((app: AppItem) => {
     const cfg = configRef.current;
+    if (isWorkspacePickItem(app)) {
+      const idx = parseWorkspacePickIndex(app.id);
+      if (onWorkspaceSwitch) onWorkspaceSwitch(idx);
+      const ws = cfg.workspaces[idx];
+      if (ws?.enabled) {
+        setFolderStack([{ label: ws.name, apps: ws.apps }]);
+        setCurrentLevelApps(ws.apps);
+        setHasMoved(false);
+        setActiveIndex(null);
+      }
+      return;
+    }
     const hasRecentFetch = (app.hasRecents) && window.electron?.getAppRecents;
     const hasManualFolders = app.children && app.children.length > 0;
 
@@ -948,7 +998,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose,
     } else {
       onClose(app.id, app);
     }
-  }, [onClose]);
+  }, [onClose, onWorkspaceSwitch]);
 
   const getHUDStyles = () => {
     const base = "fixed text-white pointer-events-none flex flex-col z-50 p-8 gap-4";
@@ -963,6 +1013,17 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose,
       case 'top-right': default: return `${base} top-0 right-0 items-end text-right`;
     }
   };
+
+  /** Without acrylic/blur (performance mode), the radial overlay used to fade to transparent at the edges — too much of the desktop showed through. Stronger full-screen dimming while respecting `backdropOpacity`. */
+  const bo = config.backdropOpacity;
+  const perf = config.performanceMode;
+  const perfRadialEdge = perf ? Math.min(0.92, 0.2 + bo * 0.72) : 0;
+  const overlayFullscreen = perf
+    ? `radial-gradient(circle at center, rgba(0, 0, 0, ${0.05 + bo * 0.3 + 0.1 + bo * 0.08}) 0%, rgba(0, 0, 0, ${0.2 + bo * 0.5 + 0.14 + bo * 0.1}) 100%)`
+    : `radial-gradient(circle at center, rgba(0, 0, 0, ${0.05 + bo * 0.3}) 0%, rgba(0, 0, 0, ${0.2 + bo * 0.5}) 100%)`;
+  const overlayRadial = perf
+    ? `radial-gradient(circle at ${position.x}px ${position.y}px, rgba(0, 0, 0, ${0.18 + bo * 0.82}) 0%, rgba(0, 0, 0, ${0.08 + bo * 0.38}) ${config.menuRadius * 2.0}px, rgba(0, 0, 0, ${perfRadialEdge}) 100%)`
+    : `radial-gradient(circle at ${position.x}px ${position.y}px, rgba(0, 0, 0, ${0.15 + bo * 0.8}) 0%, rgba(0, 0, 0, ${0.05 + bo * 0.35}) ${config.menuRadius * 2.0}px, rgba(0, 0, 0, 0) 100%)`;
 
   return (
     <motion.div
@@ -1003,9 +1064,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose,
             className="fixed inset-0 z-[41]"
             style={{
               pointerEvents: isOpen ? 'auto' : 'none',
-              background: config.menuBackgroundStyle === 'fullscreen'
-                ? `radial-gradient(circle at center, rgba(0, 0, 0, ${0.05 + config.backdropOpacity * 0.3}) 0%, rgba(0, 0, 0, ${0.2 + config.backdropOpacity * 0.5}) 100%)`
-                : `radial-gradient(circle at ${position.x}px ${position.y}px, rgba(0, 0, 0, ${0.15 + config.backdropOpacity * 0.8}) 0%, rgba(0, 0, 0, ${0.05 + config.backdropOpacity * 0.35}) ${config.menuRadius * 2.0}px, rgba(0, 0, 0, 0) 100%)`,
+              background: config.menuBackgroundStyle === 'fullscreen' ? overlayFullscreen : overlayRadial,
               willChange: 'opacity'
             }}
           />
@@ -1138,7 +1197,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose,
                   newStack.pop();
                   setFolderStack(newStack);
                   if (newStack.length === 0) {
-                    setCurrentLevelApps(apps);
+                    setCurrentLevelApps(getRootRadialApps(config, apps));
                   } else {
                     setCurrentLevelApps(newStack[newStack.length - 1].apps);
                   }
