@@ -14,12 +14,13 @@ import {
     HelpCircle, User, MessageSquare, CreditCard, Globe, Eye, Zap, MousePointer2,
     Hash, Download, ExternalLink, Moon, Sun, ArrowRight, ArrowLeft, TimerReset,
     FolderPlus, FileText, Edit3, Calendar, Battery, CloudRain,
-    Layout, Compass, Laptop, Smartphone, Bell, GripVertical, ChevronLeft
+    Layout, Compass, Laptop, Smartphone, Bell, GripVertical, ChevronLeft, LogOut
 } from 'lucide-react';
 import { ZenithLogo } from './ZenithLogo';
 import { IconPicker } from './IconPicker';
 import { getTranslation, LANGUAGES } from '../translations';
 import { Tooltip } from './Tooltip';
+import { websiteIconFieldsFromUrl } from '../siteFavicon';
 
 
 const TerminalCommandEditor = ({ commands, config, onChange, onAdd, onRemove, compact = false }) => {
@@ -332,6 +333,22 @@ const AppEditorModal = React.memo(({
                                                     <div className={`absolute top-1 w-4 h-4 rounded-full transition-all duration-500 ease-out ${editingApp.app.hasRecents ? 'left-6 bg-black' : 'left-1 bg-white/20'}`} />
                                                 </div>
                                             </div>
+                                            {editingApp.app.hasRecents && (
+                                                <div
+                                                    onClick={() => handleAppChange('openTerminalForRecents', !editingApp.app.openTerminalForRecents)}
+                                                    className="flex items-center justify-between p-4 bg-white/[0.02] border border-white/5 rounded-2xl hover:bg-white/[0.05] transition-all cursor-pointer group"
+                                                >
+                                                    <div className="space-y-1">
+                                                        <span className="text-sm font-semibold text-white/80 block group-hover:text-white transition-colors">{getTranslation(config, 'editingApp.recents_open_terminal')}</span>
+                                                        <span className="text-[10px] text-white/20 block group-hover:text-white/40 transition-colors uppercase tracking-wider font-bold">{getTranslation(config, 'editingApp.recents_open_terminal_desc')}</span>
+                                                    </div>
+                                                    <div
+                                                        className={`w-11 h-6 rounded-full relative transition-all duration-500 ${editingApp.app.openTerminalForRecents ? 'bg-white shadow-[0_0_15px_rgba(255,255,255,0.3)]' : 'bg-white/5'}`}
+                                                    >
+                                                        <div className={`absolute top-1 w-4 h-4 rounded-full transition-all duration-500 ease-out ${editingApp.app.openTerminalForRecents ? 'left-6 bg-black' : 'left-1 bg-white/20'}`} />
+                                                    </div>
+                                                </div>
+                                            )}
                                         </section>
                                     )}
 
@@ -618,6 +635,22 @@ const AppEditorModal = React.memo(({
                                                     <div className={`absolute top-1 w-4 h-4 rounded-full transition-all duration-500 ease-out ${editingApp.app.hasRecents ? 'left-6 bg-black' : 'left-1 bg-white/20'}`} />
                                                 </div>
                                             </div>
+                                            {editingApp.app.hasRecents && (
+                                                <div
+                                                    onClick={() => handleAppChange('openTerminalForRecents', !editingApp.app.openTerminalForRecents)}
+                                                    className="flex items-center justify-between p-5 bg-white/[0.02] border border-white/5 rounded-2xl hover:bg-white/[0.04] transition-all cursor-pointer group"
+                                                >
+                                                    <div className="space-y-1">
+                                                        <span className="text-sm font-semibold text-white/70 block group-hover:text-white transition-colors">{getTranslation(config, 'editingApp.recents_open_terminal')}</span>
+                                                        <span className="text-[10px] text-white/20 block group-hover:text-white/40 transition-colors uppercase tracking-wider font-bold">{getTranslation(config, 'editingApp.recents_open_terminal_desc')}</span>
+                                                    </div>
+                                                    <div
+                                                        className={`w-11 h-6 rounded-full relative transition-all duration-500 ${editingApp.app.openTerminalForRecents ? 'bg-white shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-white/5'}`}
+                                                    >
+                                                        <div className={`absolute top-1 w-4 h-4 rounded-full transition-all duration-500 ease-out ${editingApp.app.openTerminalForRecents ? 'left-6 bg-black' : 'left-1 bg-white/20'}`} />
+                                                    </div>
+                                                </div>
+                                            )}
                                         </section>
                                     )}
 
@@ -771,7 +804,7 @@ const AppEditorModal = React.memo(({
                                     )}
 
                                     {/* Seção: Auto-run Command (Global) */}
-                                    {(editingApp.app.type === 'app' || isIDE) && (
+                                    {isIDE && (
                                         <section className="space-y-4 pt-4 border-t border-white/5 mt-4">
                                             <TerminalCommandEditor 
                                                 commands={editingApp.app.terminalCommands || []}
@@ -896,6 +929,27 @@ const AppEditorModal = React.memo(({
 
 
 const WidgetsTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig: (c: any) => void }) => {
+    const commandsInWorkspaces = useMemo(() => {
+        const s = new Set<string>();
+        for (const ws of config.workspaces) {
+            for (const a of ws.apps) {
+                if (a.command) s.add(a.command);
+            }
+        }
+        return s;
+    }, [config.workspaces]);
+
+    const appCommandsByWorkspace = useMemo(
+        () => config.workspaces.map(ws => {
+            const cmd = new Set<string>();
+            for (const a of ws.apps) {
+                if (a.command) cmd.add(a.command);
+            }
+            return cmd;
+        }),
+        [config.workspaces]
+    );
+
     return (
         <motion.div
             className="pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
@@ -921,7 +975,7 @@ const WidgetsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {AVAILABLE_WIDGETS.map((widget, index) => {
                         const Icon = getIcon(widget.iconName);
-                        const isDeployed = config.workspaces.some(ws => ws.apps.some(a => a.command === widget.command));
+                        const isDeployed = commandsInWorkspaces.has(widget.command);
 
                         return (
                             <motion.div
@@ -963,7 +1017,7 @@ const WidgetsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                                     </div>
                                     <div className="flex flex-wrap gap-1.5 mt-2">
                                         {config.workspaces.map((ws, wsIndex) => {
-                                            const isInside = ws.apps.some(a => a.command === widget.command);
+                                            const isInside = appCommandsByWorkspace[wsIndex]?.has(widget.command) ?? false;
                                             return (
                                                 <motion.button
                                                     key={ws.id}
@@ -1364,7 +1418,7 @@ const WorkspaceCard = React.memo(({
 ));
 
 const WorkspaceAppItem = React.memo(({
-    app, i, isFolder, getIcon, dragAppRef, setDragOverApp, dragOverApp,
+    app, i, isFolder, getIcon, dragAppRef, setDragOverApp, isDragOver,
     selectedWorkspaceIndex, workspaceFolderPath, reorderAppsInWorkspace,
     setEditingApp, removeAppFromWorkspace, setWorkspaceFolderPath, config
 }: any) => {
@@ -1402,7 +1456,7 @@ const WorkspaceAppItem = React.memo(({
                     setEditingApp({ app, index: i, workspaceIndex: selectedWorkspaceIndex!, path: workspaceFolderPath });
                 }
             }}
-            className={`group relative p-3.5 rounded-xl bg-gradient-to-br from-white/[0.03] to-transparent border hover:bg-white/[0.08] hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)] transition-all duration-300 flex items-center gap-3.5 cursor-grab active:cursor-grabbing ${dragOverApp === i
+            className={`group relative p-3.5 rounded-xl bg-gradient-to-br from-white/[0.03] to-transparent border hover:bg-white/[0.08] hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)] transition-all duration-300 flex items-center gap-3.5 cursor-grab active:cursor-grabbing ${isDragOver
                 ? 'border-white/40 shadow-[0_0_0_2px_rgba(255,255,255,0.1)] scale-[1.01]'
                 : 'border-white/[0.05] hover:border-white/[0.15]'
                 }`}
@@ -1607,9 +1661,10 @@ const WorkspacesTab = React.memo(({
                                                     </button>
                                                     <button
                                                         onClick={() => {
-                                                            if (confirm(getTranslation(config, 'workspaces.confirm_delete') || 'Decommission this workspace permanently?')) deleteWorkspace(selectedWorkspaceIndex);
+                                                            if (selectedWorkspaceIndex !== null) deleteWorkspace(selectedWorkspaceIndex);
                                                         }}
                                                         className="h-10 w-10 flex items-center justify-center bg-red-500/5 hover:bg-red-500/10 text-red-500/60 hover:text-red-500 rounded-xl border border-red-500/10 hover:border-red-500/20 transition-all duration-300 shrink-0"
+                                                        title={getTranslation(config, 'workspaces.confirm_delete') || 'Remove workspace'}
                                                     >
                                                         <Trash2 size={18} strokeWidth={1.5} />
                                                     </button>
@@ -1657,7 +1712,7 @@ const WorkspacesTab = React.memo(({
                                                     getIcon={getIcon}
                                                     dragAppRef={dragAppRef}
                                                     setDragOverApp={setDragOverApp}
-                                                    dragOverApp={dragOverApp}
+                                                    isDragOver={dragOverApp === i}
                                                     selectedWorkspaceIndex={selectedWorkspaceIndex}
                                                     workspaceFolderPath={workspaceFolderPath}
                                                     reorderAppsInWorkspace={reorderAppsInWorkspace}
@@ -2372,7 +2427,58 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
     );
 });
 
+/** Process token for game-mode blocking (substring match vs tasklist on Windows). */
+function exeTokenForGameModeBlock(rawPath: string): string | null {
+    const path = rawPath.trim();
+    if (!path || /^https?:\/\//i.test(path)) return null;
+    const normalized = path.replace(/\\/g, '/');
+    const parts = normalized.split('/');
+    const base = parts[parts.length - 1] || path;
+    const b = base.trim().toLowerCase();
+    if (!b) return null;
+    if (b.endsWith('.exe') || b.endsWith('.msc')) return b;
+    if (b.includes('.')) return b;
+    return `${b}.exe`;
+}
+
 const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig: (c: any) => void }) => {
+    const [gameBlockPickerOpen, setGameBlockPickerOpen] = useState(false);
+
+    const blockedTokens = useMemo(
+        () =>
+            (config.gameMode?.blockedApps || '')
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean),
+        [config.gameMode?.blockedApps],
+    );
+
+    const setBlockedAppsList = (tokens: string[]) => {
+        setConfig({
+            ...config,
+            gameMode: { ...config.gameMode, blockedApps: tokens.join(', ') },
+        });
+    };
+
+    const addBlockedToken = (token: string) => {
+        const t = token.toLowerCase();
+        if (!t) return;
+        if (blockedTokens.some((x) => x.toLowerCase() === t)) return;
+        setBlockedAppsList([...blockedTokens, t]);
+    };
+
+    const removeBlockedToken = (token: string) => {
+        setBlockedAppsList(blockedTokens.filter((x) => x !== token));
+    };
+
+    const onBlockedAppSelected = (app: { name: string; path: string; type?: 'app' | 'url' | 'folder' }) => {
+        setGameBlockPickerOpen(false);
+        if (app.type === 'url' || app.type === 'folder') return;
+        const token = exeTokenForGameModeBlock(app.path);
+        if (!token) return;
+        addBlockedToken(token);
+    };
+
     return (
         <motion.div
             className="pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
@@ -2482,11 +2588,46 @@ const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setCo
                                                     className="mt-6 pt-6 border-t border-white/5 space-y-3"
                                                 >
                                                     <label className="text-[10px] font-semibold text-white/20 uppercase tracking-[0.2em] block ml-1">{getTranslation(config, 'gamemode.process_list')}</label>
-                                                    <textarea
-                                                        value={config.gameMode?.blockedApps || ''}
-                                                        onChange={(e) => setConfig(prev => ({ ...prev, gameMode: { ...prev.gameMode, blockedApps: e.target.value } }))}
-                                                        placeholder={getTranslation(config, 'gamemode.process_list_placeholder')}
-                                                        className="w-full bg-black/60 border border-white/10 rounded-lg p-3 text-sm text-white focus:border-white/30 outline-none font-mono resize-none h-32 shadow-inner hover:bg-black/80 transition-all placeholder-white/5"
+                                                    <p className="text-[11px] text-white/30 leading-relaxed ml-1 mb-3">
+                                                        {getTranslation(config, 'gamemode.block_list_hint')}
+                                                    </p>
+                                                    <div className="flex flex-wrap gap-2 min-h-[2.25rem] items-start">
+                                                        {blockedTokens.length === 0 ? (
+                                                            <span className="text-xs text-white/25 py-1">{getTranslation(config, 'gamemode.no_blocked_apps')}</span>
+                                                        ) : (
+                                                            blockedTokens.map((token) => (
+                                                                <span
+                                                                    key={token}
+                                                                    className="inline-flex items-center gap-1 pl-3 pr-1 py-1.5 rounded-lg bg-black/50 border border-white/10 text-[11px] font-mono text-white/85"
+                                                                >
+                                                                    {token}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => removeBlockedToken(token)}
+                                                                        className="p-1 rounded-md hover:bg-white/10 text-white/40 hover:text-white transition-colors"
+                                                                        aria-label={getTranslation(config, 'action.remove') || 'Remove'}
+                                                                    >
+                                                                        <X size={12} />
+                                                                    </button>
+                                                                </span>
+                                                            ))
+                                                        )}
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setGameBlockPickerOpen(true)}
+                                                        className="mt-2 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.12] border border-white/10 text-[12px] font-semibold text-white/90 transition-colors"
+                                                    >
+                                                        <Plus size={16} strokeWidth={2.5} />
+                                                        {getTranslation(config, 'gamemode.add_blocked_app')}
+                                                    </button>
+                                                    <AppSelector
+                                                        isOpen={gameBlockPickerOpen}
+                                                        onClose={() => setGameBlockPickerOpen(false)}
+                                                        onAppSelect={onBlockedAppSelected}
+                                                        appsOnly
+                                                        title={getTranslation(config, 'gamemode.pick_app_title')}
+                                                        subtitle={getTranslation(config, 'gamemode.pick_app_subtitle')}
                                                     />
                                                 </motion.div>
                                             )}
@@ -2529,9 +2670,9 @@ const UserTab = React.memo(({
             exit={{ opacity: 0, x: 10 }}
             transition={{ duration: 0.3 }}
         >
-            <div className="max-w-4xl mx-auto px-6 md:px-10 lg:px-12">
+            <div className="max-w-3xl mx-auto px-6 md:px-10 lg:px-12">
                 <motion.div
-                    className="mb-12 text-center sm:text-left"
+                    className="mb-10 text-center sm:text-left"
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.1 }}
@@ -2542,150 +2683,180 @@ const UserTab = React.memo(({
                     </p>
                 </motion.div>
 
-                <div className="space-y-8">
-                    {/* Profile Card */}
+                <div className="space-y-6">
+                    {/* 1. Identity & Subscription */}
                     <motion.div
-                        className="bg-white/[0.04] border border-white/[0.08] p-5 rounded-xl relative overflow-hidden group"
+                        className="bg-white/[0.02] border border-white/[0.06] rounded-2xl overflow-hidden shadow-xl relative"
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.2 }}
                     >
-                        <div className="absolute top-0 right-0 w-80 h-80 bg-white/[0.02] rounded-full blur-[100px] -mr-40 -mt-40 group-hover:bg-white/[0.04] transition-colors duration-700" />
+                        {/* Glow effect */}
+                        <div className="absolute top-0 right-0 w-80 h-80 bg-white/[0.015] rounded-full blur-[100px] -mr-40 -mt-40 pointer-events-none" />
 
-                        <div className="flex flex-col sm:flex-row items-center gap-8 relative z-10">
-                            <div className="relative">
-                                <div className="w-16 h-16 rounded-xl bg-black/60 border border-white/10 flex items-center justify-center overflow-hidden shadow-xl group-hover:border-white/30 transition-all duration-500">
+                        {/* Top: Identity */}
+                        <div className="p-6 md:p-8 flex flex-col sm:flex-row items-center gap-6 relative z-10">
+                            <div className="relative group">
+                                <div className="w-20 h-20 rounded-full bg-black/60 border border-white/10 flex items-center justify-center overflow-hidden shadow-xl transition-all duration-300 group-hover:border-white/30">
                                     {user?.avatarUrl ? (
                                         <img src={user.avatarUrl} className="w-full h-full object-cover" alt="Avatar" />
                                     ) : (
-                                        <div className="text-3xl font-semibold text-white/10 uppercase">{user?.name?.substring(0, 2) || 'ZN'}</div>
+                                        <div className="text-3xl font-semibold text-white/20 uppercase tracking-widest">{user?.name?.substring(0, 2) || 'ZN'}</div>
                                     )}
                                 </div>
-                                <button className="absolute -bottom-1 -right-1 w-9 h-9 bg-white text-black rounded-lg flex items-center justify-center shadow-xl hover:scale-110 active:scale-95 transition-all">
-                                    <Edit3 size={18} strokeWidth={2} />
+                                <button className="absolute bottom-0 right-0 w-7 h-7 bg-[#222] border border-white/10 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-white hover:text-black hover:scale-105 active:scale-95 transition-all">
+                                    <Edit3 size={12} strokeWidth={2.5} />
                                 </button>
                             </div>
-
                             <div className="flex-1 text-center sm:text-left">
-                                <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-2">
-                                    <h4 className="text-xl font-semibold text-white tracking-tight">{user?.name || 'Zenith User'}</h4>
-                                    <div className={`inline-flex px-3 py-1 rounded-md text-[9px] font-semibold tracking-[0.15em] border self-center sm:self-auto ${user?.isPremium ? 'bg-white text-black border-white' : 'bg-white/5 text-white/40 border-white/10'}`}>
-                                        {user?.isPremium ? getTranslation(config, 'user.zenith_pro') : getTranslation(config, 'user.free_plan')}
+                                <h4 className="text-2xl font-bold text-white tracking-tight leading-none mb-2">{user?.name || 'Zenith User'}</h4>
+                                <p className="text-[13px] text-white/40 font-medium tracking-wide">{user?.email || 'unlinked_identity@zenith.os'}</p>
+                            </div>
+                            <div className="sm:ml-auto self-center">
+                                {user?.isAdmin && (
+                                    <div className="px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-[9px] font-bold tracking-[0.2em] uppercase">
+                                        {getTranslation(config, 'user.admin_badge')}
                                     </div>
-                                    {user?.isAdmin && (
-                                        <div className="inline-flex px-3 py-1 rounded-md text-[9px] font-bold tracking-[0.2em] bg-red-500/10 text-red-500 border border-red-500/20 self-center sm:self-auto">
-                                            {getTranslation(config, 'user.admin_badge')}
-                                        </div>
-                                    )}
-                                </div>
-                                <p className="text-white/40 font-normal mb-6">{user?.email || 'unlinked_identity@zenith.os'}</p>
+                                )}
+                            </div>
+                        </div>
 
-                                <div className="flex flex-wrap gap-4 justify-center sm:justify-start">
-                                    <div className="px-4 py-2.5 rounded-xl bg-black/40 border border-white/5 flex items-center gap-3">
-                                        <Zap size={16} className="text-yellow-400" />
-                                        <div className="text-left">
-                                            <div className="text-[10px] font-semibold text-white/20 uppercase tracking-widest leading-none mb-1">{getTranslation(config, 'user.performance')}</div>
-                                            <div className="text-sm font-medium text-white">{getTranslation(config, 'user.high_priority')}</div>
-                                        </div>
+                        {/* Bottom: Subscription */}
+                        <div className="px-6 md:px-8 py-5 border-t border-white/[0.04] bg-white/[0.01] flex flex-col sm:flex-row items-center justify-between gap-4 relative z-10">
+                            <div className="text-center sm:text-left">
+                                <div className="text-[9px] font-bold text-white/30 uppercase tracking-[0.2em] mb-1.5">
+                                    Plano Atual
+                                </div>
+                                <div className="flex items-center justify-center sm:justify-start gap-2">
+                                    <span className="text-[15px] font-semibold text-white/90">
+                                        {user?.isPremium ? getTranslation(config, 'user.zenith_pro') : getTranslation(config, 'user.free_plan')}
+                                    </span>
+                                    {user?.isPremium && <Zap size={14} className="text-yellow-400" />}
+                                </div>
+                            </div>
+                            <button className="px-5 py-2.5 bg-white text-black text-[10px] font-bold uppercase tracking-widest rounded-xl hover:bg-white/90 hover:scale-[1.02] active:scale-95 transition-all shadow-[0_0_20px_rgba(255,255,255,0.1)]">
+                                {user?.isPremium ? 'Gerenciar Assinatura' : 'Fazer Upgrade'}
+                            </button>
+                        </div>
+                    </motion.div>
+
+                    {/* 2. Preferences / Settings Grp */}
+                    <motion.div
+                        className="bg-white/[0.02] border border-white/[0.06] rounded-2xl overflow-hidden shadow-lg"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.3 }}
+                    >
+                        <div className="px-6 py-4 border-b border-white/[0.04] bg-white/[0.01]">
+                            <h4 className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em]">Sistemas Ativos</h4>
+                        </div>
+                        <div className="flex flex-col">
+                            <div className="flex items-center justify-between px-6 py-5 border-b border-white/[0.02] hover:bg-white/[0.01] transition-colors">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-10 h-10 rounded-xl bg-black/40 border border-white/5 flex items-center justify-center">
+                                        <Zap size={16} className="text-white/40" />
                                     </div>
-                                    <div className="px-4 py-2.5 rounded-xl bg-black/40 border border-white/5 flex items-center gap-3">
-                                        <Globe size={16} className="text-blue-400" />
-                                        <div className="text-left">
-                                            <div className="text-[10px] font-semibold text-white/20 uppercase tracking-widest leading-none mb-1">{getTranslation(config, 'user.server')}</div>
-                                            <div className="text-sm font-medium text-white">{getTranslation(config, 'user.local_kernel')}</div>
-                                        </div>
+                                    <div>
+                                        <div className="text-[13px] font-semibold text-white/90">{getTranslation(config, 'user.high_priority')}</div>
+                                        <div className="text-[11px] text-white/40 font-medium tracking-wide mt-0.5">{getTranslation(config, 'user.performance')}</div>
                                     </div>
                                 </div>
+                                <span className="text-[9px] font-bold text-green-400/80 uppercase tracking-widest">Online</span>
+                            </div>
+                            <div className="flex items-center justify-between px-6 py-5 hover:bg-white/[0.01] transition-colors">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-10 h-10 rounded-xl bg-black/40 border border-white/5 flex items-center justify-center">
+                                        <Globe size={16} className="text-white/40" />
+                                    </div>
+                                    <div>
+                                        <div className="text-[13px] font-semibold text-white/90">{getTranslation(config, 'user.local_kernel')}</div>
+                                        <div className="text-[11px] text-white/40 font-medium tracking-wide mt-0.5">{getTranslation(config, 'user.server')}</div>
+                                    </div>
+                                </div>
+                                <span className="text-[9px] font-bold text-green-400/80 uppercase tracking-widest">Online</span>
                             </div>
                         </div>
                     </motion.div>
 
-                    {/* Security, Data & Backup */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <motion.div
-                            className="bg-white/[0.04] border border-white/[0.08] p-5 rounded-xl hover:bg-white/[0.06] transition-all duration-300 group"
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: 0.3 }}
-                        >
-                            <div className="flex items-center gap-4 mb-6">
-                                <div className="w-11 h-11 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center text-white/40 group-hover:text-white transition-all">
-                                    <Lock size={20} strokeWidth={1.5} />
+                    {/* 3. Security & Backup */}
+                    <motion.div
+                        className="bg-white/[0.02] border border-white/[0.06] rounded-2xl overflow-hidden shadow-lg"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.35 }}
+                    >
+                         <div className="flex flex-col sm:flex-row sm:items-center justify-between px-6 py-5 border-b border-white/[0.04] bg-white/[0.01] gap-4">
+                            <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 rounded-xl bg-black/40 border border-white/5 flex items-center justify-center">
+                                    <Lock size={16} className="text-white/40" />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-semibold text-white/20 uppercase tracking-widest block mb-0.5">{getTranslation(config, 'user.authentication')}</label>
-                                    <h4 className="font-semibold text-white">{getTranslation(config, 'user.access_security')}</h4>
+                                    <div className="text-[13px] font-semibold text-white/90">{getTranslation(config, 'user.access_security')}</div>
+                                    <div className="text-[11px] text-white/40 font-medium tracking-wide mt-0.5">{getTranslation(config, 'user.authentication')}</div>
                                 </div>
                             </div>
-                            <button className="w-full py-3.5 bg-white/5 border border-white/10 rounded-xl text-[11px] font-semibold uppercase tracking-widest text-white/60 hover:text-white hover:bg-white/10 transition-all">{getTranslation(config, 'user.manage_credentials')}</button>
-                        </motion.div>
-
-                        <motion.div
-                            className="bg-white/[0.04] border border-white/[0.08] p-5 rounded-xl hover:bg-white/[0.06] transition-all duration-300 group"
-                            initial={{ opacity: 0, x: 20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: 0.3 }}
-                        >
-                            <div className="flex items-center gap-4 mb-3">
-                                <div className="w-11 h-11 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center text-white/40 group-hover:text-white transition-all">
-                                    <Download size={20} strokeWidth={1.5} />
+                            <button className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/5 text-white/80 hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all">
+                                {getTranslation(config, 'user.manage_credentials')}
+                            </button>
+                        </div>
+                        <div className="px-6 py-5">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-10 h-10 rounded-xl bg-black/40 border border-white/5 flex items-center justify-center">
+                                        <Download size={16} className="text-white/40" />
+                                    </div>
+                                    <div>
+                                        <div className="text-[13px] font-semibold text-white/90">{getTranslation(config, 'user.backup_title')}</div>
+                                        <div className="text-[11px] text-white/40 font-medium tracking-wide mt-0.5">{getTranslation(config, 'user.security_data')}</div>
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className="text-[9px] font-semibold text-white/20 uppercase tracking-widest block mb-0.5">{getTranslation(config, 'user.security_data')}</label>
-                                    <h4 className="font-semibold text-white text-base">{getTranslation(config, 'user.backup_title')}</h4>
+                                <div className="flex gap-2.5">
+                                    <button
+                                        onClick={handleExport}
+                                        disabled={isExporting}
+                                        className="px-4 py-2.5 bg-white/[0.04] border border-white/10 rounded-lg text-[10px] font-bold uppercase tracking-widest text-white/70 hover:text-white hover:bg-white/10 transition-all disabled:opacity-50"
+                                    >
+                                        {isExporting ? '...' : getTranslation(config, 'user.export_btn')}
+                                    </button>
+                                    <button
+                                        onClick={handleImport}
+                                        disabled={isImporting}
+                                        className="px-4 py-2.5 bg-white/[0.04] border border-white/10 rounded-lg text-[10px] font-bold uppercase tracking-widest text-white/70 hover:text-white hover:bg-white/10 transition-all disabled:opacity-50"
+                                    >
+                                        {isImporting ? '...' : getTranslation(config, 'user.import_btn')}
+                                    </button>
                                 </div>
-                            </div>
-                            <p className="text-[10px] text-white/30 mb-4 px-1">{getTranslation(config, 'user.backup_desc')}</p>
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={handleExport}
-                                    disabled={isExporting}
-                                    className="flex-1 py-3 bg-white/5 border border-white/10 rounded-xl text-[10px] font-semibold uppercase tracking-widest text-white/60 hover:text-white hover:bg-white/10 transition-all disabled:opacity-50"
-                                >
-                                    {isExporting ? '...' : getTranslation(config, 'user.export_btn')}
-                                </button>
-                                <button
-                                    onClick={handleImport}
-                                    disabled={isImporting}
-                                    className="flex-1 py-3 bg-white/5 border border-white/10 rounded-xl text-[10px] font-semibold uppercase tracking-widest text-white/60 hover:text-white hover:bg-white/10 transition-all disabled:opacity-50"
-                                >
-                                    {isImporting ? '...' : getTranslation(config, 'user.import_btn')}
-                                </button>
                             </div>
                             {status && (
                                 <motion.div
-                                    initial={{ opacity: 0, y: 5 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    className={`mt-3 text-[9px] font-medium text-center ${status.type === 'success' ? 'text-green-400' : 'text-red-400'}`}
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: 'auto' }}
+                                    className={`mt-4 pt-3 border-t border-white/[0.02] text-[11px] font-medium text-center ${status.type === 'success' ? 'text-green-400' : 'text-red-400'}`}
                                 >
                                     {status.message}
                                 </motion.div>
                             )}
-                        </motion.div>
-                    </div>
+                        </div>
+                    </motion.div>
 
-                    {/* Danger Zone */}
+                    {/* 4. Account Actions */}
                     <motion.div
-                        className="p-5 rounded-xl bg-gradient-to-br from-red-500/[0.03] to-transparent border border-red-500/10 space-y-4"
+                        className="bg-white/[0.02] border border-white/[0.06] rounded-2xl overflow-hidden mt-8 shadow-lg"
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.4 }}
                     >
-                        <div className="flex items-start gap-5">
-                            <div className="p-2.5 bg-red-500/10 rounded-xl text-red-400 border border-red-500/20">
-                                <AlertTriangle size={20} strokeWidth={1.5} />
+                        <div className="flex items-center justify-between px-6 py-5 hover:bg-white/[0.02] transition-colors cursor-pointer group" onClick={onLogout}>
+                            <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 rounded-xl bg-black/40 border border-white/5 flex items-center justify-center group-hover:bg-white/5 transition-colors">
+                                    <LogOut size={16} className="text-white/40 group-hover:text-white/80 transition-colors" />
+                                </div>
+                                <div className="text-[13px] font-semibold text-white/90 group-hover:text-white transition-colors">
+                                    {getTranslation(config, 'user.sign_out') || 'Sign Out'}
+                                </div>
                             </div>
-                            <div>
-                                <h4 className="text-sm font-semibold text-white tracking-tight mb-1">{getTranslation(config, 'user.critical_operations')}</h4>
-                                <p className="text-[11px] leading-relaxed text-white/30 font-normal">{getTranslation(config, 'user.critical_operations_desc')}</p>
-                            </div>
+                            <ChevronRight size={16} className="text-white/20 group-hover:text-white/50 transition-colors" />
                         </div>
-                        <button 
-                            onClick={onLogout}
-                            className="w-full py-3 bg-red-500/10 text-red-500 font-semibold text-xs uppercase tracking-[0.2em] rounded-lg border border-red-500/20 hover:bg-red-500 hover:text-white transition-all duration-300"
-                        >
-                            {getTranslation(config, 'user.terminate_session')}
-                        </button>
                     </motion.div>
                 </div>
             </div>
@@ -2997,6 +3168,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const [editingApp, setEditingApp] = useState<{ app: AppItem, index: number, workspaceIndex?: number, path: number[] } | null>(null);
     const [iconSearchTerm, setIconSearchTerm] = useState('');
     const [folderPath, setFolderPath] = useState<number[]>([]);
+    // --- CONFIRMATION DIALOG STATE ---
+    type ConfirmAction = 'reset' | 'delete_workspace' | 'delete_app' | 'warning';
+    const [confirmDialog, setConfirmDialog] = useState<{
+        type: ConfirmAction;
+        title: string;
+        description: string;
+        confirmLabel: string;
+        cancelLabel: string;
+        onConfirm: () => void;
+        variant?: 'danger' | 'warning' | 'info';
+    } | null>(null);
+
     const [showAppSelector, setShowAppSelector] = useState(false);
     const [selectedWorkspaceIndex, setSelectedWorkspaceIndex] = useState<number | null>(null);
     const [workspaceFolderPath, setWorkspaceFolderPath] = useState<number[]>([]);
@@ -3020,7 +3203,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         try {
             const result = await window.electron.exportConfig();
             if (result.success) {
-                setStatus({ type: 'success', message: getTranslation(config, 'user.export_success') || 'Backup exported successfully' });
+                setStatus({ type: 'success', message: getTranslation(config, 'user.backup_success') || 'Backup exported successfully' });
             } else if (result.error) {
                 setStatus({ type: 'error', message: result.error });
             }
@@ -3138,7 +3321,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const dragAppRef = useRef<number | null>(null);
     const [dragOverWorkspace, setDragOverWorkspace] = useState<number | null>(null);
     const [dragOverApp, setDragOverApp] = useState<number | null>(null);
-    const [showResetConfirm, setShowResetConfirm] = useState(false);
 
     // Reset view when tab changes or modal opens/closes
     useEffect(() => {
@@ -3195,23 +3377,38 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
     const getBestLucideIcon = (name: string, path: string): string => {
         const text = (name + ' ' + path).toLowerCase();
-        if (text.includes('calc')) return 'Calculator';
-        if (text.includes('edge')) return 'Globe';
-        if (text.includes('chrome') || text.includes('browser')) return 'Globe';
-        if (text.includes('terminal') || text.includes('cmd') || text.includes('powershell')) return 'Terminal';
-        if (text.includes('steam') || text.includes('game')) return 'Gamepad2';
-        if (text.includes('discord')) return 'MessageSquare';
-        if (text.includes('code') || text.includes('visual studio')) return 'Code';
-        // Folders
-        if (text.includes('explorer') || text.includes('folder') || path.includes(':') && !path.includes('.')) return 'Folder';
-        if (text.includes('download')) return 'Download';
-        if (text.includes('document')) return 'FileText';
-        if (text.includes('picture') || text.includes('image')) return 'ImageIcon';
-        if (text.includes('music')) return 'Music';
-        if (text.includes('video')) return 'Play';
+        
+        // Browsers
+        if (text.includes('chrome') || text.includes('browser') || text.includes('edge') || text.includes('firefox') || text.includes('opera') || text.includes('safari') || text.includes('internet explorer')) return 'Globe';
+        
+        // Media/Music
+        if (text.includes('spotify') || text.includes('music') || text.includes('player') || text.includes('itunes') || text.includes('deezer') || text.includes('tidal')) return 'Music';
+        if (text.includes('video') || text.includes('movie') || text.includes('netflix') || text.includes('youtube') || text.includes('vlc') || text.includes('tv') || text.includes('play')) return 'Tv';
+        
+        // Chat/Communication
+        if (text.includes('discord') || text.includes('chat') || text.includes('messenger') || text.includes('whatsapp') || text.includes('telegram') || text.includes('slack') || text.includes('teams') || text.includes('zoom')) return 'MessageSquare';
+        if (text.includes('mail') || text.includes('outlook') || text.includes('gmail') || text.includes('postbox')) return 'Mail';
 
-        if (text.includes('setting') || text.includes('config')) return 'Settings2';
-        return 'Layout'; // Default
+        // Dev/IDE
+        if (text.includes('code') || text.includes('visual studio') || text.includes('cursor') || text.includes('intellij') || text.includes('pycharm') || text.includes('sublime') || text.includes('atom') || text.includes('git')) return 'Code2';
+        
+        // Games
+        if (text.includes('steam') || text.includes('game') || text.includes('play') || text.includes('epic') || text.includes('battle.net') || text.includes('origin') || text.includes('ubisoft') || text.includes('riot')) return 'Gamepad2';
+        
+        // System/Files
+        if (text.includes('explorer') || text.includes('folder') || text.includes('arquivos') || (path.includes(':') && !path.includes('.'))) return 'FolderOpen';
+        if (text.includes('terminal') || text.includes('cmd') || text.includes('powershell') || text.includes('bash') || text.includes('zsh')) return 'Terminal';
+        if (text.includes('setting') || text.includes('config') || text.includes('prefer')) return 'Settings2';
+        
+        // Productivity
+        if (text.includes('calc') || text.includes('matemática')) return 'Calculator';
+        if (text.includes('note') || text.includes('text') || text.includes('word') || text.includes('office') || text.includes('pdf') || text.includes('writer') || text.includes('document')) return 'FileText';
+        if (text.includes('download')) return 'Download';
+        if (text.includes('picture') || text.includes('image')) return 'ImageIcon';
+        if (text.includes('camera') || text.includes('photo')) return 'Camera';
+        if (text.includes('paint') || text.includes('design') || text.includes('figma') || text.includes('photoshop') || text.includes('illustrator') || text.includes('gimp')) return 'Palette';
+
+        return 'Box'; // Default
     };
 
     const searchResults = useMemo(() => {
@@ -3325,6 +3522,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         try {
             const iconPath = await window.electron.selectImage();
             if (iconPath && editingApp) {
+                if (window.electron.removeManagedCustomIcon && editingApp.app.customIconUrl) {
+                    await window.electron.removeManagedCustomIcon(editingApp.app.customIconUrl);
+                }
                 const formattedPath = iconPath.startsWith('http') ? iconPath : `file://${iconPath.replace(/\\/g, '/')}`;
                 const updatedApp = {
                     ...editingApp.app,
@@ -3396,12 +3596,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
     const handleAppSelect = async (appData: { name: string; path: string; type?: 'app' | 'url' | 'folder' }) => {
         if (!appData.path || appData.path.trim() === '') {
-            alert(`Could not find a launch path for "${appData.name}".`);
+            setConfirmDialog({
+                type: 'warning',
+                title: 'Caminho não encontrado',
+                description: `Não foi possível localizar o executável para "${appData.name}". Verifique se o app está instalado corretamente.`,
+                confirmLabel: 'Entendido',
+                cancelLabel: '',
+                onConfirm: () => setConfirmDialog(null),
+                variant: 'warning'
+            });
             return;
         }
 
         // Handle URL type
         if (appData.type === 'url') {
+            const urlIcon =
+                websiteIconFieldsFromUrl(appData.path) ??
+                ({ iconName: 'Globe' as const, iconSource: 'lucide' as const, customIconUrl: undefined });
             if (appSelectorMode === 'center') {
                 setConfig(prev => ({
                     ...prev,
@@ -3414,8 +3625,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             if (appSelectorMode === 'add') {
                 const newItem: AppItem = {
                     id: generateId(), type: 'app', label: appData.name,
-                    iconName: 'Globe', iconSource: 'lucide', command: appData.path,
-                    commandType: 'url', description: 'Web Link'
+                    command: appData.path,
+                    commandType: 'url', description: 'Web Link',
+                    ...urlIcon,
                 };
                 if (pendingWorkspaceAction) {
                     const { workspaceIndex, path } = pendingWorkspaceAction;
@@ -3432,7 +3644,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 return;
             }
             if (!editingApp) return;
-            handleAppUpdates({ command: appData.path, label: appData.name, commandType: 'url', iconName: 'Globe', iconSource: 'lucide' });
+            if (editingApp.app.customIconUrl?.startsWith('file:') && window.electron?.removeManagedCustomIcon) {
+                void window.electron.removeManagedCustomIcon(editingApp.app.customIconUrl);
+            }
+            handleAppUpdates({
+                command: appData.path,
+                label: appData.name,
+                commandType: 'url',
+                ...urlIcon,
+            });
             return;
         }
 
@@ -3598,12 +3818,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     };
 
     const deleteWorkspace = (index: number) => {
-        if (config.workspaces.length <= 1) { alert("Cannot delete the last workspace"); return; }
-        const newWorkspaces = config.workspaces.filter((_, i) => i !== index);
-        const renumbered = newWorkspaces.map((ws, i) => ({ ...ws, hotkey: i + 1, id: `workspace-${i + 1}` }));
-        setConfig(prev => ({ ...prev, workspaces: renumbered, activeWorkspaceIndex: Math.min(prev.activeWorkspaceIndex, renumbered.length - 1) }));
-        if (selectedWorkspaceIndex === index) { setSelectedWorkspaceIndex(null); }
-        else if (selectedWorkspaceIndex !== null && selectedWorkspaceIndex > index) { setSelectedWorkspaceIndex(selectedWorkspaceIndex - 1); }
+        if (config.workspaces.length <= 1) {
+            setConfirmDialog({
+                type: 'warning',
+                title: getTranslation(config, 'status.error') || 'Atenção',
+                description: 'Não é possível excluir o último workspace. Mantenha pelo menos um grupo de trabalho ativo.',
+                confirmLabel: 'Entendido',
+                cancelLabel: '',
+                onConfirm: () => setConfirmDialog(null),
+                variant: 'info'
+            });
+            return;
+        }
+
+        setConfirmDialog({
+            type: 'delete_workspace',
+            title: 'Excluir Workspace?',
+            description: `Você está prestes a remover o workspace "${config.workspaces[index].name}". Todos os apps dentro dele serão removidos do menu.`,
+            confirmLabel: 'Excluir permanentemente',
+            cancelLabel: 'Cancelar',
+            variant: 'danger',
+            onConfirm: () => {
+                const newWorkspaces = config.workspaces.filter((_, i) => i !== index);
+                const renumbered = newWorkspaces.map((ws, i) => ({ ...ws, hotkey: i + 1, id: `workspace-${i + 1}` }));
+                setConfig(prev => ({ ...prev, workspaces: renumbered, activeWorkspaceIndex: Math.min(prev.activeWorkspaceIndex, renumbered.length - 1) }));
+                if (selectedWorkspaceIndex === index) { setSelectedWorkspaceIndex(null); }
+                else if (selectedWorkspaceIndex !== null && selectedWorkspaceIndex > index) { setSelectedWorkspaceIndex(selectedWorkspaceIndex - 1); }
+                setConfirmDialog(null);
+            }
+        });
     };
 
     const reorderWorkspaces = (fromIndex: number, toIndex: number) => {
@@ -3735,26 +3978,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
     const handleAppChange = (field: string, value: any) => {
         if (!editingApp) return;
+        if (field === 'customIconUrl' && value === undefined && window.electron?.removeManagedCustomIcon && editingApp.app.customIconUrl) {
+            void window.electron.removeManagedCustomIcon(editingApp.app.customIconUrl);
+        }
         let updatedApp = { ...editingApp.app, [field]: value };
 
-        // Auto-fetch high-quality favicon for URLs - refined for better quality/transparency
+        // Auto-fetch high-quality favicon for URLs (same helper as adding a URL from the app picker)
         if (field === 'command' && editingApp.app.commandType === 'url' && value.trim()) {
-            let domain = value.trim();
-            if (domain.startsWith('http')) {
-                try { domain = new URL(domain).hostname; } catch (e) { }
+            if (editingApp.app.customIconUrl?.startsWith('file:') && window.electron?.removeManagedCustomIcon) {
+                void window.electron.removeManagedCustomIcon(editingApp.app.customIconUrl);
             }
-
-            if (domain && domain.includes('.')) {
-                // unavatar.io is an aggregator that reaches into Clearbit, Apple, Google, etc.
-                const fallbackUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
-                const faviconUrl = `https://unavatar.io/${domain}?fallback=${encodeURIComponent(fallbackUrl)}`;
-
-                updatedApp = {
-                    ...updatedApp,
-                    customIconUrl: faviconUrl,
-                    iconSource: 'native'
-                };
-            }
+            const iconFields = websiteIconFieldsFromUrl(value.trim());
+            updatedApp = {
+                ...updatedApp,
+                ...(iconFields ?? { iconName: 'Globe', iconSource: 'lucide', customIconUrl: undefined }),
+            };
         }
 
         handleAppUpdates(updatedApp);
@@ -3772,84 +4010,94 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 onAppSelect={handleAppSelect}
             />
 
-            {/* Reset Confirmation Modal */}
+            {/* UNIFIED CONFIRMATION MODAL (Professional Minimalism 2026) */}
             <AnimatePresence>
-                {showResetConfirm && (
-                    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
+                {confirmDialog && (
+                    <div className="fixed inset-0 z-[1000] flex items-center justify-center p-6 sm:p-0">
                         <motion.div
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
-                            onClick={() => setShowResetConfirm(false)}
-                            className="absolute inset-0 bg-black/70 backdrop-blur-md"
+                            onClick={() => confirmDialog.cancelLabel && setConfirmDialog(null)}
+                            className="absolute inset-0 bg-black/80 backdrop-blur-3xl"
                         />
                         <motion.div
-                            initial={{ opacity: 0, scale: 0.92, y: 16 }}
+                            initial={{ opacity: 0, scale: 0.98, y: 10 }}
                             animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.94, y: 10 }}
-                            transition={{ type: 'spring', damping: 26, stiffness: 340, mass: 0.8 }}
+                            exit={{ opacity: 0, scale: 0.98, y: 8 }}
+                            transition={{ type: 'spring', damping: 30, stiffness: 400, mass: 1 }}
                             className="relative w-full max-w-sm overflow-hidden"
                             onClick={(e) => e.stopPropagation()}
                         >
-                            {/* Glass card */}
                             <div
-                                className="rounded-2xl p-7 flex flex-col gap-6"
+                                className="rounded-2xl p-7 flex flex-col gap-6 relative overflow-hidden"
                                 style={{
-                                    background: 'rgba(10, 10, 12, 0.82)',
-                                    backdropFilter: 'blur(32px)',
-                                    WebkitBackdropFilter: 'blur(32px)',
-                                    border: '1px solid rgba(255,255,255,0.07)',
-                                    boxShadow: '0 32px 80px rgba(0,0,0,0.7), 0 0 0 0.5px rgba(255,255,255,0.04) inset',
+                                    background: 'rgba(10, 10, 10, 0.98)',
+                                    backdropFilter: 'blur(30px)',
+                                    WebkitBackdropFilter: 'blur(30px)',
+                                    border: '1px solid rgba(255,255,255,0.08)',
+                                    boxShadow: '0 40px 100px rgba(0,0,0,0.9), 0 0 0 1px rgba(255,255,255,0.02) inset',
                                 }}
                             >
-                                {/* Icon + header */}
-                                <div className="flex flex-col items-center gap-4 text-center">
-                                    <div
-                                        className="w-14 h-14 rounded-2xl flex items-center justify-center"
-                                        style={{
-                                            background: 'rgba(239,68,68,0.1)',
-                                            border: '1px solid rgba(239,68,68,0.2)',
-                                        }}
+                                {/* Header Section */}
+                                <div className="flex flex-col items-center gap-5 text-center relative z-10">
+                                    <motion.div
+                                        initial={{ scale: 0.9, opacity: 0 }}
+                                        animate={{ scale: 1, opacity: 1 }}
+                                        transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                                        className={`w-14 h-14 rounded-2xl flex items-center justify-center relative border shadow-[0_0_30px_rgba(0,0,0,0.5)] ${
+                                            confirmDialog.variant === 'danger' ? 'bg-red-500/10 border-red-500/20' : 
+                                            confirmDialog.variant === 'warning' ? 'bg-yellow-500/10 border-yellow-500/20' : 
+                                            'bg-white/5 border-white/10'
+                                        }`}
                                     >
-                                        <RotateCcw size={26} strokeWidth={1.5} className="text-red-400" />
-                                    </div>
-                                    <div>
-                                        <h3 className="text-[15px] font-semibold text-white tracking-tight mb-1.5" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-                                            {getTranslation(config, 'reset.title')}
+                                        <div className="absolute inset-0 bg-white/[0.02] rounded-2xl" />
+                                        {confirmDialog.variant === 'danger' ? (
+                                            <Trash2 size={24} strokeWidth={1.5} className="text-red-400 relative z-10" />
+                                        ) : confirmDialog.variant === 'warning' ? (
+                                            <AlertTriangle size={24} strokeWidth={1.5} className="text-yellow-400 relative z-10" />
+                                        ) : (
+                                            <Box size={24} strokeWidth={1.5} className="text-white/80 relative z-10" />
+                                        )}
+                                    </motion.div>
+                                    
+                                    <div className="space-y-2.5">
+                                        <h3 className="text-[19px] font-semibold text-white/90 tracking-tight leading-tight px-2">
+                                            {confirmDialog.title}
                                         </h3>
-                                        <p className="text-[12px] text-white/40 leading-relaxed">
-                                            {getTranslation(config, 'reset.description')}
+                                        <p className="text-[12px] text-white/40 leading-relaxed max-w-[280px] mx-auto font-normal">
+                                            {confirmDialog.description}
                                         </p>
                                     </div>
                                 </div>
 
-                                {/* Actions */}
-                                <div className="flex flex-col gap-2.5">
-                                    <button
-                                        onClick={() => {
-                                            setShowResetConfirm(false);
-                                            localStorage.clear();
-                                            if (window.electron?.resetConfig) {
-                                                window.electron.resetConfig();
-                                            } else {
-                                                window.location.reload();
-                                            }
-                                        }}
-                                        className="w-full py-3 rounded-xl text-[13px] font-semibold tracking-wide transition-all duration-200 hover:brightness-110 active:scale-[0.98]"
-                                        style={{
-                                            background: 'rgba(239,68,68,0.18)',
-                                            border: '1px solid rgba(239,68,68,0.3)',
-                                            color: '#f87171',
-                                        }}
+                                {/* Actions Section */}
+                                <div className="flex flex-col gap-3 relative z-10 pt-2">
+                                    <motion.button
+                                        whileHover={{ scale: 1.01 }}
+                                        whileTap={{ scale: 0.98 }}
+                                        onClick={confirmDialog.onConfirm}
+                                        className={`w-full py-3.5 rounded-xl text-[11px] font-bold tracking-widest uppercase transition-all duration-300 border ${
+                                            confirmDialog.variant === 'danger' 
+                                            ? 'bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white border-red-500/20 shadow-[0_0_20px_rgba(239,68,68,0.1)]' 
+                                            : confirmDialog.variant === 'warning' 
+                                            ? 'bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500 hover:text-white border-yellow-500/20' 
+                                            : 'bg-white/10 text-white hover:bg-white hover:text-black border-white/20'
+                                        }`}
                                     >
-                                        {getTranslation(config, 'reset.confirm')}
-                                    </button>
-                                    <button
-                                        onClick={() => setShowResetConfirm(false)}
-                                        className="w-full py-3 rounded-xl text-[13px] font-medium text-white/40 hover:text-white/70 tracking-wide transition-all duration-200 hover:bg-white/[0.04] border border-transparent hover:border-white/[0.06]"
-                                    >
-                                        {getTranslation(config, 'reset.cancel')}
-                                    </button>
+                                        {confirmDialog.confirmLabel}
+                                    </motion.button>
+                                    
+                                    {confirmDialog.cancelLabel && (
+                                        <motion.button
+                                            whileHover={{ backgroundColor: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.8)' }}
+                                            whileTap={{ scale: 0.98 }}
+                                            onClick={() => setConfirmDialog(null)}
+                                            className="w-full py-3 text-[11px] font-bold text-white/30 tracking-widest transition-all duration-300 uppercase rounded-xl border border-transparent"
+                                        >
+                                            {confirmDialog.cancelLabel}
+                                        </motion.button>
+                                    )}
                                 </div>
                             </div>
                         </motion.div>
@@ -3970,7 +4218,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     />
                 )}
                 <motion.div
-                    className={`relative z-[101] bg-[#0A0A0A]/95 backdrop-blur-3xl overflow-hidden flex flex-row ${!isPage ? 'mx-auto rounded-xl shadow-[0_0_0_1px_rgba(255,255,255,0.05),0_40px_100px_-20px_rgba(0,0,0,0.8)] border border-white/5' : 'w-full h-full border-none'}`}
+                    className={`relative z-[101] bg-black/95 backdrop-blur-3xl overflow-hidden flex flex-row ${!isPage ? 'mx-auto rounded-xl shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_50px_120px_-30px_rgba(0,0,0,0.95)] border border-white/5' : 'w-full h-full border-none'}`}
                     style={!isPage ? { width: isCompact ? '96%' : '90%', maxWidth: 1200, marginTop: isCompact ? 32 : 32, height: isCompact ? 'calc(100% - 64px)' : 'calc(100% - 64px)' } : { width: '100%', height: '100%', paddingTop: 0 }}
                     onClick={(e) => e.stopPropagation()}
                     initial={!isPage ? { opacity: 0, scale: 0.96, y: 40, filter: 'blur(10px)' } : { opacity: 0, x: 20 }}
@@ -4107,40 +4355,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         {!isCompact && (
                             <div className="mt-auto pt-6 border-t border-white/[0.08] space-y-2.5">
                                 <button
-
-                                    onClick={() => {
-                                        if (window.electron && window.electron.openConfigFolder) {
-                                            window.electron.openConfigFolder();
+                                    onClick={() => setConfirmDialog({
+                                        type: 'reset',
+                                        title: 'Resetar Configurações?',
+                                        description: 'Esta ação apagará todos os seus workspaces, apps personalizados e ajustes de interface. Isso não pode ser desfeito.',
+                                        confirmLabel: 'Resetar Tudo',
+                                        cancelLabel: 'Cancelar',
+                                        variant: 'danger',
+                                        onConfirm: () => {
+                                            onReset();
+                                            localStorage.clear();
+                                            if (window.electron?.resetConfig) {
+                                                window.electron.resetConfig();
+                                            } else {
+                                                window.location.reload();
+                                            }
                                         }
-                                    }}
-                                    className={`w-full flex items-center ${isSidebarExpanded ? 'gap-3 px-4' : 'justify-center'} py-2.5 text-white/30 hover:text-white hover:bg-white/5 transition-all duration-300 group relative`}
-                                >
-                                    <div className="flex items-center justify-center transition-all duration-300 relative z-10">
-                                        <motion.div
-                                            whileHover={{ scale: 1.1 }}
-                                            transition={{ type: "spring", stiffness: 300, damping: 15 }}
-                                        >
-                                            <Folder size={isSidebarExpanded ? 16 : 19} strokeWidth={2} />
-                                        </motion.div>
-                                    </div>
-                                    <AnimatePresence mode="wait">
-                                        {isSidebarExpanded && (
-                                            <motion.span
-                                                key="label-config"
-                                                initial={{ opacity: 0, x: -8 }}
-                                                animate={{ opacity: 1, x: 0 }}
-                                                exit={{ opacity: 0, x: -8 }}
-                                                transition={{ duration: 0.2 }}
-                                                className="text-[11px] font-medium tracking-wide whitespace-nowrap ml-px relative z-10"
-                                            >
-                                                {getTranslation(config, 'sidebar.config_folder')}
-                                            </motion.span>
-                                        )}
-                                    </AnimatePresence>
-                                </button>
-
-                                <button
-                                    onClick={() => setShowResetConfirm(true)}
+                                    })}
                                     className={`w-full flex items-center ${isSidebarExpanded ? 'gap-3 px-4' : 'justify-center'} py-2.5 text-red-400/50 hover:text-red-400 hover:bg-red-500/5 transition-all duration-300 group relative`}
                                 >
                                     <div className="flex items-center justify-center transition-all duration-300 relative z-10">

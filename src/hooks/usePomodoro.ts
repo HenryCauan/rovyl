@@ -5,6 +5,11 @@ import {
   PomodoroMode,
   PomodoroTask,
 } from "../types";
+import {
+  loadPomodoroUiPrefs,
+  playPomodoroSegmentEnd,
+  shouldPlayPomodoroSounds,
+} from "../pomodoroSounds";
 
 const DEFAULT_CONFIG: PomodoroConfig = {
   workDuration: 25,
@@ -18,7 +23,15 @@ const STORAGE_KEY_STATE = "zenith_pomodoro_state";
 const STORAGE_KEY_CONFIG = "zenith_pomodoro_config";
 const STORAGE_KEY_TASKS = "zenith_pomodoro_tasks";
 
-export const usePomodoro = () => {
+export type UsePomodoroOptions = {
+  /** Called when a work or break segment reaches zero (natural end or skip). */
+  onSegmentComplete?: (info: { endedMode: PomodoroMode }) => void;
+};
+
+export const usePomodoro = (options?: UsePomodoroOptions) => {
+  const onSegmentCompleteRef = useRef(options?.onSegmentComplete);
+  onSegmentCompleteRef.current = options?.onSegmentComplete;
+
   // --- State Initialization ---
   const [config, setConfig] = useState<PomodoroConfig>(() => {
     const saved = localStorage.getItem(STORAGE_KEY_CONFIG);
@@ -62,25 +75,10 @@ export const usePomodoro = () => {
 
   // --- Timer Logic ---
   const playNotificationSound = () => {
+    if (!shouldPlayPomodoroSounds()) return;
+    if (loadPomodoroUiPrefs().ambientPreset !== "off") return;
     try {
-      const audio = new Audio("/notification.mp3"); // Placeholder - ideally from assets or generated
-      // Fallback to oscillator if file not found (Client side only)
-      const AudioContext =
-        window.AudioContext || (window as any).webkitAudioContext;
-      if (AudioContext) {
-        const ctx = new AudioContext();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.type = "sine";
-        osc.frequency.setValueAtTime(880, ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.5);
-        gain.gain.setValueAtTime(0.3, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.5);
-      }
+      playPomodoroSegmentEnd();
     } catch (e) {
       console.error("Audio play failed", e);
     }
@@ -110,6 +108,7 @@ export const usePomodoro = () => {
 
   const handleTimerComplete = useCallback(() => {
     playNotificationSound();
+    onSegmentCompleteRef.current?.({ endedMode: state.mode });
 
     // Update stats
     if (state.mode === "work") {
@@ -156,28 +155,47 @@ export const usePomodoro = () => {
     switchMode,
   ]);
 
+  // One stable interval while running — do NOT depend on `timeLeft` or the effect will tear down
+  // and recreate the interval every second (extra main-thread work + janky timing).
   useEffect(() => {
-    if (state.isActive && state.timeLeft > 0) {
-      timerRef.current = setInterval(() => {
-        setState((prev) => {
-          if (prev.timeLeft <= 1) {
-            clearInterval(timerRef.current!);
-            return { ...prev, timeLeft: 0 };
-          }
-          return { ...prev, timeLeft: prev.timeLeft - 1 };
-        });
-      }, 1000);
-    } else if (state.timeLeft === 0 && state.isActive) {
-      // Handle completion immediately when hitting 0
-      handleTimerComplete();
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current);
+    if (!state.isActive) {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      return;
+    }
+    if (state.timeLeft <= 0) {
+      return;
     }
 
+    timerRef.current = setInterval(() => {
+      setState((prev) => {
+        if (!prev.isActive) return prev;
+        if (prev.timeLeft <= 1) {
+          if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+          }
+          return { ...prev, timeLeft: 0 };
+        }
+        return { ...prev, timeLeft: prev.timeLeft - 1 };
+      });
+    }, 1000);
+
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
     };
-  }, [state.isActive, state.timeLeft, handleTimerComplete]);
+  }, [state.isActive]);
+
+  // Natural end of countdown (interval above sets timeLeft to 0 while still active)
+  useEffect(() => {
+    if (state.timeLeft !== 0 || !state.isActive) return;
+    handleTimerComplete();
+  }, [state.timeLeft, state.isActive, handleTimerComplete]);
 
   // --- Public Controls ---
   const toggleTimer = () => {

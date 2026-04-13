@@ -1,13 +1,19 @@
 import { LucideIcon } from "lucide-react";
 
+export type SubscriptionTier = "free" | "plus" | "pro";
+
 export interface UserProfile {
   id: string;
   name: string;
   email: string;
   isPremium: boolean;
+  /** Paid tier when billing supports Plus vs Pro; optional until checkout is wired. */
+  planTier?: SubscriptionTier;
   isAdmin?: boolean;
   trialEndsAt?: string; // ISO Date string
   avatarUrl?: string;
+  /** Local profile only (billing / account sync can come later). */
+  address?: string;
 }
 
 export interface AppItem {
@@ -24,6 +30,8 @@ export interface AppItem {
   shortcut?: string;
   children?: AppItem[];
   hasRecents?: boolean; // New: indicates if the app should show recent folders
+  /** When true, MRU sub-items also spawn a terminal in the selected project folder. */
+  openTerminalForRecents?: boolean;
   openTerminal?: boolean; // New: indicates if opening this item should also open a terminal
   terminalCommands?: string[]; // New: list of commands to run automatically in the terminal
 }
@@ -37,12 +45,35 @@ export interface WidgetDefinition {
   defaultLabel: string;
 }
 
+export type NoteSize = 'sm' | 'md' | 'lg' | 'xl';
+
+export interface TodoItem {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
+/** Separate boards for the Notes widget (independent from radial menu workspaces). */
+export interface NoteWorkspace {
+  id: string;
+  name: string;
+}
+
 export interface Note {
   id: string;
   title: string;
   content: string;
+  contentHtml?: string; // Rich-text HTML content
   date: string;
-  color?: string;
+  color?: string; // Background accent color key
+  size?: NoteSize; // Tile size tier for the bento grid
+  position?: { x: number; y: number }; // Infinite canvas floating position
+  dimensions?: { width: number; height: number }; // Free-form resizing dimensions
+  icon?: string; // Lucide icon name for custom visual categorization
+  type?: 'text' | 'todo'; // 'todo' changes rendering to a tick-box list
+  todos?: TodoItem[]; // Payload for 'todo' list mode
+  /** Which notes board this sticky belongs to (defaults to "default"). */
+  workspaceId?: string;
 }
 
 export interface Alarm {
@@ -135,6 +166,19 @@ export interface UIConfig {
   enableMouseTrigger: boolean;
   language: "pt" | "en" | "es" | "fr" | "de" | "it" | "ja" | "zh" | "ko" | "ru";
   performanceMode: boolean; // New: Strict performance mode for zero-lag
+  /** Notes widget fullscreen overlay darkness (0 = transparent, 1 = opaque). */
+  notesWidgetBackdropOpacity?: number;
+  /** Alarms widget fullscreen overlay darkness (0 = transparent, 1 = opaque). */
+  alarmsWidgetBackdropOpacity?: number;
+  /** Pomodoro widget fullscreen overlay darkness (0 = transparent, 1 = opaque). */
+  pomodoroWidgetBackdropOpacity?: number;
+  /** Stopwatch widget fullscreen overlay darkness (0 = transparent, 1 = opaque). */
+  stopwatchWidgetBackdropOpacity?: number;
+  persistenceMeta?: {
+    isFirstRunCompleted?: boolean;
+    lastSuccessfulLoad?: string;
+    version?: number;
+  };
 }
 
 export interface RadialState {
@@ -162,7 +206,16 @@ export interface ElectronAPI {
   onMouseUp: (callback: () => void) => () => void;
   onMmbRelease: (callback: () => void) => () => void;
   onOpenSettings: (callback: () => void) => () => void;
+  /** Fired when the OS hid the window to tray (not a real quit). */
+  onWindowHidToTray: (callback: () => void) => () => void;
+  onWindowNativeDisplayRestored: (
+    callback: (payload: {
+      mode: "small" | "fullscreen" | "windowed";
+    }) => void,
+  ) => () => void;
   setWindowSize: (mode: "small" | "fullscreen" | "windowed") => void;
+  /** 0–1; used to hide the window during fullscreen resize to avoid DWM stretching the old settings frame (flash). */
+  setWindowOpacity: (opacity: number) => void;
   setGameMode: (config: GameModeConfig) => void;
   getFileIcon: (path: string) => Promise<string | null>;
   minimizeWindow: () => void;
@@ -175,8 +228,15 @@ export interface ElectronAPI {
   selectFile: () => Promise<string | null>;
   selectFolder: () => Promise<string | null>;
   selectImage: () => Promise<string | null>;
+  /** Removes a file only if it lives under userData/custom-icons (safe no-op otherwise). */
+  removeManagedCustomIcon: (urlOrPath?: string) => Promise<void>;
+  /** Copy user audio into userData/pomodoro-ambient; returns path or null. */
+  selectPomodoroAudio: () => Promise<string | null>;
+  /** Delete file only if under userData/pomodoro-ambient. */
+  removeManagedPomodoroAudio: (filePath?: string) => Promise<void>;
   getInstalledApps: () => Promise<any[]>;
   getOnboardingApps: () => Promise<any[]>;
+  getStartupApps: () => Promise<any[]>;
   onExecutionError: (callback: (errorMsg: string) => void) => () => void;
   relaunchApp: () => void;
   getSettings: () => Promise<any>;
@@ -184,7 +244,6 @@ export interface ElectronAPI {
   setLoginItemSettings: (settings: { openAtLogin: boolean }) => void;
   openSettingsWindow: () => void;
   resetConfig: () => void;
-  openConfigFolder: () => void;
   toggleSettings: () => void;
   setBackgroundMaterial: (
     material: "none" | "acrylic" | "mica" | "tabbed",
@@ -205,6 +264,8 @@ export interface ElectronAPI {
   stopShortcutRecording: () => void;
   onShortcutRecorded: (callback: (shortcut: string) => void) => () => void;
   saveFullConfig: (config: any) => void;
+  /** Synchronous save to disk (Electron); use before exit so notes persist across reboot. */
+  saveFullConfigSync?: (config: any) => void;
   getFullConfig: () => Promise<any>;
   getAppRecents: (appName: string, appCommand?: string) => Promise<AppItem[]>;
   setWorkspaceShortcutsState: (isOpen: boolean) => void;
@@ -212,6 +273,10 @@ export interface ElectronAPI {
   importConfig: () => Promise<{ success: boolean; error?: string }>;
   startGoogleAuth: () => void;
   onGoogleAuthSuccess: (callback: (user: any) => void) => () => void;
+  onGoogleAuthError?: (callback: (payload: { code?: string; message?: string; userDataPath?: string }) => void) => () => void;
+  savePersistenceLog: (message: string) => void;
+  /** Open URL in the OS default browser (shell.openExternal). */
+  openExternalUrl?: (url: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
 declare global {

@@ -17,6 +17,19 @@ build-out
 release
 diagnostic.log
 
+# Local / one-off artifacts (keep repo lean)
+*_errors.txt
+tsc_output.txt
+clean_log.txt
+temp*.txt
+temp_*.txt
+patch_*.js
+*_patch.js
+apply_*.js
+surgical_patch.js
+backend/*.backup
+backend/debug_*.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

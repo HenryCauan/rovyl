@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { RadialMenu } from './components/RadialMenu';
 import { Toast } from './components/Toast';
 import { SettingsModal } from './components/SettingsModal';
@@ -8,10 +9,65 @@ import { StopwatchWidget } from './components/StopwatchWidget';
 import { PomodoroWidget } from './components/PomodoroWidget';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { usePomodoro } from './hooks/usePomodoro';
-import { Coordinates, AppItem, UIConfig, Note, Alarm, UserProfile, Workspace } from './types';
-import { DEFAULT_APPS, DEFAULT_UI_CONFIG, DEFAULT_WORKSPACES } from './defaults';
-import { BellRing, MousePointer2, Settings, Minus, X, Maximize, Square, AlertTriangle } from 'lucide-react';
+import { Coordinates, AppItem, UIConfig, Note, NoteWorkspace, Alarm, UserProfile, Workspace, PomodoroMode } from './types';
+import {
+  DEFAULT_APPS,
+  DEFAULT_UI_CONFIG,
+  MINIMAL_MAIN_WORKSPACE_APPS,
+  workspaceContainsBundledDemoApp,
+} from './defaults';
+import { MousePointer2, Settings, Minus, X, Maximize, Square, AlertTriangle } from 'lucide-react';
+import { startAlarmRingtone } from './alarmAudio';
+import { AlarmRingingOverlay } from './components/AlarmRingingOverlay';
+import { PomodoroCompleteOverlay } from './components/PomodoroCompleteOverlay';
+import { StartMenuResolvingOverlay } from './components/StartMenuResolvingOverlay';
+import type { Language } from './translations';
+import {
+  loadPomodoroUiPrefs,
+  playPomodoroSegmentEnd,
+  resumePomodoroAudio,
+  shouldPlayPomodoroSounds,
+} from './pomodoroSounds';
 import { motion, AnimatePresence } from 'framer-motion';
+
+const LS_MAIN_DISCOVERY_DONE = 'zenith_main_discovery_done';
+/** Legacy first-run flag — used only to avoid double-running in odd edge cases; repair no longer skips on this alone. */
+const LS_ZENITH_INITIALIZED_LEGACY = 'zenith_initialized';
+
+type StartMenuDiscoveryRow = { Name?: string; Path?: string; Command?: string };
+
+/** Builds Main workspace apps from `get-startup-apps` and appends internal Zenith shortcuts from defaults. */
+async function buildMainAppsFromStartMenuDiscovery(
+  raw: StartMenuDiscoveryRow[],
+): Promise<AppItem[]> {
+  const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const;
+  const built = await Promise.all(
+    raw.map(async (app, idx) => {
+      const cmd = String(app.Command || app.Path || '').trim();
+      let iconUrl = '';
+      try {
+        if (window.electron?.getFileIcon && cmd) {
+          iconUrl = (await window.electron.getFileIcon(cmd)) || '';
+        }
+      } catch {
+        /* ignore */
+      }
+      return {
+        id: crypto.randomUUID(),
+        type: 'app' as const,
+        label: app.Name?.trim() || 'App',
+        iconName: '',
+        iconSource: 'native' as const,
+        customIconUrl: iconUrl,
+        command: cmd,
+        commandType: 'app' as const,
+        description: cmd ? `Menu Iniciar: ${cmd}` : '',
+        direction: directions[idx % 8],
+      };
+    }),
+  );
+  return [...built, ...MINIMAL_MAIN_WORKSPACE_APPS];
+}
 
 // Helper function to find an app by ID anywhere in the nested structure
 const findAppRecursive = (items: AppItem[], id: string): AppItem | undefined => {
@@ -37,30 +93,49 @@ export default function App() {
   const [isAlarmWidgetOpen, setIsAlarmWidgetOpen] = useState(false);
   const [isStopwatchOpen, setIsStopwatchOpen] = useState(false);
   const [isPomodoroOpen, setIsPomodoroOpen] = useState(false);
+  const [pomodoroEndOverlay, setPomodoroEndOverlay] = useState<{
+    endedMode: PomodoroMode;
+    isPreview: boolean;
+  } | null>(null);
 
-  const pomodoro = usePomodoro();
+  const onPomodoroSegmentComplete = useCallback((info: { endedMode: PomodoroMode }) => {
+    setPomodoroEndOverlay({ endedMode: info.endedMode, isPreview: false });
+  }, []);
+
+  const pomodoro = usePomodoro({ onSegmentComplete: onPomodoroSegmentComplete });
 
   // Dashboard/Welcome Screen State
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
 
   const [windowState, setWindowState] = useState<'maximized' | 'windowed'>('windowed');
   const [isLoaded, setIsLoaded] = useState(false);
+  /** Full-screen notice while Windows Start menu is scanned for Main workspace (IPC can take several seconds). */
+  const [startMenuResolving, setStartMenuResolving] = useState<{
+    open: boolean;
+    lang: Language;
+  }>({ open: false, lang: 'pt' });
 
   // User / Auth State (Defaults to null)
   const [user, setUser] = useState<UserProfile | null>(null);
 
   // Alarm Ringing State
-  const [ringingAlarm, setRingingAlarm] = useState<Alarm | null>(null);
+  const [alarmRinging, setAlarmRinging] = useState<{ alarm: Alarm; isPreview: boolean } | null>(null);
+  const [snoozeWake, setSnoozeWake] = useState<{ alarm: Alarm; at: number } | null>(null);
+  const stopAlarmAudioRef = useRef<(() => void) | null>(null);
 
   const [menuPosition, setMenuPosition] = useState<Coordinates>({ x: 0, y: 0 });
   const [triggerSource, setTriggerSource] = useState<'mmb' | 'shortcut'>('shortcut');
   const [lastLaunched, setLastLaunched] = useState<AppItem | null>(null);
   const [executionError, setExecutionError] = useState<string | null>(null);
   const [isDesktopMode, setIsDesktopMode] = useState(false);
+  const isDesktopModeRef = useRef(false);
+  useEffect(() => {
+    isDesktopModeRef.current = isDesktopMode;
+  }, [isDesktopMode]);
   const [isAppReady, setIsAppReady] = useState(true); // Defaults to true so initial loading works normally
 
   // State for Apps and Config (Defaults to initial constants)
-  const [apps, setApps] = useState<AppItem[]>(DEFAULT_APPS);
+  const [apps, setApps] = useState<AppItem[]>(MINIMAL_MAIN_WORKSPACE_APPS);
 
   const [config, setConfig] = useState<UIConfig>(DEFAULT_UI_CONFIG);
   const configRef = useRef(config);
@@ -73,7 +148,66 @@ export default function App() {
   }, [config]);
 
   const [notes, setNotes] = useState<Note[]>([]);
+  const defaultNoteWorkspace: NoteWorkspace = { id: 'default', name: 'Geral' };
+  const [noteWorkspaces, setNoteWorkspaces] = useState<NoteWorkspace[]>([defaultNoteWorkspace]);
+  const [activeNoteWorkspaceId, setActiveNoteWorkspaceId] = useState('default');
   const [alarms, setAlarms] = useState<Alarm[]>([]);
+
+  const alarmsRef = useRef<Alarm[]>(alarms);
+  const alarmRingingRef = useRef(alarmRinging);
+  const snoozeWakeRef = useRef(snoozeWake);
+  /** Evita disparos duplicados no mesmo minuto (e contorna throttling de timers em segundo plano). */
+  const lastScheduledAlarmSlotRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    alarmsRef.current = alarms;
+  }, [alarms]);
+  useEffect(() => {
+    alarmRingingRef.current = alarmRinging;
+  }, [alarmRinging]);
+  useEffect(() => {
+    snoozeWakeRef.current = snoozeWake;
+  }, [snoozeWake]);
+
+  /** Latest snapshot for flush on pagehide / sync disk write (survives reboot). */
+  const persistenceRef = useRef({
+    user: null as UserProfile | null,
+    apps: MINIMAL_MAIN_WORKSPACE_APPS,
+    config: DEFAULT_UI_CONFIG,
+    notes: [] as Note[],
+    alarms: [] as Alarm[],
+    noteWorkspaces: [defaultNoteWorkspace] as NoteWorkspace[],
+    activeNoteWorkspaceId: 'default',
+  });
+  useEffect(() => {
+    persistenceRef.current = {
+      user,
+      apps,
+      config,
+      notes,
+      alarms,
+      noteWorkspaces,
+      activeNoteWorkspaceId,
+    };
+  });
+
+  /** Used by post-launch setTimeout — must never read stale React state or opening the dashboard after launching an app wrongly calls setWindowSize('small') (ignoreMouseEvents → "frozen" UI). */
+  const electronShrinkGateRef = useRef({
+    isSettingsOpen: false,
+    isNotesOpen: false,
+    isPomodoroOpen: false,
+    isDashboardOpen: false,
+    pomodoroEndOverlay: false as boolean,
+  });
+  useEffect(() => {
+    electronShrinkGateRef.current = {
+      isSettingsOpen,
+      isNotesOpen,
+      isPomodoroOpen,
+      isDashboardOpen,
+      pomodoroEndOverlay: !!pomodoroEndOverlay,
+    };
+  }, [isSettingsOpen, isNotesOpen, isPomodoroOpen, isDashboardOpen, pomodoroEndOverlay]);
 
   // Sync Settings with Backend
   useEffect(() => {
@@ -151,31 +285,42 @@ export default function App() {
 
     const heal = async () => {
       let hasUpdates = false;
-      const updatedWorkspaces = await Promise.all(config.workspaces.map(async (ws) => {
-        const healRecursive = async (items: AppItem[]): Promise<AppItem[]> => {
-          return Promise.all(items.map(async (item) => {
-            let newItem = { ...item };
-            if (item.iconSource === 'native' && !item.customIconUrl && item.command) {
-              try {
-                const iconUrl = await window.electron.getFileIcon(item.command);
-                if (iconUrl) {
-                  newItem.customIconUrl = iconUrl;
-                  hasUpdates = true;
+      /** Limits concurrent getFileIcon IPC (large configs used to spawn dozens at once and stall the UI). */
+      const ICON_HEAL_BATCH = 5;
+      const healRecursive = async (items: AppItem[]): Promise<AppItem[]> => {
+        const out: AppItem[] = [];
+        for (let i = 0; i < items.length; i += ICON_HEAL_BATCH) {
+          const chunk = items.slice(i, i + ICON_HEAL_BATCH);
+          const done = await Promise.all(
+            chunk.map(async (item) => {
+              let newItem = { ...item };
+              if (item.iconSource === 'native' && !item.customIconUrl && item.command) {
+                try {
+                  const iconUrl = await window.electron!.getFileIcon(item.command);
+                  if (iconUrl) {
+                    newItem.customIconUrl = iconUrl;
+                    hasUpdates = true;
+                  }
+                } catch (e) {
+                  console.warn(`[Icon Healing] Failed for ${item.label}`);
                 }
-              } catch (e) {
-                console.warn(`[Icon Healing] Failed for ${item.label}`);
               }
-            }
-            if (newItem.children) {
-              newItem.children = await healRecursive(newItem.children);
-            }
-            return newItem;
-          }));
-        };
+              if (newItem.children) {
+                newItem.children = await healRecursive(newItem.children);
+              }
+              return newItem;
+            })
+          );
+          out.push(...done);
+        }
+        return out;
+      };
 
+      const updatedWorkspaces: Workspace[] = [];
+      for (const ws of config.workspaces) {
         const newApps = await healRecursive(ws.apps);
-        return { ...ws, apps: newApps };
-      }));
+        updatedWorkspaces.push({ ...ws, apps: newApps });
+      }
 
       if (hasUpdates) {
         setConfig(prev => ({ ...prev, workspaces: updatedWorkspaces }));
@@ -184,58 +329,6 @@ export default function App() {
 
     heal();
   }, [config.workspaces.length]); // Re-run mainly if workspaces are added/loaded
-
-
-  // Onboarding: Fetch Top 5 Apps on First Run
-  useEffect(() => {
-    const isInitialized = localStorage.getItem('zenith_initialized');
-    if (!isInitialized && window.electron && window.electron.getOnboardingApps) {
-      window.electron.getOnboardingApps().then(async (onboardingApps: any[]) => {
-        if (onboardingApps && onboardingApps.length > 0) {
-          // Fetch icons for onboarding apps to avoid empty icons in production
-          const appsWithIcons = await Promise.all(onboardingApps.map(async (app, idx) => {
-            let iconUrl = '';
-            try {
-              if (window.electron?.getFileIcon) {
-                iconUrl = await window.electron.getFileIcon(app.Path) || '';
-              }
-            } catch (e) {
-              console.warn(`Onboarding: Failed to fetch icon for ${app.Name}`);
-            }
-
-            return {
-              id: crypto.randomUUID(),
-              type: 'app' as const,
-              label: app.Name,
-              iconName: '',
-              iconSource: 'native' as const,
-              customIconUrl: iconUrl,
-              command: app.Path,
-              commandType: 'app' as const,
-              description: `System shortcut for ${app.Name}`,
-              // Map directions in a circular way
-              direction: ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][idx % 8]
-            };
-          }));
-
-          setConfig(prev => {
-            const newWorkspaces = [...prev.workspaces];
-            const mainWsIndex = newWorkspaces.findIndex(ws => ws.name === 'Main');
-
-            if (mainWsIndex !== -1) {
-              newWorkspaces[mainWsIndex] = {
-                ...newWorkspaces[mainWsIndex],
-                apps: appsWithIcons
-              };
-            }
-
-            return { ...prev, workspaces: newWorkspaces };
-          });
-        }
-        localStorage.setItem('zenith_initialized', 'true');
-      });
-    }
-  }, []);
 
 
   // 1. PRIMARY PERSISTENCE: Load from Electron Main or Migrate from LocalStorage
@@ -254,14 +347,31 @@ export default function App() {
         const configStr = localStorage.getItem('zenith_config');
         const notesStr = localStorage.getItem('zenith_notes');
         const alarmsStr = localStorage.getItem('zenith_alarms');
+        const noteWsStr = localStorage.getItem('zenith_note_workspaces');
+        const activeWsStr = localStorage.getItem('zenith_active_note_workspace');
 
-        if (userStr || appsStr || configStr || notesStr || alarmsStr) {
+        if (userStr || appsStr || configStr || notesStr || alarmsStr || noteWsStr) {
+          const parsedNotes: Note[] = notesStr ? JSON.parse(notesStr) : [];
+          let parsedWs: NoteWorkspace[] = [defaultNoteWorkspace];
+          try {
+            if (noteWsStr) {
+              const w = JSON.parse(noteWsStr) as NoteWorkspace[];
+              if (Array.isArray(w) && w.length > 0) parsedWs = w;
+            }
+          } catch {
+            /* keep default */
+          }
           finalData = {
             user: userStr ? JSON.parse(userStr) : null,
-            apps: appsStr ? JSON.parse(appsStr) : DEFAULT_APPS,
+            apps: appsStr ? JSON.parse(appsStr) : MINIMAL_MAIN_WORKSPACE_APPS,
             config: configStr ? JSON.parse(configStr) : DEFAULT_UI_CONFIG,
-            notes: notesStr ? JSON.parse(notesStr) : [],
+            notes: parsedNotes.map((n) => ({ ...n, workspaceId: n.workspaceId || 'default' })),
             alarms: alarmsStr ? JSON.parse(alarmsStr) : [],
+            noteWorkspaces: parsedWs,
+            activeNoteWorkspaceId:
+              activeWsStr && parsedWs.some((w) => w.id === activeWsStr)
+                ? activeWsStr
+                : 'default',
           };
           // Save to main process immediately
           window.electron?.saveFullConfig(finalData);
@@ -269,11 +379,121 @@ export default function App() {
       }
 
       if (finalData) {
+        // Older config-v2.json may omit note boards — recover from localStorage mirror
+        try {
+          const noteWsStr = localStorage.getItem('zenith_note_workspaces');
+          const activeWsStr = localStorage.getItem('zenith_active_note_workspace');
+          if (!finalData.noteWorkspaces?.length && noteWsStr) {
+            const w = JSON.parse(noteWsStr) as NoteWorkspace[];
+            if (Array.isArray(w) && w.length > 0) finalData.noteWorkspaces = w;
+          }
+          if (
+            activeWsStr &&
+            (finalData.noteWorkspaces as NoteWorkspace[] | undefined)?.some(
+              (x) => x.id === activeWsStr,
+            )
+          ) {
+            finalData.activeNoteWorkspaceId = activeWsStr;
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+
+      let nextApps: AppItem[] = MINIMAL_MAIN_WORKSPACE_APPS;
+      let nextConfig: UIConfig = DEFAULT_UI_CONFIG;
+
+      if (finalData) {
+        if (finalData.apps) nextApps = finalData.apps;
+        if (finalData.config) nextConfig = finalData.config;
+      }
+
+      const mainWs = nextConfig.workspaces.find(
+        (ws) => ws.id === 'workspace-1' || ws.name === 'Main',
+      );
+      const discoveryDone = localStorage.getItem(LS_MAIN_DISCOVERY_DONE);
+      const legacyOnboardingDone = localStorage.getItem(LS_ZENITH_INITIALIZED_LEGACY);
+      const hasDemoFingerprint = mainWs ? workspaceContainsBundledDemoApp(mainWs) : false;
+      const mainIsEmpty = !!(mainWs && mainWs.apps.length === 0);
+      const canDiscover = !!window.electron?.getStartupApps;
+
+      const shouldTryStartMenuIpc =
+        canDiscover &&
+        (hasDemoFingerprint ||
+          mainIsEmpty ||
+          (!discoveryDone && !legacyOnboardingDone));
+
+      const stripMainToZenithOnly = () => {
+        const mi = nextConfig.workspaces.findIndex(
+          (ws) => ws.id === 'workspace-1' || ws.name === 'Main',
+        );
+        if (mi === -1) return;
+        const workspaces = [...nextConfig.workspaces];
+        workspaces[mi] = { ...workspaces[mi], apps: MINIMAL_MAIN_WORKSPACE_APPS };
+        nextConfig = { ...nextConfig, workspaces };
+      };
+
+      if (shouldTryStartMenuIpc) {
+        const uiLang = (nextConfig.language || 'pt') as Language;
+        flushSync(() =>
+          setStartMenuResolving({ open: true, lang: uiLang }),
+        );
+        const mainIdx = nextConfig.workspaces.findIndex(
+          (ws) => ws.id === 'workspace-1' || ws.name === 'Main',
+        );
+        try {
+          const discovered = (await window.electron.getStartupApps()) as StartMenuDiscoveryRow[];
+          if (discovered?.length > 0 && mainIdx !== -1) {
+            const mergedApps = await buildMainAppsFromStartMenuDiscovery(discovered);
+            const workspaces = [...nextConfig.workspaces];
+            workspaces[mainIdx] = { ...workspaces[mainIdx], apps: mergedApps };
+            nextConfig = { ...nextConfig, workspaces };
+          } else if (hasDemoFingerprint) {
+            stripMainToZenithOnly();
+          }
+        } catch (e) {
+          console.warn('[Zenith] Start Menu discovery failed:', e);
+          if (hasDemoFingerprint) stripMainToZenithOnly();
+        } finally {
+          flushSync(() =>
+            setStartMenuResolving({ open: false, lang: uiLang }),
+          );
+        }
+        localStorage.setItem(LS_MAIN_DISCOVERY_DONE, 'true');
+      } else if (hasDemoFingerprint) {
+        stripMainToZenithOnly();
+        localStorage.setItem(LS_MAIN_DISCOVERY_DONE, 'true');
+      } else if (!discoveryDone) {
+        localStorage.setItem(LS_MAIN_DISCOVERY_DONE, 'true');
+      }
+
+      if (finalData) {
         if (finalData.user) setUser(finalData.user);
         if (finalData.apps) setApps(finalData.apps);
-        if (finalData.config) setConfig(finalData.config);
-        if (finalData.notes) setNotes(finalData.notes);
+        setConfig(nextConfig);
+        if (finalData.notes) {
+          setNotes(
+            (finalData.notes as Note[]).map((n) => ({
+              ...n,
+              workspaceId: n.workspaceId || 'default',
+            })),
+          );
+        }
+        if (finalData.noteWorkspaces?.length) {
+          setNoteWorkspaces(finalData.noteWorkspaces);
+        }
+        if (
+          finalData.activeNoteWorkspaceId &&
+          (finalData.noteWorkspaces as NoteWorkspace[] | undefined)?.some(
+            (w) => w.id === finalData.activeNoteWorkspaceId,
+          )
+        ) {
+          setActiveNoteWorkspaceId(finalData.activeNoteWorkspaceId);
+        }
         if (finalData.alarms) setAlarms(finalData.alarms);
+      } else {
+        setApps(nextApps);
+        setConfig(nextConfig);
       }
       setIsLoaded(true);
     };
@@ -281,73 +501,315 @@ export default function App() {
     loadPersistence();
   }, []);
 
-  // 2. UNIFIED SAVE EFFECT: Sync to Main Process and LocalStorage
+  // 2. UNIFIED SAVE EFFECT: Sync to Main Process and LocalStorage (disk + LS mirror survives reboot)
   useEffect(() => {
     if (!isLoaded) return;
 
     const timer = setTimeout(() => {
-      const fullData = { user, apps, config, notes, alarms };
-      
-      // Secondary Fallback
+      const fullData = {
+        user,
+        apps,
+        config,
+        notes,
+        alarms,
+        noteWorkspaces,
+        activeNoteWorkspaceId,
+      };
+
       localStorage.setItem('zenith_user', JSON.stringify(user));
       localStorage.setItem('zenith_apps', JSON.stringify(apps));
       localStorage.setItem('zenith_config', JSON.stringify(config));
       localStorage.setItem('zenith_notes', JSON.stringify(notes));
       localStorage.setItem('zenith_alarms', JSON.stringify(alarms));
+      localStorage.setItem('zenith_note_workspaces', JSON.stringify(noteWorkspaces));
+      localStorage.setItem('zenith_active_note_workspace', activeNoteWorkspaceId);
 
-      // Primary Persistence
       if (window.electron?.saveFullConfig) {
         window.electron.saveFullConfig(fullData);
       }
-    }, 1000);
+    }, 400);
 
     return () => clearTimeout(timer);
-  }, [user, apps, config, notes, alarms, isLoaded]);
+  }, [user, apps, config, notes, alarms, noteWorkspaces, activeNoteWorkspaceId, isLoaded]);
 
-  // ALARM LOGIC
+  /** Flush before exit / background so the last edit is not lost (debounce skipped). */
   useEffect(() => {
-    const checkAlarms = () => {
-      const now = new Date();
-      const currentHours = now.getHours().toString().padStart(2, '0');
-      const currentMinutes = now.getMinutes().toString().padStart(2, '0');
-      const currentTimeString = `${currentHours}:${currentMinutes}`;
-      const currentSeconds = now.getSeconds();
+    if (!isLoaded) return;
 
-      if (currentSeconds === 0 && !ringingAlarm) {
-        const matchedAlarm = alarms.find(a => a.enabled && a.time === currentTimeString);
-        if (matchedAlarm) {
-          setRingingAlarm(matchedAlarm);
-          playAlarmSound();
-        }
+    const flushToDisk = () => {
+      const d = persistenceRef.current;
+      const fullData = {
+        user: d.user,
+        apps: d.apps,
+        config: d.config,
+        notes: d.notes,
+        alarms: d.alarms,
+        noteWorkspaces: d.noteWorkspaces,
+        activeNoteWorkspaceId: d.activeNoteWorkspaceId,
+      };
+      try {
+        localStorage.setItem('zenith_user', JSON.stringify(d.user));
+        localStorage.setItem('zenith_apps', JSON.stringify(d.apps));
+        localStorage.setItem('zenith_config', JSON.stringify(d.config));
+        localStorage.setItem('zenith_notes', JSON.stringify(d.notes));
+        localStorage.setItem('zenith_alarms', JSON.stringify(d.alarms));
+        localStorage.setItem('zenith_note_workspaces', JSON.stringify(d.noteWorkspaces));
+        localStorage.setItem('zenith_active_note_workspace', d.activeNoteWorkspaceId);
+      } catch (e) {
+        console.warn('localStorage flush failed', e);
+      }
+      if (window.electron?.saveFullConfigSync) {
+        window.electron.saveFullConfigSync(fullData);
+      } else if (window.electron?.saveFullConfig) {
+        window.electron.saveFullConfig(fullData);
       }
     };
-    const interval = setInterval(checkAlarms, 1000);
-    return () => clearInterval(interval);
-  }, [alarms, ringingAlarm]);
 
-  const playAlarmSound = () => {
-    try {
-      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-      if (AudioContext) {
-        const ctx = new AudioContext();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(440, ctx.currentTime);
-        gain.gain.setValueAtTime(0.5, ctx.currentTime);
-        osc.start();
-        osc.stop(ctx.currentTime + 1);
-      }
-    } catch (e) { console.error(e); }
+    const onPageHide = () => flushToDisk();
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flushToDisk();
+    };
+    window.addEventListener('pagehide', onPageHide);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', onPageHide);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [isLoaded]);
+
+  const normalizeAlarmTime = (t: string) => {
+    const parts = t.trim().split(':');
+    if (parts.length < 2) return t;
+    const h = parts[0].padStart(2, '0');
+    const m = parts[1].padStart(2, '0');
+    return `${h}:${m}`;
   };
+
+  // ALARM: soneca + horário (1 tick/s; dedupe por minuto — não depende só do segundo 0)
+  useEffect(() => {
+    const tick = () => {
+      const now = new Date();
+      const nowMs = now.getTime();
+      const ringing = alarmRingingRef.current;
+      const snooze = snoozeWakeRef.current;
+
+      if (snooze && nowMs >= snooze.at && !ringing) {
+        lastScheduledAlarmSlotRef.current = null;
+        setAlarmRinging({ alarm: snooze.alarm, isPreview: false });
+        setSnoozeWake(null);
+        return;
+      }
+
+      if (ringing) return;
+
+      const hh = now.getHours().toString().padStart(2, '0');
+      const mm = now.getMinutes().toString().padStart(2, '0');
+      const currentTimeString = `${hh}:${mm}`;
+      const dow = now.getDay();
+      const list = alarmsRef.current;
+
+      const matched = list.find((a) => {
+        if (!a.enabled) return false;
+        if (normalizeAlarmTime(a.time) !== currentTimeString) return false;
+        if (a.days && a.days.length > 0 && !a.days.includes(dow)) return false;
+        return true;
+      });
+
+      if (!matched) return;
+
+      const slotKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${hh}-${mm}-${matched.id}`;
+      if (lastScheduledAlarmSlotRef.current === slotKey) return;
+      lastScheduledAlarmSlotRef.current = slotKey;
+      setAlarmRinging({ alarm: matched, isPreview: false });
+    };
+
+    const id = window.setInterval(tick, 1000);
+    tick();
+    return () => window.clearInterval(id);
+  }, []);
+
+  // Garantir janela visível em fullscreen quando o alarme real toca (modo desktop / janela oculta)
+  useEffect(() => {
+    if (!alarmRinging || alarmRinging.isPreview) return;
+    if (!isDesktopMode || !window.electron) return;
+    window.electron.showWindow();
+    window.electron.setWindowSize('fullscreen');
+  }, [alarmRinging, isDesktopMode]);
+
+  useEffect(() => {
+    if (!pomodoroEndOverlay) return;
+    if (!isDesktopMode || !window.electron) return;
+    window.electron.showWindow();
+    window.electron.setWindowSize('fullscreen');
+  }, [pomodoroEndOverlay, isDesktopMode]);
+
+  useEffect(() => {
+    if (alarmRinging) {
+      stopAlarmAudioRef.current = startAlarmRingtone();
+      return () => {
+        stopAlarmAudioRef.current?.();
+        stopAlarmAudioRef.current = null;
+      };
+    }
+    stopAlarmAudioRef.current?.();
+    stopAlarmAudioRef.current = null;
+    return undefined;
+  }, [alarmRinging]);
 
   const lastMiddleClickTime = useRef<number>(0);
   const isHolding = useRef(false);
 
+  // Listen for Google Auth Success
+  useEffect(() => {
+    if (window.electron?.onGoogleAuthSuccess) {
+      return window.electron.onGoogleAuthSuccess((authData: any) => {
+        const trialDate = new Date();
+        trialDate.setDate(trialDate.getDate() + 7);
+
+        const newUser: UserProfile = {
+          id: authData.isAdmin ? 'admin-001' : crypto.randomUUID(),
+          name: authData.name,
+          email: authData.email,
+          isPremium: authData.isPremium,
+          isAdmin: authData.isAdmin,
+          planTier: authData.planTier ?? (authData.isPremium ? 'pro' : 'free'),
+          trialEndsAt: trialDate.toISOString(),
+          avatarUrl: authData.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(authData.name)}&background=0D8ABC&color=fff`,
+        };
+        setUser(newUser);
+        
+        // Ensure settings reflecting the login
+        setIsDashboardOpen(true); 
+      });
+    }
+  }, []);
 
 
+
+  // Window State Management (Interactable vs Passive)
+  // TRACK WINDOW STATE TO PREVENT REDUNDANT IPC CALLS (Reduces Lag/Flicker)
+  const lastWindowState = useRef<'fullscreen' | 'windowed' | 'small' | null>(null);
+  const lastVisibility = useRef<boolean | null>(null);
+  const hideTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  /** OS hid the window (Alt+F4 / close) while React still had dashboard/widgets "open" — sync refs before state so we don't schedule hideWindow twice. */
+  const syncAfterMainWindowHidRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    syncAfterMainWindowHidRef.current = () => {
+      if (hideTimeout.current) {
+        clearTimeout(hideTimeout.current);
+        hideTimeout.current = null;
+      }
+      lastVisibility.current = false;
+      lastWindowState.current = 'small';
+      setIsMenuOpen(false);
+      setIsSettingsOpen(false);
+      setIsDashboardOpen(false);
+      setIsNotesOpen(false);
+      setIsAlarmWidgetOpen(false);
+      setIsStopwatchOpen(false);
+      setIsPomodoroOpen(false);
+      setAlarmRinging(null);
+      setPomodoroEndOverlay(null);
+    };
+  });
+
+  useEffect(() => {
+    if (window.electron && isDesktopMode) {
+      const isAnyInteractive = isMenuOpen || isSettingsOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || !!alarmRinging || !!pomodoroEndOverlay || isDashboardOpen;
+      const targetMode: 'fullscreen' | 'windowed' | 'small' = (isMenuOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || !!alarmRinging || !!pomodoroEndOverlay)
+        ? 'fullscreen'
+        : (isDashboardOpen || isSettingsOpen) ? 'windowed' : 'small';
+
+      const modeChanged = lastWindowState.current !== targetMode;
+      const visibilityChanged = lastVisibility.current !== isAnyInteractive;
+
+      let modeResizeHandled = false;
+
+      // 1. Mode changes while visible (not switching to passive "small" overlay).
+      //    Always resize directly — never use hideWindow() here. The old "dip" path hit transitions
+      //    like small → windowed (after closing the radial menu) and null → windowed, caused
+      //    intermittent fullscreen / no-click bugs on the next open-settings.
+      if (modeChanged && lastVisibility.current && isAnyInteractive && targetMode !== 'small') {
+        window.electron.setWindowSize(targetMode);
+        lastWindowState.current = targetMode;
+        modeResizeHandled = true;
+      }
+
+      // 2. Standard mode update (non-flicker-prone or hidden)
+      if (modeChanged && !modeResizeHandled) {
+        window.electron.setWindowSize(targetMode);
+        lastWindowState.current = targetMode;
+      }
+
+      // 3. Standard visibility update
+      if (visibilityChanged) {
+        if (isAnyInteractive) {
+          if (hideTimeout.current) {
+            clearTimeout(hideTimeout.current);
+            hideTimeout.current = null;
+          }
+          window.electron.showWindow();
+        } else {
+          hideTimeout.current = setTimeout(() => {
+            window.electron.hideWindow();
+          }, 300); // allow exit animations to complete
+        }
+        lastVisibility.current = isAnyInteractive;
+      }
+    }
+  }, [isMenuOpen, isSettingsOpen, isNotesOpen, isAlarmWidgetOpen, isStopwatchOpen, isPomodoroOpen, alarmRinging, pomodoroEndOverlay, isDashboardOpen, isDesktopMode]);
+
+  const openMenu = (x: number, y: number, source: 'mmb' | 'shortcut' = 'shortcut') => {
+    // console.log(`[App.tsx] openMenu called. Source: ${source}`);
+    console.warn(`[App.tsx] openMenu. Source: ${source}, index: ${config.activeWorkspaceIndex}, wsLength: ${config.workspaces?.length}`);
+
+    // Unmount settings/dashboard and commit menu-open state BEFORE resizing the native window.
+    // If setWindowSize('fullscreen') runs first, Windows stretches the old windowed framebuffer (settings UI) for a frame — visible flash.
+    flushSync(() => {
+      setIsSettingsOpen(false);
+      setIsMenuOpen(true);
+      setIsDashboardOpen(false);
+      setTriggerSource(source);
+      if (configRef.current.fixedPosition) {
+        if (isDesktopModeRef.current && typeof window !== 'undefined' && window.screen) {
+          setMenuPosition({ x: window.screen.width / 2, y: window.screen.height / 2 });
+        } else {
+          setMenuPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+        }
+      } else {
+        setMenuPosition({ x, y });
+      }
+    });
+
+    isHolding.current = true;
+
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+
+    // Native window: stay invisible across setBounds(fullscreen) so Windows never composites the old windowed texture.
+    if (window.electron?.setWindowOpacity && isDesktopModeRef.current) {
+      window.electron.setWindowOpacity(0);
+    }
+
+    requestAnimationFrame(() => {
+      if (window.electron && isDesktopModeRef.current) {
+        if (lastWindowState.current !== 'fullscreen') {
+          window.electron.setWindowSize('fullscreen');
+          lastWindowState.current = 'fullscreen';
+        }
+      }
+      requestAnimationFrame(() => {
+        window.electron?.setWindowOpacity?.(1);
+      });
+    });
+  };
+
+  const openMenuRef = useRef(openMenu);
+  openMenuRef.current = openMenu;
+
+  // IPC: menu / dashboard / settings — must run after openMenu exists; use openMenuRef so handler always calls latest openMenu.
   useEffect(() => {
     if (window.electron) {
       setIsDesktopMode(true);
@@ -355,21 +817,31 @@ export default function App() {
     }
 
     const cleanupMenu = window.electron?.onOpenMenu((data: { x: number, y: number, source?: 'mmb' | 'shortcut' }) => {
-      // Close settings if open, then open menu
-      if (isSettingsOpen) {
-        setIsSettingsOpen(false);
-      }
-      openMenu(data.x, data.y, data.source);
+      openMenuRef.current(data.x, data.y, data.source);
     });
 
     const cleanupDashboard = window.electron?.onOpenDashboard(() => {
-      setIsSettingsOpen(false); // Reset to Welcome Screen
+      setIsSettingsOpen(false);
       setIsDashboardOpen(true);
+      // Same as onOpenSettings: always restore native window + hit-testing. If React still thought
+      // the dashboard was "visible" (e.g. window was hidden from the tray/main process), the
+      // visibility effect skips showWindow — leaving ignoreMouseEvents(true) from passive hide.
+      if (window.electron) {
+        window.electron.setWindowSize('windowed');
+        window.electron.showWindow();
+        lastWindowState.current = 'windowed';
+      }
     });
 
-
     const cleanupSettings = window.electron?.onOpenSettings(() => {
-      handleOpenSettings();
+      setIsMenuOpen(false);
+      setIsSettingsOpen(true);
+      setIsDashboardOpen(true);
+      if (window.electron) {
+        window.electron.setWindowSize('windowed');
+        window.electron.showWindow();
+        lastWindowState.current = 'windowed';
+      }
     });
 
     const cleanupWindowState = window.electron?.onWindowState((state) => {
@@ -394,7 +866,21 @@ export default function App() {
       setTimeout(() => setLastLaunched(null), 6000);
     });
 
-    // FIRST RUN CHECK
+    const cleanupWindowHidToTray = window.electron?.onWindowHidToTray(() => {
+      syncAfterMainWindowHidRef.current();
+    });
+
+    const cleanupNativeDisplayRestored =
+      window.electron?.onWindowNativeDisplayRestored?.((payload: {
+        mode: 'small' | 'fullscreen' | 'windowed';
+      }) => {
+        const m = payload?.mode;
+        if (m !== 'fullscreen' && m !== 'windowed' && m !== 'small') return;
+        window.electron?.setWindowSize(m);
+        window.electron?.showWindow();
+        lastWindowState.current = m;
+      });
+
     const hasRunBefore = localStorage.getItem('zenith_first_run_complete');
     if (!hasRunBefore) {
       setIsDashboardOpen(true);
@@ -409,129 +895,10 @@ export default function App() {
       cleanupWindowState?.();
       cleanupMouseUp?.();
       cleanupExecutionError?.();
+      cleanupWindowHidToTray?.();
+      cleanupNativeDisplayRestored?.();
     };
-  }, [isSettingsOpen, isDashboardOpen]);
- 
-  // Listen for Google Auth Success
-  useEffect(() => {
-    if (window.electron?.onGoogleAuthSuccess) {
-      return window.electron.onGoogleAuthSuccess((authData: any) => {
-        const trialDate = new Date();
-        trialDate.setDate(trialDate.getDate() + 7);
-
-        const newUser: UserProfile = {
-          id: authData.isAdmin ? 'admin-001' : crypto.randomUUID(),
-          name: authData.name,
-          email: authData.email,
-          isPremium: authData.isPremium,
-          isAdmin: authData.isAdmin,
-          trialEndsAt: trialDate.toISOString(),
-          avatarUrl: authData.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(authData.name)}&background=0D8ABC&color=fff`,
-        };
-        setUser(newUser);
-        
-        // Ensure settings reflecting the login
-        setIsDashboardOpen(true); 
-      });
-    }
   }, []);
-
-
-
-  // Window State Management (Interactable vs Passive)
-  // TRACK WINDOW STATE TO PREVENT REDUNDANT IPC CALLS (Reduces Lag/Flicker)
-  const lastWindowState = useRef<'fullscreen' | 'windowed' | 'small' | null>(null);
-  const lastVisibility = useRef<boolean | null>(null);
-  const hideTimeout = useRef<NodeJS.Timeout | null>(null);
-
-  useEffect(() => {
-    if (window.electron && isDesktopMode) {
-      const isAnyInteractive = isMenuOpen || isSettingsOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || !!ringingAlarm || isDashboardOpen;
-      const targetMode: 'fullscreen' | 'windowed' | 'small' = (isMenuOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || !!ringingAlarm)
-        ? 'fullscreen'
-        : (isDashboardOpen || isSettingsOpen) ? 'windowed' : 'small';
-
-      const modeChanged = lastWindowState.current !== targetMode;
-      const visibilityChanged = lastVisibility.current !== isAnyInteractive;
-
-      // 1. Handle mode changes if they happen while visible (avoids resize flicker)
-      if (modeChanged && lastVisibility.current && isAnyInteractive && targetMode !== 'small') {
-        // dip visibility during resize
-        window.electron.hideWindow();
-        setTimeout(() => {
-          window.electron.setWindowSize(targetMode);
-          setTimeout(() => {
-            window.electron.showWindow();
-          }, 80); // Stabilization delay for resize + paint
-        }, 10);
-        lastWindowState.current = targetMode;
-        return; 
-      }
-
-      // 2. Standard mode update (non-flicker-prone or hidden)
-      if (modeChanged) {
-        window.electron.setWindowSize(targetMode);
-        lastWindowState.current = targetMode;
-      }
-
-      // 3. Standard visibility update
-      if (visibilityChanged) {
-        if (isAnyInteractive) {
-          if (hideTimeout.current) {
-            clearTimeout(hideTimeout.current);
-            hideTimeout.current = null;
-          }
-          window.electron.showWindow();
-        } else {
-          hideTimeout.current = setTimeout(() => {
-            window.electron.hideWindow();
-          }, 300); // allow exit animations to complete
-        }
-        lastVisibility.current = isAnyInteractive;
-      }
-    }
-  }, [isMenuOpen, isSettingsOpen, isNotesOpen, isAlarmWidgetOpen, isStopwatchOpen, isPomodoroOpen, ringingAlarm, isDashboardOpen, isDesktopMode]);
-
-  const openMenu = (x: number, y: number, source: 'mmb' | 'shortcut' = 'shortcut') => {
-    // console.log(`[App.tsx] openMenu called. Source: ${source}`);
-    console.warn(`[App.tsx] openMenu. Source: ${source}, index: ${config.activeWorkspaceIndex}, wsLength: ${config.workspaces?.length}`);
-    // IMPACT: Force fullscreen immediately to avoid "inside app" feel
-    if (window.electron && isDesktopMode) {
-      // Avoid redundant IPC if already in fullscreen
-      if (lastWindowState.current !== 'fullscreen') {
-        window.electron.setWindowSize('fullscreen');
-        lastWindowState.current = 'fullscreen';
-      }
-
-      if (configRef.current.fixedPosition) {
-        setMenuPosition({ x: window.screen.width / 2, y: window.screen.height / 2 });
-      } else {
-        setMenuPosition({ x, y });
-      }
-    } else {
-      // In simulator mode, we use relative center or absolute cursor
-      if (configRef.current.fixedPosition) {
-        setMenuPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
-      } else {
-        setMenuPosition({ x, y });
-      }
-    }
-
-    setTriggerSource(source);
-    setIsMenuOpen(true);
-    isHolding.current = true;
-    
-    // CRITICAL: Clear focus from any background element (Dashboard buttons, etc.) 
-    // to ensure keyboard events reach the window/menu correctly.
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
-    }
-
-    // IMPACT: Close dashboard when menu opens to reduce UI complexity/layering hits
-    // We do this AFTER setIsMenuOpen(true) so the window size logic in App.tsx 
-    // correctly prioritizes 'fullscreen' mode.
-    setIsDashboardOpen(false);
-  };
 
   // Workspace Switching Handler (Debounced)
   // Uses a debounce so that rapid presses collapse into a single switch
@@ -619,6 +986,7 @@ export default function App() {
     if (isDesktopMode && window.electron) {
       window.electron.setWindowSize('windowed');
       window.electron.showWindow();
+      lastWindowState.current = 'windowed';
     }
   };
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -628,10 +996,18 @@ export default function App() {
     }
   };
 
-  // Double Click (Left) to Open Settings
+  // Double Click (Left) to Open Settings — não dispara com widgets / alarme / overlay abertos
   const handleDoubleClick = (e: React.MouseEvent) => {
-    // Allow double click anywhere on the background to open settings
-    if (!isMenuOpen && !isSettingsOpen && !isNotesOpen && !isPomodoroOpen) {
+    if (
+      !isMenuOpen &&
+      !isSettingsOpen &&
+      !isNotesOpen &&
+      !isPomodoroOpen &&
+      !isAlarmWidgetOpen &&
+      !isStopwatchOpen &&
+      !alarmRinging &&
+      !pomodoroEndOverlay
+    ) {
       handleOpenSettings();
     }
   };
@@ -685,31 +1061,40 @@ export default function App() {
       // console.log("Calling electron.executeCommand...");
       window.electron.executeCommand(command, commandType, options);
       setTimeout(() => {
-        if (!isSettingsOpen && !isNotesOpen && !isPomodoroOpen && !isDashboardOpen) {
+        const g = electronShrinkGateRef.current;
+        if (
+          !g.isSettingsOpen &&
+          !g.isNotesOpen &&
+          !g.isPomodoroOpen &&
+          !g.isDashboardOpen &&
+          !g.pomodoroEndOverlay
+        ) {
           window.electron?.setWindowSize('small');
           // Unified visibility effect will handle hiding automatically based on state
         }
       }, 1000);
     }
-  }
+  };
 
-  const handleMenuClose = (selectedId: string | null) => {
-    // console.log("Menu closing, selectedId:", selectedId);
+  const executeActionRef = useRef(executeAction);
+  executeActionRef.current = executeAction;
+
+  const handleMenuClose = useCallback((selectedId: string | null, selectedApp?: AppItem | null) => {
     setIsMenuOpen(false);
     isHolding.current = false;
 
-    if (!selectedId && isDesktopMode && !isSettingsOpen && !isNotesOpen && !isPomodoroOpen && !ringingAlarm && !isDashboardOpen) {
+    const cfg = configRef.current;
+    const currentWorkspaceApps = cfg.workspaces[cfg.activeWorkspaceIndex]?.apps || apps;
+
+    if (!selectedId && isDesktopMode && !isSettingsOpen && !isNotesOpen && !isPomodoroOpen && !alarmRinging && !pomodoroEndOverlay && !isDashboardOpen) {
       window.electron?.setWindowSize('small');
-      // Unified visibility effect will handle hiding
       return;
     }
 
     if (selectedId) {
-      // If an external app is launched, ensure dashboard is closed
-      const currentWorkspaceApps = config.workspaces[config.activeWorkspaceIndex]?.apps || apps;
-      const app = findAppRecursive(currentWorkspaceApps, selectedId);
-      
-      // Only close dashboard if it's NOT an internal widget (like Pomodoro, Notes, etc.)
+      const app =
+        selectedApp ?? findAppRecursive(currentWorkspaceApps, selectedId);
+
       const isInternalWidget = app?.command?.startsWith('internal:');
       if (!isInternalWidget) {
         setIsDashboardOpen(false);
@@ -717,41 +1102,38 @@ export default function App() {
     }
 
     if (selectedId === '__CENTER__') {
-      const centerConfig = config.centerButton;
-      
+      const centerConfig = cfg.centerButton;
+
       if (centerConfig.type === 'cancel') {
-        if (isDesktopMode && !isSettingsOpen && !isNotesOpen && !isPomodoroOpen && !ringingAlarm && !isDashboardOpen) {
+        if (isDesktopMode && !isSettingsOpen && !isNotesOpen && !isPomodoroOpen && !alarmRinging && !pomodoroEndOverlay && !isDashboardOpen) {
           window.electron?.setWindowSize('small');
-          // Unified visibility effect will handle hiding
         }
         return;
       }
-
-      const currentWorkspaceApps = config.workspaces[config.activeWorkspaceIndex]?.apps || apps;
 
       if (centerConfig.type === 'app' || centerConfig.type === 'widget') {
         const targetApp = findAppRecursive(currentWorkspaceApps, centerConfig.target);
         const command = targetApp ? targetApp.command : centerConfig.target;
         console.log("Center action, target command:", command);
-        executeAction(command, targetApp?.commandType || 'app', targetApp, { 
-          openTerminal: targetApp?.openTerminal, 
-          terminalCommands: targetApp?.terminalCommands 
+        executeActionRef.current(command, targetApp?.commandType || 'app', targetApp, {
+          openTerminal: targetApp?.openTerminal,
+          terminalCommands: targetApp?.terminalCommands
         });
         return;
       } else if (centerConfig.type === 'command') {
-        executeAction(centerConfig.target, centerConfig.commandType || 'app');
+        executeActionRef.current(centerConfig.target, centerConfig.commandType || 'app');
         return;
       }
       return;
     }
 
     if (selectedId) {
-      const currentWorkspaceApps = config.workspaces[config.activeWorkspaceIndex]?.apps || apps;
-      const app = findAppRecursive(currentWorkspaceApps, selectedId);
+      const app =
+        selectedApp ?? findAppRecursive(currentWorkspaceApps, selectedId);
       console.log("Selected app found in active workspace:", app);
       if (app) {
         console.log("Attempting to execute app command:", app.command);
-        executeAction(app.command, app.commandType || 'app', app, { 
+        executeActionRef.current(app.command, app.commandType || 'app', app, {
           openTerminal: app.openTerminal,
           terminalCommands: app.terminalCommands
         });
@@ -759,13 +1141,14 @@ export default function App() {
         console.warn("Could not find app with ID in active workspace:", selectedId);
       }
     }
-  };
+  }, [apps, isDesktopMode, isSettingsOpen, isNotesOpen, isPomodoroOpen, alarmRinging, pomodoroEndOverlay, isDashboardOpen]);
 
 
 
 
   {/* Auth Functions */ }
   const handleLogin = (provider: 'google' | 'email') => {
+    /** Google: Electron opens zenithos.online/auth?client=desktop and bridges id_token from localhost:3892. */
     if (provider === 'google' && window.electron?.startGoogleAuth) {
       window.electron.startGoogleAuth();
       return;
@@ -780,9 +1163,10 @@ export default function App() {
       name: 'Email User',
       isPremium: false,
       isAdmin: false,
+      planTier: 'free',
       trialEndsAt: trialDate.toISOString(),
       avatarUrl: undefined,
-      email: 'user@example.com'
+      email: 'user@example.com',
     };
     setUser(newUser);
   };
@@ -793,8 +1177,49 @@ export default function App() {
     setIsDashboardOpen(true);
   };
 
+  const handleUserProfileUpdate = useCallback((patch: Partial<UserProfile>) => {
+    setUser((u) => (u ? { ...u, ...patch } : null));
+  }, []);
+
+  /** Menu-only slice of config: stable when unrelated settings (e.g. widget opacities) change — keeps RadialMenu from re-rendering the full wheel. */
+  const radialMenuConfig = React.useMemo(
+    () => config,
+    [
+      config.accentColor,
+      config.menuRadius,
+      config.iconSize,
+      config.backdropBlur,
+      config.backdropOpacity,
+      config.menuBackgroundStyle,
+      config.appSpacing,
+      config.activationThreshold,
+      config.centerButton,
+      config.showLabels,
+      config.showClock,
+      config.showDate,
+      config.showBattery,
+      config.showWeather,
+      config.weatherLocation,
+      config.clockPosition,
+      config.workspaces,
+      config.activeWorkspaceIndex,
+      config.language,
+      config.performanceMode,
+    ]
+  );
+
+  const radialApps = React.useMemo(
+    () => config.workspaces[config.activeWorkspaceIndex]?.apps ?? apps,
+    [config.workspaces, config.activeWorkspaceIndex, apps]
+  );
+
+  const radialCurrentWorkspace = React.useMemo(
+    () => config.workspaces[config.activeWorkspaceIndex],
+    [config.workspaces, config.activeWorkspaceIndex]
+  );
+
   // Check if any modal is open
-  const isAnyModalOpen = isSettingsOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || ringingAlarm || isMenuOpen || isDashboardOpen;
+  const isAnyModalOpen = isSettingsOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || alarmRinging || pomodoroEndOverlay || isMenuOpen || isDashboardOpen;
 
   return (
     <div
@@ -816,11 +1241,15 @@ export default function App() {
 
       {/* Visibility Wrapper — ONLY for opaque content (Dashboard, Settings, Widgets) */}
       {/* RadialMenu renders OUTSIDE this wrapper to stay truly transparent */}
+      {/* When radial opens: hide this layer instantly (no opacity transition) — otherwise the 300ms fade shows a flash of the last settings/dashboard frame */}
       <div className={`
-        absolute inset-0 transition-all duration-300 overflow-hidden
-        ${(isDashboardOpen || isSettingsOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || ringingAlarm) ? 'opacity-100' : 'opacity-0 pointer-events-none'}
-        ${(isDashboardOpen || isSettingsOpen) ? 'border border-white/10 rounded-xl shadow-[0_0_50px_rgba(0,0,0,0.5)] bg-[#0A0A0A]' : ''}
-        ${isMenuOpen ? 'opacity-0 pointer-events-none' : ''}
+        absolute inset-0 overflow-hidden
+        ${isMenuOpen
+          ? 'opacity-0 pointer-events-none invisible !transition-none'
+          : `transition-all duration-300 ${(isDashboardOpen || isSettingsOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || alarmRinging || pomodoroEndOverlay) ? 'opacity-100 visible' : 'opacity-0 pointer-events-none invisible'}`
+        }
+        ${!isMenuOpen && (isDashboardOpen || isSettingsOpen) ? 'bg-[#0A0A0A]' : ''}
+        ${!isMenuOpen && (isDashboardOpen || isSettingsOpen) ? 'border border-white/10 rounded-xl shadow-[0_0_50px_rgba(0,0,0,0.5)]' : ''}
       `}>
         {/* CUSTOM TITLE BAR OVERLAY (for drag region + app name) */}
         {(isDashboardOpen || isSettingsOpen) && !isMenuOpen && (
@@ -839,7 +1268,7 @@ export default function App() {
               <button
                 className="w-8 h-6 flex items-center justify-center text-white/30 hover:text-white hover:bg-white/10 rounded-md transition-all duration-200"
                 onClick={() => window.electron?.minimizeWindow()}
-                title="Minimizar"
+                title="Minimizar para a bandeja (sem ícone na barra de tarefas)"
               >
                 <Minus size={13} strokeWidth={2} />
               </button>
@@ -870,7 +1299,7 @@ export default function App() {
         {/* WELCOME SCREEN / DASHBOARD CONTENT AREA */}
         {!isMenuOpen && (
           <AnimatePresence mode="wait">
-            {isDashboardOpen && !isSettingsOpen && !isNotesOpen && !isAlarmWidgetOpen && !isStopwatchOpen && !isPomodoroOpen && !ringingAlarm && (
+            {isDashboardOpen && !isSettingsOpen && !isNotesOpen && !isAlarmWidgetOpen && !isStopwatchOpen && !isPomodoroOpen && !alarmRinging && !pomodoroEndOverlay && (
               <motion.div
                 key="welcome"
                 initial={{ opacity: 0, x: -20, filter: 'blur(10px)' }}
@@ -887,6 +1316,7 @@ export default function App() {
                   user={user}
                   onLogin={handleLogin}
                   onLogout={handleLogout}
+                  onUserProfileUpdate={handleUserProfileUpdate}
                 />
               </motion.div>
             )}
@@ -906,7 +1336,24 @@ export default function App() {
                   onClose={() => {
                     setIsSettingsOpen(false);
                   }}
-                  apps={apps} setApps={setApps} config={config} setConfig={setConfig} onReset={() => { setApps(DEFAULT_APPS); setConfig(DEFAULT_UI_CONFIG); }}
+                  apps={apps} setApps={setApps} config={config} setConfig={setConfig} onReset={async () => { 
+                    try {
+                      setIsDashboardOpen(false);
+                      setIsSettingsOpen(false);
+                      setIsAppReady(false);
+                      setIsLoaded(false);
+                    } catch(e) {}
+                    setApps(MINIMAL_MAIN_WORKSPACE_APPS); 
+                    setConfig(DEFAULT_UI_CONFIG); 
+                    if (window.electron?.resetConfig) {
+                        try {
+                           await window.electron.resetConfig();
+                        } catch(e) {}
+                    } else {
+                        localStorage.clear();
+                        window.location.reload();
+                    }
+                  }}
                   onOpenDashboard={() => {
                     setIsSettingsOpen(false);
                     setIsDashboardOpen(true);
@@ -919,32 +1366,85 @@ export default function App() {
           </AnimatePresence>
         )}
 
-        {/* ALARM OVERLAY */}
-        <AnimatePresence>
-          {ringingAlarm && (
-            <motion.div
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/90 backdrop-blur-xl"
-            >
-              <motion.div animate={{ scale: [1, 1.1, 1], rotate: [0, -2, 2, 0] }} transition={{ repeat: Infinity, duration: 0.5 }} className="mb-8">
-                <BellRing size={80} className="text-red-500" />
-              </motion.div>
-              <h1 className="text-8xl font-thin text-white mb-4 tracking-tighter tabular-nums">{ringingAlarm.time}</h1>
-              <h2 className="text-2xl font-light text-white/70 mb-12 uppercase tracking-widest">{ringingAlarm.label}</h2>
-              <button onClick={() => setRingingAlarm(null)} className="px-12 py-4 bg-white text-black text-lg font-bold rounded-full hover:scale-105 transition-transform">FECHAR</button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-
-
-        <NotesWidget isOpen={isNotesOpen} onClose={() => { setIsNotesOpen(false); }} notes={notes} setNotes={setNotes} config={config} />
-        <AlarmWidget isOpen={isAlarmWidgetOpen} onClose={() => { setIsAlarmWidgetOpen(false); }} alarms={alarms} setAlarms={setAlarms} config={config} />
-        <StopwatchWidget isOpen={isStopwatchOpen} onClose={() => { setIsStopwatchOpen(false); }} config={config} />
-        <PomodoroWidget isOpen={isPomodoroOpen} onClose={() => { setIsPomodoroOpen(false); }} {...pomodoro} uiConfig={config} />
+        <NotesWidget
+          isOpen={isNotesOpen}
+          onClose={() => { setIsNotesOpen(false); }}
+          notes={notes}
+          setNotes={setNotes}
+          config={config}
+          setConfig={setConfig}
+          noteWorkspaces={noteWorkspaces}
+          setNoteWorkspaces={setNoteWorkspaces}
+          activeNoteWorkspaceId={activeNoteWorkspaceId}
+          setActiveNoteWorkspaceId={setActiveNoteWorkspaceId}
+        />
+        <AlarmWidget
+          isOpen={isAlarmWidgetOpen}
+          onClose={() => { setIsAlarmWidgetOpen(false); }}
+          alarms={alarms}
+          setAlarms={setAlarms}
+          config={config}
+          setConfig={setConfig}
+          onPreviewAlarm={(a) => setAlarmRinging({ alarm: a, isPreview: true })}
+        />
+        <StopwatchWidget
+          isOpen={isStopwatchOpen}
+          onClose={() => {
+            setIsStopwatchOpen(false);
+          }}
+          config={config}
+          setConfig={setConfig}
+        />
+        <PomodoroWidget
+          isOpen={isPomodoroOpen}
+          onClose={() => { setIsPomodoroOpen(false); }}
+          {...pomodoro}
+          uiConfig={config}
+          setConfig={setConfig}
+          onPreviewSessionEnd={(mode) => {
+            if (shouldPlayPomodoroSounds()) {
+              void resumePomodoroAudio();
+              if (loadPomodoroUiPrefs().ambientPreset === 'off') {
+                playPomodoroSegmentEnd();
+              }
+            }
+            setPomodoroEndOverlay({ endedMode: mode, isPreview: true });
+          }}
+        />
 
 
       </div>
+
+      {/* ALARM — fora da camada opaca: visível mesmo com janela “passiva” / nada aberto */}
+      <AnimatePresence>
+        {alarmRinging && (
+          <AlarmRingingOverlay
+            key={`${alarmRinging.alarm.id}-${alarmRinging.isPreview ? 'p' : 'r'}`}
+            alarm={alarmRinging.alarm}
+            isPreview={alarmRinging.isPreview}
+            config={config}
+            onDismiss={() => setAlarmRinging(null)}
+            onSnoozeMinutes={(minutes) => {
+              const a = alarmRinging.alarm;
+              setAlarmRinging(null);
+              setSnoozeWake({ alarm: a, at: Date.now() + minutes * 60 * 1000 });
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {pomodoroEndOverlay && (
+          <PomodoroCompleteOverlay
+            key={`pomodoro-end-${pomodoroEndOverlay.endedMode}-${pomodoroEndOverlay.isPreview ? 'p' : 'r'}`}
+            endedMode={pomodoroEndOverlay.endedMode}
+            isPreview={pomodoroEndOverlay.isPreview}
+            config={config}
+            onDismiss={() => setPomodoroEndOverlay(null)}
+          />
+        )}
+      </AnimatePresence>
+
       {/* ------------------------------------------------------------------ */}
       {/* TRANSPARENT LAYER — no background, RadialMenu + toasts live here    */}
       {/* ------------------------------------------------------------------ */}
@@ -953,11 +1453,11 @@ export default function App() {
           isOpen={isMenuOpen}
           position={menuPosition}
           onClose={handleMenuClose}
-          apps={config.workspaces[config.activeWorkspaceIndex]?.apps || apps}
-          config={config}
+          apps={radialApps}
+          config={radialMenuConfig}
           triggerSource={triggerSource}
           onWorkspaceSwitch={handleWorkspaceSwitch}
-          currentWorkspace={config.workspaces[config.activeWorkspaceIndex]}
+          currentWorkspace={radialCurrentWorkspace}
         />
 
         <Toast app={lastLaunched} />
@@ -985,6 +1485,12 @@ export default function App() {
             </div>
           )}
         </AnimatePresence>
+
+        <StartMenuResolvingOverlay
+          open={startMenuResolving.open}
+          language={startMenuResolving.lang}
+          accentColor={config.accentColor}
+        />
 
         {/* FLASH PREVENTION BLANKER */}
         {!isAppReady && (

@@ -1,31 +1,45 @@
-import React, { useState, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { X, Play, Pause, RotateCcw, Flag } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback, Dispatch, SetStateAction } from 'react';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { X, Play, Pause, RotateCcw, Flag, Droplets } from 'lucide-react';
 import { UIConfig } from '../types';
 import { getTranslation } from '../translations';
+
+const FONT = "'Space Grotesk', ui-sans-serif, system-ui, sans-serif";
 
 interface StopwatchWidgetProps {
   isOpen: boolean;
   onClose: () => void;
   config: UIConfig;
+  setConfig: Dispatch<SetStateAction<UIConfig>>;
 }
 
-export const StopwatchWidget: React.FC<StopwatchWidgetProps> = ({ isOpen, onClose, config }) => {
+export const StopwatchWidget: React.FC<StopwatchWidgetProps> = ({ isOpen, onClose, config, setConfig }) => {
   const [isRunning, setIsRunning] = useState(false);
   const [time, setTime] = useState(0);
   const [laps, setLaps] = useState<number[]>([]);
   const startTimeRef = useRef<number>(0);
   const requestRef = useRef<number>(0);
   const previousTimeRef = useRef<number>(0);
+  const timeRef = useRef<number>(0);
+  const reducedMotion = useReducedMotion();
+
+  useEffect(() => {
+    timeRef.current = time;
+  }, [time]);
 
   const t = (key: string) => getTranslation(config, key);
-  const accent = config.accentColor || '#ffffff';
 
-  const animate = (timeNow: number) => {
+  const animate = useCallback((timeNow: number) => {
     const deltaTime = timeNow - startTimeRef.current;
     setTime(previousTimeRef.current + deltaTime);
     requestRef.current = requestAnimationFrame(animate);
-  };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+    };
+  }, []);
 
   const handleStart = () => {
     if (!isRunning) {
@@ -39,7 +53,7 @@ export const StopwatchWidget: React.FC<StopwatchWidgetProps> = ({ isOpen, onClos
     if (isRunning) {
       setIsRunning(false);
       cancelAnimationFrame(requestRef.current);
-      previousTimeRef.current = time;
+      previousTimeRef.current = timeRef.current;
     }
   };
 
@@ -52,15 +66,51 @@ export const StopwatchWidget: React.FC<StopwatchWidgetProps> = ({ isOpen, onClos
   };
 
   const handleLap = () => {
-    if (isRunning) setLaps([time, ...laps]);
+    if (isRunning) setLaps((prev) => [timeRef.current, ...prev]);
   };
 
   const fmt = (ms: number) => {
-    const min = Math.floor(ms / 60000).toString().padStart(2, '0');
-    const sec = Math.floor((ms % 60000) / 1000).toString().padStart(2, '0');
-    const cs = Math.floor((ms % 1000) / 10).toString().padStart(2, '0');
+    const min = Math.floor(ms / 60000)
+      .toString()
+      .padStart(2, '0');
+    const sec = Math.floor((ms % 60000) / 1000)
+      .toString()
+      .padStart(2, '0');
+    const cs = Math.floor((ms % 1000) / 10)
+      .toString()
+      .padStart(2, '0');
     return { min, sec, cs, full: `${min}:${sec}.${cs}` };
   };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (isRunning) handlePause();
+        else handleStart();
+        return;
+      }
+      if (e.key === 'r' || e.key === 'R') {
+        e.preventDefault();
+        handleReset();
+        return;
+      }
+      if (e.key === 'l' || e.key === 'L') {
+        e.preventDefault();
+        handleLap();
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, isRunning, onClose]);
 
   if (!isOpen) return null;
 
@@ -68,130 +118,222 @@ export const StopwatchWidget: React.FC<StopwatchWidgetProps> = ({ isOpen, onClos
   const bestLap = laps.length > 1 ? Math.min(...laps) : null;
   const worstLap = laps.length > 1 ? Math.max(...laps) : null;
 
+  const glassSurface =
+    'bg-[rgba(12,12,14,0.9)] backdrop-blur-[48px] border border-white/[0.06] shadow-[0_40px_100px_-20px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.04)]';
+
+  const backdropAlpha = Math.min(
+    1,
+    Math.max(0, config.stopwatchWidgetBackdropOpacity ?? 0.55),
+  );
+
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+    <div className="fixed inset-0 z-[60] flex cursor-default items-center justify-center p-5">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        transition={{ duration: 0.18 }}
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        transition={{ duration: 0.3 }}
+        className="absolute inset-0 backdrop-blur-[40px]"
+        style={{ backgroundColor: `rgba(6, 6, 8, ${backdropAlpha})` }}
         onClick={onClose}
       />
 
-      <motion.div
-        initial={{ scale: 0.96, opacity: 0, y: 6 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.96, opacity: 0, y: 6 }}
-        transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-        className="relative w-[420px] z-[70] overflow-hidden"
-        style={{
-          background: 'rgba(10, 10, 13, 0.92)',
-          backdropFilter: 'blur(40px) saturate(150%)',
-          WebkitBackdropFilter: 'blur(40px) saturate(150%)',
-          border: '1px solid rgba(255,255,255,0.07)',
-          borderRadius: '20px',
-          boxShadow: '0 32px 80px -8px rgba(0,0,0,0.9), inset 0 1px 0 rgba(255,255,255,0.05)',
-        }}
-        onClick={e => e.stopPropagation()}
+      <label
+        className="pointer-events-auto absolute right-5 top-5 z-[65] flex cursor-pointer items-center gap-2 rounded-2xl border border-white/[0.08] bg-black/25 px-3 py-2 backdrop-blur-md"
+        title={t('stopwatch.backdrop_opacity')}
+        onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 pt-4 pb-2">
-          <div className="flex items-center gap-2">
-            <motion.div
-              animate={{ opacity: isRunning ? [1, 0.3, 1] : 0.25 }}
-              transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
-              className="w-1.5 h-1.5 rounded-full"
-              style={{ backgroundColor: isRunning ? accent : 'rgba(255,255,255,0.3)' }}
+        <Droplets size={14} className="shrink-0 text-white/45" strokeWidth={1.5} />
+        <input
+          type="range"
+          min={0}
+          max={100}
+          value={Math.round(backdropAlpha * 100)}
+          onChange={(e) =>
+            setConfig((prev) => ({
+              ...prev,
+              stopwatchWidgetBackdropOpacity: Number(e.target.value) / 100,
+            }))
+          }
+          className="h-1 w-[80px] cursor-pointer appearance-none rounded-full bg-white/15 accent-white [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white/85"
+        />
+      </label>
+
+      <motion.div
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('stopwatch.title')}
+        initial={{ opacity: 0, scale: 0.97, y: 8 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.97, y: 8 }}
+        transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
+        className={`relative z-[70] w-full max-w-[min(92vw,340px)] overflow-hidden rounded-[28px] ${glassSurface}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 pt-5">
+          <div className="flex min-w-0 items-center gap-3">
+            <motion.span
+              animate={
+                reducedMotion
+                  ? { opacity: isRunning ? 1 : 0.25 }
+                  : { opacity: isRunning ? [0.4, 1, 0.4] : 0.2 }
+              }
+              transition={
+                reducedMotion
+                  ? { duration: 0.2 }
+                  : { duration: 1.2, repeat: Infinity, ease: 'easeInOut' }
+              }
+              className="h-1.5 w-1.5 shrink-0 rounded-full bg-white"
+              style={{ boxShadow: isRunning ? '0 0 12px rgba(255,255,255,0.4)' : 'none' }}
             />
-            <span className="text-[10px] font-semibold text-white/30 uppercase tracking-widest">
-              {t('stopwatch.chronograph')}
+            <span
+              className="text-[10px] font-semibold uppercase tracking-[0.28em] text-white/28"
+              style={{ fontFamily: FONT }}
+            >
+              {t('stopwatch.title')}
             </span>
           </div>
-          <button onClick={onClose} className="text-white/20 hover:text-white/60 transition-colors duration-150">
-            <X size={15} />
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white/22 transition-colors duration-200 hover:bg-white/[0.05] hover:text-white/55"
+            aria-label="Close"
+          >
+            <X size={17} strokeWidth={1.5} />
           </button>
         </div>
 
-        {/* Main digits */}
-        <div className="px-6 py-4 flex items-baseline gap-0 select-none" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-          <span className="text-[72px] font-medium text-white tracking-[-0.04em] tabular-nums leading-none">{min}</span>
-          <span className="text-[72px] font-medium leading-none" style={{ color: 'rgba(255,255,255,0.18)', margin: '0 -2px' }}>:</span>
-          <span className="text-[72px] font-medium text-white tracking-[-0.04em] tabular-nums leading-none">{sec}</span>
-          <span className="text-[32px] font-medium tabular-nums leading-none ml-2 mb-1" style={{ color: 'rgba(255,255,255,0.3)' }}>.{cs}</span>
+        <div className="flex flex-col items-center px-4 pt-6 pb-2">
+          <div className="flex items-baseline justify-center" style={{ fontFamily: FONT }}>
+            <span
+              className="font-light tabular-nums tracking-[-0.05em] text-white"
+              style={{ fontSize: 'clamp(3.25rem, 14vw, 4.25rem)', lineHeight: 0.95 }}
+            >
+              {min}
+            </span>
+            <span
+              className="mx-0.5 font-light tabular-nums text-white/22"
+              style={{ fontSize: 'clamp(3.25rem, 14vw, 4.25rem)', lineHeight: 0.95 }}
+              aria-hidden
+            >
+              :
+            </span>
+            <span
+              className="font-light tabular-nums tracking-[-0.05em] text-white"
+              style={{ fontSize: 'clamp(3.25rem, 14vw, 4.25rem)', lineHeight: 0.95 }}
+            >
+              {sec}
+            </span>
+            <span
+              className="ml-1.5 self-end pb-1 font-medium tabular-nums text-white/32"
+              style={{ fontSize: 'clamp(1.35rem, 5.5vw, 1.75rem)' }}
+            >
+              .{cs}
+            </span>
+          </div>
         </div>
 
-        {/* Controls */}
-        <div className="flex items-center justify-between px-6 pb-4">
-          <div className="flex items-center gap-1">
-            <button
-              onClick={handleReset}
-              title="Reset"
-              className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/30 hover:text-white/70 transition-colors duration-150"
-            >
-              Reset
-            </button>
-            <button
-              onClick={handleLap}
-              disabled={!isRunning}
-              title="Lap"
-              className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/30 hover:text-white/70 transition-colors duration-150 disabled:opacity-20 disabled:cursor-not-allowed"
-            >
-              Lap
-            </button>
-          </div>
+        <div className="flex items-center justify-center gap-3 px-5 pb-6 pt-4">
+          <motion.button
+            type="button"
+            whileTap={{ scale: 0.94 }}
+            onClick={handleReset}
+            title={t('stopwatch.reset')}
+            aria-label={t('stopwatch.reset')}
+            className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/[0.07] bg-white/[0.03] text-white/30 transition-colors duration-200 hover:border-white/[0.12] hover:bg-white/[0.06] hover:text-white/55"
+          >
+            <RotateCcw size={18} strokeWidth={1.5} />
+          </motion.button>
 
           <motion.button
-            whileHover={{ scale: 1.04 }}
-            whileTap={{ scale: 0.96 }}
+            type="button"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
             onClick={isRunning ? handlePause : handleStart}
-            className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold transition-all duration-200"
+            title={isRunning ? t('stopwatch.pause') : t('stopwatch.start')}
+            aria-label={isRunning ? t('stopwatch.pause') : t('stopwatch.start')}
+            className="flex h-[76px] w-[76px] items-center justify-center rounded-full border transition-all duration-300"
             style={
               isRunning
-                ? { background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.75)', border: '1px solid rgba(255,255,255,0.1)' }
-                : { backgroundColor: accent, color: '#000', border: `1px solid ${accent}` }
+                ? {
+                    background: 'rgba(255,255,255,0.06)',
+                    borderColor: 'rgba(255,255,255,0.12)',
+                    color: 'rgba(255,255,255,0.9)',
+                  }
+                : {
+                    background: 'rgba(255,255,255,0.96)',
+                    borderColor: 'rgba(255,255,255,0.2)',
+                    color: '#0a0a0a',
+                  }
             }
           >
-            {isRunning
-              ? <><Pause size={14} fill="currentColor" />Pause</>
-              : <><Play size={14} fill="currentColor" className="ml-0.5" />Start</>
-            }
+            {isRunning ? (
+              <Pause size={30} fill="currentColor" className="opacity-90" />
+            ) : (
+              <Play size={30} fill="currentColor" className="ml-1 opacity-95" />
+            )}
+          </motion.button>
+
+          <motion.button
+            type="button"
+            whileTap={{ scale: 0.94 }}
+            onClick={handleLap}
+            disabled={!isRunning}
+            title={t('stopwatch.lap')}
+            aria-label={t('stopwatch.lap')}
+            className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/[0.07] bg-white/[0.03] text-white/30 transition-colors duration-200 hover:border-white/[0.12] hover:bg-white/[0.06] hover:text-white/55 disabled:pointer-events-none disabled:opacity-[0.15]"
+          >
+            <Flag size={18} strokeWidth={1.5} />
           </motion.button>
         </div>
 
-        {/* Lap list — only when there are laps */}
-        <AnimatePresence>
+        <AnimatePresence mode="wait">
           {laps.length > 0 && (
             <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.22 }}
-              className="overflow-hidden"
+              key="laps"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+              className="overflow-hidden border-t border-white/[0.05]"
             >
-              <div
-                className="mx-4 mb-4 rounded-xl overflow-hidden"
-                style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.05)' }}
-              >
-                <div className="max-h-[160px] overflow-y-auto custom-scrollbar">
+              <div className="px-5 pb-5 pt-4">
+                <p
+                  className="mb-3 text-center text-[9px] font-semibold uppercase tracking-[0.22em] text-white/18"
+                  style={{ fontFamily: FONT }}
+                >
+                  {t('stopwatch.lap')}
+                </p>
+                <div className="max-h-[min(26vh,180px)] space-y-0 overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                   {laps.map((lapTime, index) => {
-                    const lapNum = (laps.length - index).toString().padStart(2, '0');
+                    const n = laps.length - index;
                     const isBest = lapTime === bestLap;
-                    const isWorst = lapTime === worstLap;
+                    const isWorst = lapTime === worstLap && bestLap !== worstLap;
                     return (
                       <motion.div
-                        key={laps.length - index}
-                        initial={{ opacity: 0, x: 8 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ duration: 0.15 }}
-                        className="flex items-center justify-between px-4 py-2.5 border-b border-white/[0.03] last:border-0"
+                        key={`${n}-${lapTime}`}
+                        layout
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                        className="flex items-baseline justify-between gap-4 border-b border-white/[0.04] py-2.5 last:border-0"
                       >
-                        <span className="text-[10px] font-medium text-white/25 tabular-nums" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                          LAP {lapNum}
-                          {isBest && <span className="ml-2 text-emerald-400/60">↓</span>}
-                          {isWorst && <span className="ml-2 text-red-400/40">↑</span>}
+                        <span
+                          className="shrink-0 text-[11px] tabular-nums text-white/22"
+                          style={{ fontFamily: FONT }}
+                        >
+                          {String(n).padStart(2, '0')}
                         </span>
-                        <span className="text-xs font-medium text-white/70 tabular-nums" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                        <span
+                          className={`min-w-0 text-right text-[13px] font-medium tabular-nums tracking-tight ${
+                            isBest
+                              ? 'text-white/75'
+                              : isWorst
+                                ? 'text-white/38'
+                                : 'text-white/52'
+                          }`}
+                          style={{ fontFamily: FONT }}
+                        >
                           {fmt(lapTime).full}
                         </span>
                       </motion.div>
@@ -202,6 +344,7 @@ export const StopwatchWidget: React.FC<StopwatchWidgetProps> = ({ isOpen, onClos
             </motion.div>
           )}
         </AnimatePresence>
+
       </motion.div>
     </div>
   );

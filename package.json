@@ -19,7 +19,8 @@
     "lucide-react": "^0.292.0",
     "node-global-key-listener": "^0.1.1",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "sql.js": "^1.14.1"
   },
   "devDependencies": {
     "@types/react": "^18.2.37",
@@ -45,7 +46,8 @@
     "asar": true,
     "asarUnpack": [
       "backend/*.ps1",
-      "resources/bin/**/*"
+      "resources/bin/**/*",
+      "node_modules/sql.js/dist/sql-wasm.wasm"
     ],
     "directories": {
       "output": "build-out"
@@ -62,7 +64,9 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "guid": "5e135f2a-7b3b-4e12-8c14-998822334455",
-      "artifactName": "${productName} Setup ${version}.${ext}"
+      "artifactName": "${productName} Setup ${version}.${ext}",
+      "include": "nsis/installer.nsh",
+      "deleteAppDataOnUninstall": true
     }
   }
 }

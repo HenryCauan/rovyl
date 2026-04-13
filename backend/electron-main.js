@@ -14,22 +14,11 @@ const path = require("path");
 const { exec, spawn } = require("child_process");
 const os = require("os");
 const fs = require("fs");
+const crypto = require("crypto");
 const { GlobalKeyboardListener } = require("node-global-key-listener");
 const http = require("http");
 const https = require("https");
 const url = require("url");
-
-// Load .env.local manually
-const envPath = path.join(__dirname, "..", ".env.local");
-if (fs.existsSync(envPath)) {
-  const envContent = fs.readFileSync(envPath, "utf8");
-  envContent.split(/\r?\n/).forEach(line => {
-    const [key, value] = line.split("=");
-    if (key && value) {
-      process.env[key.trim()] = value.trim();
-    }
-  });
-}
 
 const isDev = !app.isPackaged;
 const logDir = isDev
@@ -74,6 +63,56 @@ const diagLog = (msg) => {
   }
 };
 
+/** Merge KEY=value lines into process.env (later files override). Supports values containing "=". */
+function applyEnvFileContent(content) {
+  content.split(/\r?\n/).forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) return;
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) return;
+    const key = trimmed.slice(0, eq).trim();
+    let val = trimmed.slice(eq + 1).trim();
+    if (
+      (val.startsWith('"') && val.endsWith('"')) ||
+      (val.startsWith("'") && val.endsWith("'"))
+    ) {
+      val = val.slice(1, -1);
+    }
+    if (key) process.env[key] = val;
+  });
+}
+
+/**
+ * Packaged apps don't ship the repo-root .env.local. Load from (in order, last wins per key):
+ * - project / asar parent (dev or rare bundled file)
+ * - resources (extraResources / beside installer)
+ * - userData (recommended for installed builds: copy .env.local here)
+ */
+function loadEnvLocalFiles() {
+  const paths = [path.join(__dirname, "..", ".env.local")];
+  try {
+    if (process.resourcesPath) {
+      paths.push(path.join(process.resourcesPath, ".env.local"));
+    }
+  } catch (_) {}
+  try {
+    paths.push(path.join(app.getPath("userData"), ".env.local"));
+  } catch (_) {}
+
+  for (const envPath of paths) {
+    try {
+      if (!envPath || !fs.existsSync(envPath)) continue;
+      const envContent = fs.readFileSync(envPath, "utf8");
+      applyEnvFileContent(envContent);
+      diagLog(`[Env] Loaded .env-style file: ${envPath}`);
+    } catch (e) {
+      diagLog(`[Env] Failed to read ${envPath}: ${e.message}`);
+    }
+  }
+}
+
+loadEnvLocalFiles();
+
 // Periodic flush to ensure logs aren't stuck in queue
 setInterval(processLogQueue, 5000);
 
@@ -111,7 +150,42 @@ const getAssetPath = (...paths) => {
   );
 };
 
+/** VS Code–family IDEs store MRU as a raw array or { entries: [...] }; Cursor/Antigravity often keep history only in state.vscdb. */
+function normalizeRecentlyOpenedPathsList(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "object" && Array.isArray(raw.entries)) return raw.entries;
+  return [];
+}
+
+async function loadRecentlyOpenedPathsFromVscdb(vscdbPath) {
+  try {
+    const initSqlJs = require("sql.js");
+    const distDir = path.dirname(require.resolve("sql.js"));
+    const unpackedDist = distDir.replace(/app\.asar([\\/])/, "app.asar.unpacked$1");
+    const wasmDir =
+      unpackedDist !== distDir && fs.existsSync(path.join(unpackedDist, "sql-wasm.wasm"))
+        ? unpackedDist
+        : distDir;
+    const SQL = await initSqlJs({ locateFile: (f) => path.join(wasmDir, f) });
+    const buf = fs.readFileSync(vscdbPath);
+    const db = new SQL.Database(buf);
+    const res = db.exec(
+      "SELECT value FROM ItemTable WHERE key = 'history.recentlyOpenedPathsList'",
+    );
+    if (!res.length || !res[0].values?.length) return [];
+    const parsed = JSON.parse(res[0].values[0][0]);
+    return normalizeRecentlyOpenedPathsList(parsed);
+  } catch (e) {
+    diagLog(`[Recents] state.vscdb read failed (${vscdbPath}): ${e.message}`);
+    return [];
+  }
+}
+
 diagLog("Zenith Main Process Started");
+
+/** Declared before single-instance lock so `second-instance` can safely reference it. */
+let mainWindow;
 
 // Performance: GPU rendering optimizations
 // IMPORTANT: disable-gpu-rasterization was REMOVED — it forced CPU rendering causing sluggish animations.
@@ -134,18 +208,40 @@ app.commandLine.appendSwitch("ignore-gpu-blocklist"); // Use GPU even if on the 
 app.setAppUserModelId("com.henry.zenith"); // AUMID explicitly set
 // app.setPath("userData", path.join(os.tmpdir(), "zenith-radial-menu-cache")); // REMOVED: tmpdir is not persistent
 
+// Single instance: prevents two Zenith processes when login startup is slow and the user launches manually.
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  diagLog("Second instance blocked — another Zenith is already running; exiting.");
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    diagLog("Second instance launch detected — focusing existing window.");
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      try {
+        windowBuriedPassive = false;
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.setOpacity(1);
+        mainWindow.setIgnoreMouseEvents(false);
+        mainWindow.setSkipTaskbar(false);
+        mainWindow.show();
+        mainWindow.focus();
+      } catch (e) {
+        console.error("second-instance focus failed:", e);
+      }
+    }
+  });
+}
+
 // Remove default menus (File, Edit, etc.)
 Menu.setApplicationMenu(null);
 
-// High Priority for Global Inputs
+// Keep normal priority: PRIORITY_HIGH starves other apps and makes the whole OS feel sluggish.
 try {
-  os.setPriority(os.constants.priority.PRIORITY_HIGH);
-  console.log("Process priority set to HIGH");
+  os.setPriority(os.constants.priority.PRIORITY_NORMAL);
 } catch (e) {
   console.error("Failed to set priority:", e);
 }
 
-let mainWindow;
 let settingsWindow = null;
 
 // Game Mode Configuration Storage
@@ -158,6 +254,24 @@ let gameModeConfig = {
 // Window Management Persistence
 let lastWindowedBounds = { width: 1280, height: 800, x: 100, y: 100 };
 let isUpdatingBounds = false;
+/** Cleared when leaving radial overlay for settings so a pending hide does not break the window. */
+let skipTaskbarHideTimer = null;
+
+/**
+ * Renderer "hide-window" leaves the window technically visible but opacity 0 + mouse passthrough.
+ * If the user later focuses Zenith from the taskbar / Alt+Tab, no IPC runs — they see a blank / dead window.
+ * We recover on focus/restore when this flag is set.
+ */
+let windowBuriedPassive = false;
+
+/** Last mode passed to updateWindowSize — used to fix hit-testing after minimize/restore without renderer IPC. */
+let nativeWindowSizeMode = "windowed";
+
+/** When true, allow BrowserWindow to close (real quit). Otherwise close → hide to tray. */
+let isAppQuitting = false;
+app.on("before-quit", () => {
+  isAppQuitting = true;
+});
 
 // Shortcut Recording State
 let keyboardListener = null;
@@ -265,16 +379,29 @@ async function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       devTools: true,
+      // true caused broken hit-testing / "frozen" UI after minimize→restore on Windows (transparent frameless window).
       backgroundThrottling: false,
     },
   });
 
-  // Handle window close event to hide it to tray instead of quitting
+  // Close → hide to tray (unless app.quit() is in progress — then allow real close).
+  // Without syncing React (window-hid-to-tray), the renderer still thinks the dashboard is open;
+  // reopening from the tray skips showWindow and hit-testing stays broken in the old window rect.
   newWindow.on("close", (event) => {
+    if (isAppQuitting) {
+      return;
+    }
     if (newWindow.isVisible()) {
-      event.preventDefault(); // Prevent actual close
+      event.preventDefault();
       newWindow.hide();
-      newWindow.setSkipTaskbar(true); // Ensure it's not in the taskbar when hidden
+      newWindow.setSkipTaskbar(true);
+      try {
+        if (!newWindow.isDestroyed()) {
+          newWindow.webContents.send("window-hid-to-tray");
+        }
+      } catch (e) {
+        /* ignore */
+      }
     }
   });
 
@@ -318,6 +445,58 @@ async function createWindow() {
       }
     });
   });
+}
+
+/**
+ * Recover from passive overlay state when the OS brings the window forward without renderer IPC.
+ * Also fixes transparent frameless windows on Windows after minimize → restore (hit-testing desync).
+ */
+function attachWindowUserRestoreGuards(window) {
+  const recoverPassiveBurialOnly = () => {
+    if (!window || window.isDestroyed() || !windowBuriedPassive) return;
+    try {
+      window.setOpacity(1);
+      window.setIgnoreMouseEvents(false);
+      window.setSkipTaskbar(false);
+      windowBuriedPassive = false;
+      diagLog("[Window] Recovered from passive hide (focus — taskbar or Alt+Tab).");
+    } catch (e) {
+      diagLog(`[Window] recoverPassiveBurialOnly: ${e.message}`);
+    }
+  };
+
+  const onRestore = () => {
+    if (!window || window.isDestroyed()) return;
+    try {
+      if (windowBuriedPassive) {
+        window.setOpacity(1);
+        window.setIgnoreMouseEvents(false);
+        window.setSkipTaskbar(false);
+        windowBuriedPassive = false;
+        diagLog("[Window] Recovered from passive hide (restore).");
+        return;
+      }
+      if (
+        nativeWindowSizeMode !== "small" &&
+        window.isVisible() &&
+        !window.isMinimized()
+      ) {
+        window.setOpacity(1);
+        window.setIgnoreMouseEvents(false);
+        window.setSkipTaskbar(false);
+        if (window.webContents && !window.webContents.isDestroyed()) {
+          window.webContents.send("window-native-display-restored", {
+            mode: nativeWindowSizeMode,
+          });
+        }
+      }
+    } catch (e) {
+      diagLog(`[Window] onRestore refresh: ${e.message}`);
+    }
+  };
+
+  window.on("restore", onRestore);
+  window.on("focus", recoverPassiveBurialOnly);
 }
 
 function setupMainWindow(window) {
@@ -385,56 +564,54 @@ function setupMainWindow(window) {
   // window.webContents.openDevTools();
 
   // DISABLED FOR DEBUG: window.setIgnoreMouseEvents(true, { forward: true });
+
+  attachWindowUserRestoreGuards(window);
 }
-
-
-
-
 
 function showMenuAtCursor(source = "shortcut") {
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
-  // 1. Force state updates
-  // NOTE: On Windows, setting skipTaskbar BEFORE show/focus can sometimes 
-  // prevent the window from taking foreground focus correctly.
-  mainWindow.setSkipTaskbar(false); 
-  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-
-  // 2. Window Position & Size (Only update if needed)
-  if (!mainWindow.isFullScreen()) {
-    updateWindowSize("fullscreen");
-  }
-
-  // 3. Visibility & Interaction
-  mainWindow.setIgnoreMouseEvents(false);
-  mainWindow.setOpacity(1); 
-  mainWindow.show();
-  
-  // 4. Force Focus (Steal from other apps)
-  mainWindow.focus();
-  mainWindow.webContents.focus();
-  if (process.platform === 'win32') {
-    mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
-  }
-
-  // 5. Send IPC to Renderer
   const cursorPoint = screen.getCursorScreenPoint();
+
+  // Hide native window during the transition so DWM never shows the stretched old framebuffer (settings flash).
+  mainWindow.setOpacity(0);
+
   mainWindow.webContents.send("open-menu", {
     x: cursorPoint.x,
     y: cursorPoint.y,
     source: source,
   });
-  
-  // 6. Post-focus cleanup: skip taskbar now that we have focus
-  setTimeout(() => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.setSkipTaskbar(true);
+
+  setImmediate(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+
+    mainWindow.setSkipTaskbar(false);
+    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+    mainWindow.setIgnoreMouseEvents(false);
+    // Opacity restored by renderer after setWindowSize('fullscreen') (see App openMenu).
+    mainWindow.show();
+
+    mainWindow.focus();
+    mainWindow.webContents.focus();
+    if (process.platform === "win32") {
+      mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
     }
-  }, 100);
+
+    clearSkipTaskbarHideTimer();
+    skipTaskbarHideTimer = setTimeout(() => {
+      skipTaskbarHideTimer = null;
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.setSkipTaskbar(true);
+      }
+    }, 100);
+  });
 }
 
 function updateWindowSize(mode) {
   if (!mainWindow) return;
+
+  nativeWindowSizeMode = mode;
 
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenWidth, height: screenHeight } = primaryDisplay.bounds;
@@ -478,6 +655,43 @@ function updateWindowSize(mode) {
       height: screenHeight,
     });
   }
+}
+
+/** Recreate the BrowserWindow if it was closed/destroyed (e.g. after errors). */
+async function ensureMainWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
+  mainWindow = await createWindow();
+  return mainWindow;
+}
+
+function clearSkipTaskbarHideTimer() {
+  if (skipTaskbarHideTimer) {
+    clearTimeout(skipTaskbarHideTimer);
+    skipTaskbarHideTimer = null;
+  }
+}
+
+/**
+ * Force windowed, interactive mode, then notify renderer to open settings.
+ * Cancels the deferred skipTaskbar from showMenuAtCursor (fixes double-MMB → settings glitches).
+ */
+function openSettingsFromMainProcess() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  clearSkipTaskbarHideTimer();
+  mainWindow.setSkipTaskbar(false);
+  mainWindow.setVisibleOnAllWorkspaces(false);
+  updateWindowSize("windowed");
+  mainWindow.setIgnoreMouseEvents(false);
+  mainWindow.setOpacity(1);
+  mainWindow.show();
+  try {
+    mainWindow.moveTop();
+  } catch (e) {
+    /* ignore */
+  }
+  mainWindow.focus();
+  mainWindow.webContents.focus();
+  mainWindow.webContents.send("open-settings");
 }
 
 // Function to check if a specific process is running (Basic implementation)
@@ -548,6 +762,8 @@ const shouldOpenMenu = async () => {
 let tray = null;
 
 app.whenReady().then(async () => {
+  if (!gotTheLock) return;
+
   // 1. Initialize Settings Management First (to avoid race conditions with renderer)
   const settingsPath = path.join(app.getPath("userData"), "settings.json");
   let currentSettings = {
@@ -601,8 +817,60 @@ app.whenReady().then(async () => {
     syncLoginItemSettings(currentSettings.openAtLogin);
   }
 
+  /** Used with start/stop global MMB hook (PowerShell + WH_MOUSE_LL). */
+  const cachedRadialFlags = {
+    enableMouseTrigger: currentSettings.enableMouseTrigger !== false,
+    performanceMode: false,
+  };
+  try {
+    const cp = path.join(app.getPath("userData"), "config-v2.json");
+    if (fs.existsSync(cp)) {
+      const fc = JSON.parse(fs.readFileSync(cp, "utf-8"));
+      if (typeof fc.performanceMode === "boolean") {
+        cachedRadialFlags.performanceMode = fc.performanceMode;
+      }
+      if (typeof fc.enableMouseTrigger === "boolean") {
+        cachedRadialFlags.enableMouseTrigger = fc.enableMouseTrigger;
+      }
+    }
+  } catch (_) {}
+
+  let syncMouseHookState = () => {};
+
   // Register essential IPC handlers BEFORE window creation
   ipcMain.handle("get-settings", () => currentSettings);
+
+  const saveFullConfigToDisk = (config) => {
+    const configPath = path.join(app.getPath("userData"), "config-v2.json");
+    const tempPath = configPath + ".tmp";
+    try {
+      if (!fs.existsSync(path.dirname(configPath))) {
+        fs.mkdirSync(path.dirname(configPath), { recursive: true });
+      }
+
+      fs.writeFileSync(tempPath, JSON.stringify(config, null, 2), "utf-8");
+
+      if (fs.existsSync(tempPath) && fs.statSync(tempPath).size > 0) {
+        fs.renameSync(tempPath, configPath);
+      } else {
+        throw new Error("Temp file is empty or missing after write");
+      }
+    } catch (e) {
+      console.error("Failed to save full config (Atomic):", e);
+      diagLog(`[ERROR] Persistence Failure: ${e.message}`);
+      try {
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+      } catch (e2) {
+        /* ignore */
+      }
+    } finally {
+      try {
+        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+      } catch (e) {
+        /* ignore */
+      }
+    }
+  };
 
   ipcMain.handle("get-full-config", () => {
     const configPath = path.join(app.getPath("userData"), "config-v2.json");
@@ -617,17 +885,42 @@ app.whenReady().then(async () => {
     return null;
   });
 
-  ipcMain.on("save-full-config", (event, config) => {
-    const configPath = path.join(app.getPath("userData"), "config-v2.json");
-    try {
-      if (!fs.existsSync(path.dirname(configPath))) {
-        fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  ipcMain.on("save-full-config", (_event, config) => {
+    saveFullConfigToDisk(config);
+    if (config && typeof config === "object") {
+      if (typeof config.performanceMode === "boolean") {
+        cachedRadialFlags.performanceMode = config.performanceMode;
       }
-      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-      diagLog("[Config] Full configuration saved successfully");
+      if (typeof config.enableMouseTrigger === "boolean") {
+        cachedRadialFlags.enableMouseTrigger = config.enableMouseTrigger;
+      }
+      syncMouseHookState();
+    }
+  });
+
+  /** Synchronous IPC so the renderer can flush to disk before process exit (notes, etc.). */
+  ipcMain.on("save-full-config-sync", (_event, config) => {
+    saveFullConfigToDisk(config);
+    if (config && typeof config === "object") {
+      if (typeof config.performanceMode === "boolean") {
+        cachedRadialFlags.performanceMode = config.performanceMode;
+      }
+      if (typeof config.enableMouseTrigger === "boolean") {
+        cachedRadialFlags.enableMouseTrigger = config.enableMouseTrigger;
+      }
+      syncMouseHookState();
+    }
+  });
+
+  // IPC: Persistence Debug Logger
+  ipcMain.on("save-persistence-log", (event, message) => {
+    try {
+      const logPath = path.join(app.getPath("userData"), "zenith-persistence.log");
+      const timestamp = new Date().toISOString();
+      const logEntry = `[${timestamp}] ${message}\n`;
+      fs.appendFileSync(logPath, logEntry, "utf-8");
     } catch (e) {
-      console.error("Failed to save full config:", e);
-      diagLog(`[ERROR] Failed to save full config: ${e.message}`);
+      console.error("Failed to write persistence log:", e);
     }
   });
 
@@ -724,36 +1017,73 @@ app.whenReady().then(async () => {
     } else if (lowerName.includes("code")) {
       storagePath = path.join(appData, "Code", "User", "globalStorage", "storage.json");
     }
-    // 3. Command Path Match (Final fallback)
-    else if (lowerCommand.includes("\\antigravity\\") || lowerCommand.includes("antigravity.exe")) {
+    // 3. Command Path Match (Final fallback) — prefer executable path so "Antigravity" vs "Cursor" never share storage
+    else if (lowerCommand.includes("\\antigravity\\") || lowerCommand.includes("/antigravity/") || lowerCommand.includes("antigravity.exe")) {
       storagePath = path.join(appData, "Antigravity", "User", "globalStorage", "storage.json");
-    } else if (lowerCommand.includes("\\cursor\\") || lowerCommand.includes("cursor.exe")) {
+    } else if (lowerCommand.includes("\\cursor\\") || lowerCommand.includes("/cursor/") || lowerCommand.endsWith("cursor.exe")) {
       storagePath = path.join(appData, "Cursor", "User", "globalStorage", "storage.json");
-    } else if (lowerCommand.includes("\\code\\") || lowerCommand.includes("code.exe")) {
+    } else if (
+      (lowerCommand.includes("\\code\\") || lowerCommand.includes("/code/") || lowerCommand.includes("code.exe")) &&
+      !lowerCommand.includes("cursor") &&
+      !lowerCommand.includes("antigravity")
+    ) {
+      storagePath = path.join(appData, "Code", "User", "globalStorage", "storage.json");
+    }
+
+    // 4. Resolve ambiguous label "Code" vs VS Code: if command is literally generic, prefer VS Code storage when name says visual studio / vscode
+    if (!storagePath && (lowerName.includes("visual studio code") || lowerName === "vscode")) {
       storagePath = path.join(appData, "Code", "User", "globalStorage", "storage.json");
     }
     
-    diagLog(`[Recents] Selected storagePath: "${storagePath}" (Exists: ${fs.existsSync(storagePath)})`);
+    if (!storagePath || !appData) {
+      return [];
+    }
 
-    if (!storagePath || !fs.existsSync(storagePath)) {
+    const globalStorageDir = path.dirname(storagePath);
+    const storageJsonPath = storagePath;
+    const vscdbPath = path.join(globalStorageDir, "state.vscdb");
+    const hasJson = fs.existsSync(storageJsonPath);
+    const hasVscdb = fs.existsSync(vscdbPath);
+
+    diagLog(
+      `[Recents] globalStorage="${globalStorageDir}" storage.json=${hasJson} state.vscdb=${hasVscdb}`,
+    );
+
+    if (!hasJson && !hasVscdb) {
       return [];
     }
 
     try {
-      const content = fs.readFileSync(storagePath, "utf-8");
-      const json = JSON.parse(content);
-      
-      // Try profileAssociations first (old or specific versions)
-      let workspaceUris = Object.keys(json.profileAssociations?.workspaces || {});
-      
-      // Try history.recentlyOpenedPathsList (standard VS Code)
-      const recentlyOpened = json.history?.recentlyOpenedPathsList || [];
-      recentlyOpened.forEach(item => {
-        const uri = item.folderUri || item.workspace?.configPath || item.fileUri;
-        if (uri && !workspaceUris.includes(uri)) {
-          workspaceUris.push(uri);
+      let json = {};
+      if (hasJson) {
+        try {
+          json = JSON.parse(fs.readFileSync(storageJsonPath, "utf-8"));
+        } catch (parseErr) {
+          diagLog(`[Recents] storage.json parse failed: ${parseErr.message}`);
+          json = {};
         }
-      });
+      }
+
+      // MRU only from history.recentlyOpenedPathsList (JSON and/or SQLite). Never profileAssociations.workspaces.
+      let recentlyOpened = normalizeRecentlyOpenedPathsList(json.history?.recentlyOpenedPathsList);
+      if (recentlyOpened.length === 0 && hasVscdb) {
+        recentlyOpened = await loadRecentlyOpenedPathsFromVscdb(vscdbPath);
+      }
+
+      const workspaceUris = [];
+      const seenUri = new Set();
+      for (const item of recentlyOpened) {
+        if (!item || typeof item !== "object") continue;
+        const uri = item.folderUri || item.workspace?.configPath || item.fileUri;
+        if (!uri || typeof uri !== "string" || seenUri.has(uri)) continue;
+        seenUri.add(uri);
+        workspaceUris.push(uri);
+      }
+
+      if (workspaceUris.length === 0) {
+        diagLog(`[Recents] No MRU entries for ${appName} (${globalStorageDir})`);
+        return [];
+      }
       
       const recents = workspaceUris.map(uri => {
         // Convert file:///c%3A/path to C:\path
@@ -769,7 +1099,7 @@ app.whenReady().then(async () => {
         // If it's an IDE, we want to open the folder WITH the IDE
         const itemLowerName = appName ? appName.toLowerCase() : "";
         // 2. Identify if it's an IDE that supports recent folders
-        let appCommandString = (appCommand || "").trim();
+        let appCommandString = normalizeAumidIdeCommands((appCommand || "").trim());
         
         // If we don't have a command passed, try to infer it from the name
         if (!appCommandString) {
@@ -815,7 +1145,7 @@ app.whenReady().then(async () => {
         };
       });
 
-      return recents.filter(r => r.label && r.label !== ".").slice(0, 8); // Limit to top 8 recents
+      return recents.filter(r => r.label && r.label !== ".").slice(0, 6); // Top 6 MRU
     } catch (e) {
       diagLog(`Error fetching app recents for ${appName}: ${e.message}`);
       return [];
@@ -825,10 +1155,17 @@ app.whenReady().then(async () => {
   // 2. Create Window
   mainWindow = await createWindow();
 
-  // Safety: Avoid unregistering on every minor blur if we are still the active overlay
+  // Dashboard windowed: keep the taskbar button when the user switches to another app without using Minimize.
+  // (Minimize uses skipTaskbar true — see minimize-window — so the icon only lives in the tray until restore.)
   mainWindow.on("blur", () => {
-    if (mainWindow && !mainWindow.isVisible()) {
-      // Nothing to unregister here anymore
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    try {
+      if (mainWindow.isMinimized()) return;
+      if (nativeWindowSizeMode === "windowed") {
+        mainWindow.setSkipTaskbar(false);
+      }
+    } catch (e) {
+      /* ignore */
     }
   });
 
@@ -852,15 +1189,28 @@ app.whenReady().then(async () => {
             setupMainWindow(mainWindow);
           }
 
+          // Must match open-settings / show-window: passive hide leaves ignoreMouseEvents(true).
+          // Clearing windowBuriedPassive before restoring input would skip attachWindowUserRestoreGuards().
+          clearSkipTaskbarHideTimer();
+          windowBuriedPassive = false;
+          mainWindow.setSkipTaskbar(false);
+          mainWindow.setVisibleOnAllWorkspaces(false);
+          updateWindowSize("windowed");
+          mainWindow.setIgnoreMouseEvents(false);
+
           // Smooth Entry Trick: Mask the initial white flash/compositor stutter
           mainWindow.setOpacity(0);
           mainWindow.show();
-          mainWindow.setSkipTaskbar(false);
 
           setTimeout(() => {
             if (mainWindow && !mainWindow.isDestroyed()) {
               mainWindow.setOpacity(1);
               mainWindow.focus();
+              try {
+                mainWindow.webContents.focus();
+              } catch (e) {
+                /* ignore */
+              }
               mainWindow.webContents.send("open-dashboard");
             }
           }, 50);
@@ -869,11 +1219,11 @@ app.whenReady().then(async () => {
       {
         label: "Abrir Configurações",
         click: async () => {
-          if (mainWindow) {
-            mainWindow.setOpacity(1); // Restore opacity
-            mainWindow.show();
-            mainWindow.focus();
-            mainWindow.webContents.send("open-settings");
+          try {
+            await ensureMainWindow();
+            openSettingsFromMainProcess();
+          } catch (e) {
+            diagLog(`[Tray] Abrir Configurações: ${e.message}`);
           }
         },
       },
@@ -1025,8 +1375,11 @@ app.whenReady().then(async () => {
   registerGlobalShortcut();
 
   ipcMain.on("set-settings", (event, settings) => {
-    const oldMouseTrigger = currentSettings.enableMouseTrigger;
     saveSettings(settings);
+
+    if (settings.enableMouseTrigger !== undefined) {
+      cachedRadialFlags.enableMouseTrigger = settings.enableMouseTrigger;
+    }
 
     if (settings.globalShortcut) {
       registerGlobalShortcut();
@@ -1036,16 +1389,7 @@ app.whenReady().then(async () => {
       syncLoginItemSettings(settings.openAtLogin);
     }
 
-    if (
-      settings.enableMouseTrigger !== undefined &&
-      settings.enableMouseTrigger !== oldMouseTrigger
-    ) {
-      if (settings.enableMouseTrigger) {
-        startMouseHook();
-      } else {
-        stopMouseHook();
-      }
-    }
+    syncMouseHookState();
   });
 
   ipcMain.on("set-login-item-settings", (event, settings) => {
@@ -1063,16 +1407,29 @@ app.whenReady().then(async () => {
     }
   });
 
-  ipcMain.on("open-config-folder", () => {
-    shell.openPath(app.getPath("userData"));
+  ipcMain.handle("open-external-url", async (event, url) => {
+    if (typeof url !== "string") {
+      return { ok: false, error: "Invalid URL" };
+    }
+    const trimmed = url.trim();
+    if (!/^https?:\/\//i.test(trimmed)) {
+      return { ok: false, error: "Only http(s) URLs are allowed" };
+    }
+    try {
+      await shell.openExternal(trimmed);
+      return { ok: true };
+    } catch (e) {
+      diagLog(`[open-external-url] ${e.message}`);
+      return { ok: false, error: e.message };
+    }
   });
 
-  ipcMain.on("toggle-settings", () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.setOpacity(1);
-      mainWindow.show();
-      mainWindow.focus();
-      mainWindow.webContents.send("open-settings");
+  ipcMain.on("toggle-settings", async () => {
+    try {
+      await ensureMainWindow();
+      openSettingsFromMainProcess();
+    } catch (e) {
+      diagLog(`[toggle-settings] ${e.message}`);
     }
   });
 
@@ -1097,28 +1454,175 @@ app.whenReady().then(async () => {
     stopShortcutRecording();
   });
 
-  // GOOGLE AUTH REAL OAuth 2.0 Flow
+  /** Verify Google ID token (Sign in with Google / zenithos.online auth page). */
+  function verifyGoogleIdToken(idToken) {
+    return new Promise((resolve, reject) => {
+      const u = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
+      https
+        .get(u, (tokenRes) => {
+          let body = "";
+          tokenRes.on("data", (d) => {
+            body += d;
+          });
+          tokenRes.on("end", () => {
+            try {
+              const data = JSON.parse(body);
+              if (data.error) {
+                reject(new Error(data.error_description || String(data.error)));
+                return;
+              }
+              resolve(data);
+            } catch (e) {
+              reject(e);
+            }
+          });
+        })
+        .on("error", reject);
+    });
+  }
+
+  function emitGoogleAuthSuccess(email, name, picture) {
+    const isAdmin = email === "henrycauan3222@gmail.com";
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("google-auth-success", {
+        email,
+        name,
+        avatarUrl: picture,
+        isAdmin,
+        isPremium: isAdmin,
+        planTier: isAdmin ? "pro" : "free",
+      });
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  }
+
+  function sendZenithAuthSuccessHtml(res) {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Zenith — signed in</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#0a0a0a;color:#e8e8e8;-webkit-font-smoothing:antialiased}
+  .glow{pointer-events:none;position:fixed;inset:0;overflow:hidden}
+  .glow::before{content:"";position:absolute;top:18%;left:50%;transform:translateX(-50%);width:min(92vw,520px);height:300px;border-radius:50%;background:radial-gradient(ellipse at center,hsla(265,45%,50%,.14) 0%,transparent 70%);filter:blur(48px)}
+  .glow::after{content:"";position:absolute;bottom:8%;right:0;width:min(80vw,380px);height:220px;border-radius:50%;background:radial-gradient(ellipse at center,hsla(200,50%,45%,.08) 0%,transparent 72%);filter:blur(40px)}
+  .card{position:relative;text-align:center;max-width:420px;margin:0 16px;padding:2px;border-radius:18px;background:linear-gradient(135deg,rgba(139,92,246,.45),rgba(217,70,239,.4),rgba(56,189,248,.42));box-shadow:0 24px 80px -32px rgba(0,0,0,.75),inset 0 1px 0 rgba(255,255,255,.08)}
+  .card-inner{border-radius:16px;background:linear-gradient(180deg,hsla(265,50%,50%,.09),hsla(200,50%,45%,.05) 60%,hsla(0,0%,7%,.96));border:1px solid rgba(255,255,255,.08);padding:0 28px 30px;backdrop-filter:blur(12px)}
+  .strip{height:3px;border-radius:16px 16px 0 0;margin:0 0 22px;background:linear-gradient(90deg,rgba(139,92,246,.85),rgba(217,70,239,.78),rgba(56,189,248,.75))}
+  .icon-wrap{display:inline-flex;align-items:center;justify-content:center;width:76px;height:76px;border-radius:50%;margin:0 auto 18px;padding:2px;background:linear-gradient(135deg,rgba(139,92,246,.55),rgba(217,70,239,.5),rgba(56,189,248,.5));box-shadow:0 0 0 1px rgba(255,255,255,.08)}
+  .icon-in{display:flex;align-items:center;justify-content:center;width:100%;height:100%;border-radius:50%;background:hsla(0,0%,7%,.96);border:1px solid rgba(255,255,255,.1)}
+  .icon-in svg{width:40px;height:40px;stroke:#7dd3fc;stroke-width:1.35;fill:none;filter:drop-shadow(0 0 12px hsla(199,85%,58%,.35))}
+  h1{font-size:1.35rem;font-weight:600;margin:0 0 10px;letter-spacing:-.03em;background:linear-gradient(90deg,#e9d5ff,#f5d0fe,#bae6fd);-webkit-background-clip:text;background-clip:text;color:transparent}
+  p{font-size:14px;line-height:1.55;margin:0;opacity:.88}
+  p.sub{margin-top:12px;font-size:13px;opacity:.65;line-height:1.45}
+</style></head>
+<body>
+  <div class="glow" aria-hidden="true"></div>
+  <div class="card">
+    <div class="card-inner">
+      <div class="strip" aria-hidden="true"></div>
+      <div class="icon-wrap" aria-hidden="true"><div class="icon-in"><svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div></div>
+      <h1>Signed in to Zenith</h1>
+      <p>This page finished linking your account. Return to the Zenith window &mdash; it should already be signed in.</p>
+      <p class="sub">You can close this tab.</p>
+    </div>
+  </div>
+</body></html>`);
+  }
+
+  // GOOGLE AUTH: browser opens zenithos.online/auth; site redirects here with id_token (or legacy OAuth /callback).
   let authServer = null;
   ipcMain.on("start-google-auth", () => {
     if (authServer) {
-        try { authServer.close(); } catch(e) {}
+      try {
+        authServer.close();
+      } catch (e) {}
     }
 
-    const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } = process.env;
-    
-    if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
-        diagLog("[Auth] Error: Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET in .env.local");
-        return;
+    const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+    const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+    const GOOGLE_WEB_CLIENT_ID = process.env.GOOGLE_WEB_CLIENT_ID;
+    const allowedAuds = [GOOGLE_WEB_CLIENT_ID, GOOGLE_CLIENT_ID].filter(Boolean);
+
+    if (allowedAuds.length === 0) {
+      let userDataHint = "";
+      try {
+        userDataHint = app.getPath("userData");
+      } catch (_) {}
+      diagLog(
+        "[Auth] Missing GOOGLE_CLIENT_ID or GOOGLE_WEB_CLIENT_ID (need at least one for web sign-in)."
+      );
+      const msg =
+        "Google sign-in needs an OAuth client ID. Add GOOGLE_WEB_CLIENT_ID (same as the website / VITE_GOOGLE_CLIENT_ID) or GOOGLE_CLIENT_ID to .env.local in:\n\n" +
+        (userDataHint || "AppData") +
+        "\n\nThen restart Zenith.";
+      dialog.showErrorBox("Zenith — Google sign-in", msg);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("google-auth-error", {
+          code: "MISSING_OAUTH_CONFIG",
+          userDataPath: userDataHint,
+        });
+      }
+      return;
     }
 
-    diagLog("[Auth] Starting REAL Google OAuth flow...");
-    
+    diagLog("[Auth] Starting local auth bridge (web sign-in → localhost)...");
+
     const REDIRECT_URI = "http://localhost:3892/callback";
-    
+
     authServer = http.createServer((req, res) => {
       const parsedUrl = url.parse(req.url, true);
-      
-      if (parsedUrl.pathname === '/callback') {
+      const pathname = parsedUrl.pathname || "";
+
+      if (pathname === "/ping") {
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end("ok");
+        return;
+      }
+
+      if (pathname === "/desktop-complete") {
+        const idToken = parsedUrl.query.id_token;
+        if (!idToken || typeof idToken !== "string") {
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("Missing id_token.");
+          return;
+        }
+        verifyGoogleIdToken(idToken)
+          .then((data) => {
+            if (!allowedAuds.includes(data.aud)) {
+              diagLog(`[Auth] id_token aud rejected: ${data.aud}`);
+              res.writeHead(400, { "Content-Type": "text/plain" });
+              res.end("Invalid sign-in token (audience). Use the same Google OAuth client as the app.");
+              return;
+            }
+            const email = data.email;
+            const name = data.name || (email ? String(email).split("@")[0] : "User");
+            const picture = data.picture;
+            diagLog(`[Auth] Web id_token OK: ${email}`);
+            emitGoogleAuthSuccess(email, name, picture);
+            sendZenithAuthSuccessHtml(res);
+            if (authServer) {
+              try {
+                authServer.close();
+              } catch (e) {}
+              authServer = null;
+            }
+          })
+          .catch((e) => {
+            diagLog(`[Auth] id_token verify failed: ${e.message}`);
+            res.writeHead(400, { "Content-Type": "text/plain" });
+            res.end("Could not verify sign-in.");
+          });
+        return;
+      }
+
+      if (pathname === "/callback") {
+        if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("Legacy OAuth redirect is not configured (missing client secret). Use the website sign-in flow.");
+          return;
+        }
         const { code } = parsedUrl.query;
         if (!code) {
             res.end("Error: No code received.");
@@ -1172,35 +1676,8 @@ app.whenReady().then(async () => {
                             const { email, name, picture } = userInfo;
                             
                             diagLog(`[Auth] Successfully authenticated as ${email}`);
-                            const isAdmin = email === 'henrycauan3222@gmail.com';
-
-                            if (mainWindow && !mainWindow.isDestroyed()) {
-                                mainWindow.webContents.send("google-auth-success", { 
-                                    email, 
-                                    name, 
-                                    avatarUrl: picture,
-                                    isAdmin,
-                                    isPremium: isAdmin
-                                });
-                                mainWindow.show();
-                                mainWindow.focus();
-                            }
-
-                            res.writeHead(200, { 'Content-Type': 'text/html' });
-                            res.end(`
-                              <html>
-                                <body style="font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #f8f9fa;">
-                                  <div style="background: white; padding: 40px; border-radius: 28px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); text-align: center; max-width: 400px;">
-                                    <div style="width: 60px; height: 60px; background: #34A853; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">
-                                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                                    </div>
-                                    <h1 style="color: #1f1f1f; margin-bottom: 8px; font-size: 24px;">Success!</h1>
-                                    <p style="color: #444746; line-height: 1.5; font-size: 14px;">You have successfully signed in to Zenith OS. You can close this window now.</p>
-                                    <script>setTimeout(() => window.close(), 3000);</script>
-                                  </div>
-                                </body>
-                              </html>
-                            `);
+                            emitGoogleAuthSuccess(email, name, picture);
+                            sendZenithAuthSuccessHtml(res);
                             
                             if (authServer) {
                                 authServer.close();
@@ -1229,18 +1706,30 @@ app.whenReady().then(async () => {
       }
     });
 
+    authServer.on("error", (err) => {
+      diagLog(`[Auth] HTTP server error: ${err.code || ""} ${err.message}`);
+      const detail =
+        err.code === "EADDRINUSE"
+          ? "Port 3892 is already in use. Close another Zenith instance or any app using that port, then try again."
+          : err.message;
+      dialog.showErrorBox("Zenith — Google sign-in", detail);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("google-auth-error", {
+          code: err.code,
+          message: err.message,
+        });
+      }
+      authServer = null;
+    });
+
     authServer.listen(3892, () => {
       diagLog("[Auth] Local callback server listening on port 3892");
-      
-      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` + 
-        `client_id=${GOOGLE_CLIENT_ID}&` +
-        `redirect_uri=${encodeURIComponent(REDIRECT_URI)}&` +
-        `response_type=code&` +
-        `scope=${encodeURIComponent('email profile')}&` +
-        `prompt=select_account`;
-      
-      diagLog(`[Auth] Opening browser: ${authUrl}`);
-      shell.openExternal(authUrl);
+      const base =
+        process.env.ZENITH_WEB_AUTH_URL || "https://zenithos.online/auth";
+      const sep = base.includes("?") ? "&" : "?";
+      const webAuthUrl = `${base}${sep}client=desktop`;
+      diagLog(`[Auth] Opening browser (web sign-in): ${webAuthUrl}`);
+      shell.openExternal(webAuthUrl);
     });
 
     setTimeout(() => {
@@ -1274,7 +1763,11 @@ app.whenReady().then(async () => {
 
   // 2. PowerShell Mouse Hook (C# Low Level Hook) for Global Reliability
   let mouseHook = null;
-  let lastMmbDownTime = 0;
+  /** If the first MMB opened the radial immediately, the second MMB (double-click → settings) would race fullscreen vs windowed. We defer the radial slightly so a second MMB can cancel it and open settings only — no overlay conflict. */
+  /** Single MMB opens radial after this delay so a second MMB can cancel → settings only (no fullscreen race). */
+  const MMB_MENU_DEBOUNCE_MS = 280;
+  let mmbMenuDebounceTimer = null;
+  let mmbFirstDownAt = 0;
 
   const startMouseHook = () => {
     if (mouseHook) return;
@@ -1295,17 +1788,40 @@ app.whenReady().then(async () => {
 
         if (msg === "MIDDLE_DOWN") {
           const now = Date.now();
-          if (now - lastMmbDownTime < 400) {
-            // Double click: Open Settings
-            let mmbClickCount = 2; // Declared here to ensure it's defined
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send("open-settings");
+          const sinceFirst = mmbFirstDownAt ? now - mmbFirstDownAt : 99999;
+
+          // Second MMB while radial open is still deferred (timer pending): open settings only — no radial this gesture
+          if (
+            mmbFirstDownAt &&
+            mmbMenuDebounceTimer &&
+            sinceFirst >= 8
+          ) {
+            if (mmbMenuDebounceTimer) {
+              clearTimeout(mmbMenuDebounceTimer);
+              mmbMenuDebounceTimer = null;
             }
+            mmbFirstDownAt = 0;
+            (async () => {
+              try {
+                await ensureMainWindow();
+                openSettingsFromMainProcess();
+              } catch (e) {
+                diagLog(`[MouseHook] open settings: ${e.message}`);
+              }
+            })();
           } else {
-            // Single click: Show Radial Menu
-            showMenuAtCursor("mmb");
+            // Start (or restart) a single-MMB gesture: defer radial so double-MMB can cancel
+            if (mmbMenuDebounceTimer) {
+              clearTimeout(mmbMenuDebounceTimer);
+              mmbMenuDebounceTimer = null;
+            }
+            mmbFirstDownAt = now;
+            mmbMenuDebounceTimer = setTimeout(() => {
+              mmbMenuDebounceTimer = null;
+              mmbFirstDownAt = 0;
+              showMenuAtCursor("mmb");
+            }, MMB_MENU_DEBOUNCE_MS);
           }
-          lastMmbDownTime = now;
         } else if (msg === "MIDDLE_UP") {
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send("mmb-release");
@@ -1325,14 +1841,23 @@ app.whenReady().then(async () => {
 
   const stopMouseHook = () => {
     if (!mouseHook) return;
+    if (mmbMenuDebounceTimer) {
+      clearTimeout(mmbMenuDebounceTimer);
+      mmbMenuDebounceTimer = null;
+    }
+    mmbFirstDownAt = 0;
     diagLog("Stopping Mouse Hook");
     mouseHook.kill();
     mouseHook = null;
   };
 
-  if (currentSettings.enableMouseTrigger) {
-    startMouseHook();
-  }
+  syncMouseHookState = () => {
+    const wantHook =
+      cachedRadialFlags.enableMouseTrigger && !cachedRadialFlags.performanceMode;
+    if (wantHook) startMouseHook();
+    else stopMouseHook();
+  };
+  syncMouseHookState();
 });
 
 // IPC: Recebe atualização de configuração do Game Mode
@@ -1379,6 +1904,84 @@ const resolveShellPath = (cmd) => {
   return resolved;
 };
 
+/** Cursor from Windows Start Menu is often stored as AUMID "Anysphere.Cursor" — not a valid CMD executable. */
+function resolveCursorExePath() {
+  if (process.platform !== "win32") return "cursor";
+  const candidates = [
+    path.join(process.env.LOCALAPPDATA || "", "Programs", "cursor", "Cursor.exe"),
+    path.join(process.env.PROGRAMFILES || "C:\\Program Files", "Cursor", "Cursor.exe"),
+    path.join(process.env["ProgramFiles(x86)"] || "", "Cursor", "Cursor.exe"),
+  ];
+  for (const p of candidates) {
+    try {
+      if (p && fs.existsSync(p)) return p;
+    } catch (e) {}
+  }
+  return "cursor";
+}
+
+/**
+ * Rewrites Cursor/VS Code–style AUMID tokens to a real .exe or PATH shim so spawn/cmd succeed.
+ */
+function normalizeAumidIdeCommands(cmd) {
+  if (!cmd || typeof cmd !== "string") return cmd;
+  let s = cmd;
+  const cursorExe = resolveCursorExePath();
+  const token = /\s/.test(cursorExe) ? `"${cursorExe}"` : cursorExe;
+
+  s = s.replace(/"Anysphere\.Cursor(?:![^"]*)?"/gi, `"${cursorExe}"`);
+  s = s.replace(/shell:AppsFolder\\Anysphere\.Cursor(?:![^\s"]*)?/gi, `"${cursorExe}"`);
+  s = s.replace(/^(shell:AppsFolder\\)?Anysphere\.Cursor(?:![^\s"]*)?(?=\s|$)/i, token);
+  return s;
+}
+
+/**
+ * VS Code / Cursor / Antigravity: open folder in a new window when the IDE is already running (-n).
+ * Only adds the flag when there is a path argument after the executable.
+ */
+function addIdeNewWindowFlag(cmd) {
+  if (!cmd || typeof cmd !== "string") return cmd;
+  const t = cmd.trim();
+  if (/\s(-n|--new-window)(\s|$)/i.test(t)) return cmd;
+
+  const lower = t.toLowerCase();
+  const looksLikeVsFamily =
+    lower.includes("cursor.exe") ||
+    lower.includes("\\cursor\\") ||
+    /^cursor\s/i.test(t) ||
+    lower.includes("code.exe") ||
+    lower.includes("microsoft vs code\\") ||
+    /^code\s/i.test(t) ||
+    lower.includes("antigravity.exe") ||
+    /^antigravity\s/i.test(t);
+  if (!looksLikeVsFamily) return cmd;
+
+  if (t.startsWith('"')) {
+    let i = 1;
+    while (i < t.length) {
+      if (t[i] === '"') break;
+      i++;
+    }
+    if (i < t.length && t[i] === '"') {
+      const first = t.slice(0, i + 1);
+      const after = t.slice(i + 1).trim();
+      if (after) return `${first} -n ${after}`;
+    }
+    return cmd;
+  }
+
+  const sp = t.indexOf(" ");
+  if (sp > 0) {
+    const head = t.slice(0, sp);
+    const rest = t.slice(sp + 1).trim();
+    if (!rest) return cmd;
+    if (/\.exe$/i.test(head) || /^(cursor|code|antigravity)$/i.test(head)) {
+      return `${head} -n ${rest}`;
+    }
+  }
+  return cmd;
+}
+
 // Helper function to escape command strings for Windows
 const escapeCommand = (cmd) => {
   // If it's a GUID/AUMID (contains ! or is wrapped in {}), don't escape for common paths
@@ -1404,6 +2007,32 @@ const escapeCommand = (cmd) => {
   return cmd;
 };
 
+/**
+ * Split the tail of a Windows command line into argv tokens (quoted runs and space-separated words).
+ * Used after the executable token so flags like -n and folder paths are separate argv entries.
+ */
+function parseWin32CommandLineArgs(rest) {
+  const args = [];
+  const s = (rest || "").trim();
+  let i = 0;
+  while (i < s.length) {
+    while (i < s.length && /\s/.test(s[i])) i++;
+    if (i >= s.length) break;
+    if (s[i] === '"') {
+      let j = i + 1;
+      while (j < s.length && s[j] !== '"') j++;
+      args.push(s.slice(i + 1, j));
+      i = j + 1;
+    } else {
+      let j = i;
+      while (j < s.length && !/\s/.test(s[j])) j++;
+      args.push(s.slice(i, j));
+      i = j;
+    }
+  }
+  return args;
+}
+
 // IPC: Recebe comando do React para executar app
 ipcMain.on("execute-command", async (event, command, commandType, options = {}) => {
   if (!command || typeof command !== "string" || command.trim() === "") {
@@ -1421,6 +2050,8 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
 
   // CRITICAL: Resolve GUIDs to real paths FIRST, before any detection logic
   let resolvedCommand = resolveShellPath(trimmedCommand);
+  resolvedCommand = normalizeAumidIdeCommands(resolvedCommand);
+  resolvedCommand = addIdeNewWindowFlag(resolvedCommand);
 
   console.log(`\n========================================`);
   console.log(`EXEC_START: Attempting to launch`);
@@ -1530,6 +2161,10 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
     const commonAppIds = ["msedge", "edge", "chrome", "spotify", "calculator", "notepad"];
     if (commonAppIds.includes(lower)) return true;
 
+    // Common Win32 apps that should NOT be treated as shell apps even if they lack an extension
+    const win32Aliases = ["explorer", "calc", "notepad", "cmd", "powershell", "taskmgr", "regedit", "control"];
+    if (win32Aliases.includes(base)) return false;
+
     // Identify Windows Store apps, AUMIDs, and Shell/GUID namespaces
     return (
       lower.startsWith("shell:") ||
@@ -1589,12 +2224,20 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
           // Special handling for AUMIDs with arguments
           let aumid = cmd;
           let args = "";
-          if (cmd.includes(" ")) {
-            const firstSpace = cmd.indexOf(" ");
-            aumid = cmd.substring(0, firstSpace);
-            args = cmd.substring(firstSpace + 1);
+
+          // If the command already starts with shell:AppsFolder\, strip it to avoid double prefixing
+          if (aumid.toLowerCase().startsWith("shell:appsfolder\\")) {
+            aumid = aumid.substring("shell:appsfolder\\".length);
+          } else if (aumid.toLowerCase().startsWith("shell:appsfolder/")) {
+            aumid = aumid.substring("shell:appsfolder/".length);
           }
-          
+
+          if (aumid.includes(" ")) {
+            const firstSpace = aumid.indexOf(" ");
+            args = aumid.substring(firstSpace + 1);
+            aumid = aumid.substring(0, firstSpace);
+          }
+
           // Basic AUMID launch - args support depends on Windows version and app
           const shellPath = `shell:AppsFolder\\${aumid}`;
           execCmd = args ? `start "" "${shellPath}" ${args}` : `start "" "${shellPath}"`;
@@ -1610,6 +2253,7 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
             }
           });
           break;
+
         case "exec_direct":
           const terminal = getPreferredTerminal();
           if (terminal === "wt.exe") {
@@ -1638,20 +2282,22 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
               if (cmd.includes(" ") && !cmd.startsWith('"')) {
                 const firstSpace = cmd.indexOf(" ");
                 spawnPath = cmd.substring(0, firstSpace);
-                spawnArgs = [cmd.substring(firstSpace + 1).trim()];
+                spawnArgs = parseWin32CommandLineArgs(cmd.substring(firstSpace + 1));
               } else if (cmd.startsWith('"')) {
                 const secondQuote = cmd.indexOf('"', 1);
                 if (secondQuote > 0) {
                   spawnPath = cmd.substring(1, secondQuote);
-                  spawnArgs = [cmd.substring(secondQuote + 1).trim()].filter(a => a);
+                  spawnArgs = parseWin32CommandLineArgs(cmd.substring(secondQuote + 1));
                 }
               }
 
-              diagLog(`  → [${method}] Spawning: ${spawnPath} ${spawnArgs.join(' ')}`);
+              diagLog(`  → [${method}] Spawning: ${spawnPath} ${spawnArgs.join(" ")}`);
+              const looksLikeWinExe =
+                /\.(exe|cmd|bat)$/i.test(spawnPath) || /^[a-zA-Z]:[\\/]/.test(spawnPath);
               const child = spawn(spawnPath, spawnArgs, {
                 detached: true,
-                stdio: 'ignore',
-                shell: true
+                stdio: "ignore",
+                shell: !looksLikeWinExe,
               });
               
               child.on('error', (err) => {
@@ -1676,6 +2322,51 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
     });
   };
 
+  /**
+   * Resolves cwd for external terminal windows. IDE launch lines look like
+   * `"Cursor.exe" "D:\project"` — the first quoted segment is the binary; the last is the folder.
+   * Using only the first match wrongly cwd's to Program Files or falls through to process.cwd() (Zenith).
+   */
+  const extractTerminalWorkingDir = (targetPath) => {
+    if (!targetPath || typeof targetPath !== "string") return null;
+    const t = targetPath.trim();
+    if (!t) return null;
+
+    try {
+      if (fs.existsSync(t)) {
+        const st = fs.statSync(t);
+        return st.isDirectory() ? t : path.dirname(t);
+      }
+    } catch (_) {}
+
+    const quoted = [...t.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    for (let i = quoted.length - 1; i >= 0; i--) {
+      const p = quoted[i];
+      try {
+        if (!fs.existsSync(p)) continue;
+        const st = fs.statSync(p);
+        if (st.isDirectory()) return p;
+        return path.dirname(p);
+      } catch (_) {}
+    }
+
+    // Unquoted arg after first token, e.g. cursor D:\path
+    const sp = t.indexOf(" ");
+    if (sp > 0) {
+      const tail = t.slice(sp + 1).trim().replace(/^["']|["']$/g, "");
+      if (tail && tail !== t) {
+        try {
+          if (fs.existsSync(tail)) {
+            const st = fs.statSync(tail);
+            return st.isDirectory() ? tail : path.dirname(tail);
+          }
+        } catch (_) {}
+      }
+    }
+
+    return null;
+  };
+
   // Helper to run terminal commands in a specific directory
   const runAutoCommands = async (cmds, targetPath, openEmptyIfNoCmds = false) => {
     const commandsToRun = (cmds && Array.isArray(cmds) && cmds.length > 0) 
@@ -1689,23 +2380,8 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
     
     const terminal = getPreferredTerminal();
     let workingDir = process.cwd();
-    
-    // Try to extract a directory from the path if it's a file or complex command
-    if (targetPath) {
-      try {
-        const stats = fs.statSync(targetPath);
-        workingDir = stats.isDirectory() ? targetPath : path.dirname(targetPath);
-      } catch (e) {
-        // If stat fails, it might be a complex command, try to find a path in quotes
-        const match = targetPath.match(/"([^"]+)"/);
-        if (match && fs.existsSync(match[1])) {
-          try {
-            const s = fs.statSync(match[1]);
-            workingDir = s.isDirectory() ? match[1] : path.dirname(match[1]);
-          } catch(e2) {}
-        }
-      }
-    }
+    const resolvedWd = extractTerminalWorkingDir(targetPath);
+    if (resolvedWd) workingDir = resolvedWd;
 
     diagLog(`  → [AutoCommands] Starting execution of ${finalCmds.length} command(s) in ${workingDir}`);
 
@@ -1736,6 +2412,8 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
     }
   };
 
+  /** When IDE branch already spawned wt/cmd for openTerminal, skip duplicate in success loop. */
+  let skipTerminalAfterLaunchLoop = false;
 
   try {
     if (commandType === "url") {
@@ -1814,34 +2492,9 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
             await tryExecution("exec_silent_spawn", finalCommand);
             diagLog(`\n✓✓✓ EXEC_SUCCESS: Launched with 'exec_silent_spawn' (Mapped CLI) ✓✓✓\n`);
             
-            // If the user also wants to open the terminal in this folder
-            if (options && options.openTerminal) {
-              const terminal = getPreferredTerminal();
-              let termCmd;
-              
-              // Extract the path from the mapped command
-              let pathArg = "";
-              if (finalCommand.startsWith('"')) {
-                const secondQuote = finalCommand.indexOf('"', 1);
-                if (secondQuote !== -1) {
-                   pathArg = finalCommand.substring(secondQuote + 1).trim();
-                } else {
-                   pathArg = finalCommand.substring(finalCommand.indexOf(' ') + 1).trim();
-                }
-              } else {
-                const firstSpace = finalCommand.indexOf(" ");
-                if (firstSpace !== -1) {
-                  pathArg = finalCommand.substring(firstSpace + 1).trim();
-                } else {
-                  pathArg = finalCommand;
-                }
-              }
-              
-              pathArg = pathArg.replace(/^"|"$/g, '').trim();
-              const safePath = `"${pathArg}"`;
-
+            if (options?.openTerminal || (options?.terminalCommands && options.terminalCommands.length > 0)) {
               diagLog(`[Exec] Launching IDE Folder with AutoCommands: ${finalCommand}`);
-              await runAutoCommands(options?.terminalCommands, pathArg || finalCommand, options?.openTerminal);
+              await runAutoCommands(options?.terminalCommands, finalCommand, options?.openTerminal);
             }
             
             return;
@@ -1850,31 +2503,11 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
           }
         }
         
-        // Generic handle for other IDEs/Apps with terminal options
+        // Terminal cwd is derived from the full launch line (last quoted path = project folder).
         if (options?.openTerminal || (options?.terminalCommands && options.terminalCommands.length > 0)) {
-          let pathArg = "";
-          if (finalCommand.startsWith('"')) {
-             const secondQuote = finalCommand.indexOf('"', 1);
-             if (secondQuote !== -1) {
-                 pathArg = finalCommand.substring(secondQuote + 1).trim();
-             } else {
-                 pathArg = finalCommand.substring(finalCommand.indexOf(" ") + 1).trim();
-             }
-          } else {
-             const firstSpace = finalCommand.indexOf(" ");
-             if (firstSpace !== -1) {
-                 pathArg = finalCommand.substring(firstSpace + 1).trim();
-             } else {
-                 pathArg = finalCommand;
-             }
-          }
-          
-          pathArg = pathArg.replace(/^"|"$/g, '').trim();
-          
-          if (pathArg && (pathArg.includes(":\\") || pathArg.startsWith("\\") || pathArg.startsWith("/"))) {
-              diagLog(`[Exec] Spawning terminal for IDE AUMID: ${pathArg}`);
-              runAutoCommands(options.terminalCommands, pathArg, options.openTerminal);
-          }
+          diagLog(`[Exec] IDE + terminal: resolving cwd from launch command`);
+          await runAutoCommands(options.terminalCommands, finalCommand, options.openTerminal);
+          skipTerminalAfterLaunchLoop = true;
         }
         
         resolvedCommand = originalAumidCommand;
@@ -1941,7 +2574,9 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
     for (const method of methodsToTry) {
       try {
         await tryExecution(method, resolvedCommand);
-        runAutoCommands(options.terminalCommands, resolvedCommand, options?.openTerminal);
+        if (!skipTerminalAfterLaunchLoop) {
+          await runAutoCommands(options.terminalCommands, resolvedCommand, options?.openTerminal);
+        }
         console.log(`\n✓✓✓ EXEC_SUCCESS: Launched with '${method}' ✓✓✓\n`);
         return; // Success! Exit early
       } catch (err) {
@@ -1969,7 +2604,7 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
 ipcMain.on("hide-window", () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
-
+  windowBuriedPassive = true;
 
   // Low latency "hide": Opacity + Passthrough + Blur
   mainWindow.setOpacity(0);
@@ -1981,71 +2616,156 @@ ipcMain.on("hide-window", () => {
 ipcMain.on("show-window", () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
-  // First show the window but keep it transparent (opacity 0)
-  // This allows Chromium to start rendering but keeps it invisible to the user
+  windowBuriedPassive = false;
+
+  mainWindow.setIgnoreMouseEvents(false);
   mainWindow.show();
   mainWindow.focus();
-  mainWindow.setIgnoreMouseEvents(false);
-  
-  // Wait a tiny bit (approx 2 frames at 60fps) to ensure the first new frame is ready
-  setTimeout(() => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.setOpacity(1);
-    }
-  }, 32); 
+  try {
+    mainWindow.webContents.focus();
+  } catch (e) {
+    /* ignore */
+  }
+  // hide-window forces opacity 0 — restore immediately so the user never interacts with a "dead" layer
+  mainWindow.setOpacity(1);
+});
+
+ipcMain.on("set-window-opacity", (event, opacity) => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const v = typeof opacity === "number" && !Number.isNaN(opacity)
+    ? Math.max(0, Math.min(1, opacity))
+    : 1;
+  mainWindow.setOpacity(v);
 });
 
 ipcMain.handle("get-onboarding-apps", async () => {
   return new Promise((resolve) => {
-    // We search for a specific set of high-priority common apps for onboarding
-    const targetApps = [
-      "Chrome",
-      "Edge",
-      "Discord",
-      "Spotify",
-      "Steam",
-      "VS Code",
-      "Visual Studio Code",
-      "Notepad",
-      "Calculadora",
-      "Calculator",
-    ];
-    const psScript = `
-      $ErrorActionPreference = 'SilentlyContinue';
-      $targets = @(${targetApps.map((a) => `'${a}'`).join(", ")});
-      $apps = Get-StartApps | Where-Object { 
-        $name = $_.Name; 
-        $match = $targets | Where-Object { $name -like "*$_*" };
-        $match -and ($_.AppID -notmatch 'Help|Feedback|Contact|Support|Manual')
-      } | Select-Object Name, AppID | Select-Object -First 5;
-      
-      $results = @();
+    const targetApps = ["Chrome", "Edge", "Discord", "Spotify", "Steam", "VS Code", "Visual Studio Code", "Notepad", "Calculadora", "Calculator"];
+    const psScriptContent = `
+      $ErrorActionPreference = 'SilentlyContinue'
+      $targets = @(${targetApps.map((a) => `'${a}'`).join(", ")})
+      $apps = Get-StartApps | Where-Object {
+        $name = $_.Name
+        $match = $targets | Where-Object { $name -like "*$_*" }
+        $match -and ($_.AppID -notmatch 'Help|Feedback|Contact|Support|Manual|Desinstalar|Ajuda')
+      } | Select-Object Name, AppID | Select-Object -First 5
+
+      $results = @()
       foreach ($app in $apps) {
-        $results += [PSCustomObject]@{ 
-          Name = [string]$app.Name; 
-          Path = [string]$app.AppID; 
-        };
+        $results += [PSCustomObject]@{
+          Name = [string]$app.Name
+          Path = [string]$app.AppID
+        }
       }
       $results | ConvertTo-Json -Compress
     `;
 
-    const command = `powershell -NoProfile -ExecutionPolicy Bypass -Command "${psScript
-      .replace(/"/g, '\\"')
-      .replace(/[\r\n]+/g, " ")
-      .trim()}"`;
+    const tempPath = path.join(app.getPath("userData"), "temp-onboarding.ps1");
+    try {
+      fs.writeFileSync(tempPath, psScriptContent, "utf8");
+      exec(`powershell -NoProfile -ExecutionPolicy Bypass -File "${tempPath}"`, (error, stdout) => {
+        try { fs.unlinkSync(tempPath); } catch (e) {}
+        if (error || !stdout) { resolve([]); return; }
+        try {
+          const apps = JSON.parse(stdout);
+          resolve(Array.isArray(apps) ? apps : [apps]);
+        } catch (e) { resolve([]); }
+      });
+    } catch (e) { resolve([]); }
+  });
+});
 
-    exec(command, (error, stdout) => {
-      if (error || !stdout) {
-        resolve([]);
-        return;
-      }
+// IPC: Get recommended apps for initial workspace (Discovery)
+ipcMain.handle("get-startup-apps", async () => {
+  return new Promise((resolve) => {
+    diagLog("[Discovery] Running Smart Discovery for initial apps...");
+
+    const psScriptContent = `
+      $ErrorActionPreference = 'SilentlyContinue'
+      $ProgressPreference = 'SilentlyContinue'
+
       try {
-        const apps = JSON.parse(stdout);
-        resolve(Array.isArray(apps) ? apps : [apps]);
-      } catch (e) {
-        resolve([]);
-      }
-    });
+        # 1. Gather all start apps and define aggressive exclusion
+        $excludePattern = 'Help|Feedback|Contact|Support|Manual|Setting|Uninstall|Remover|Windows PowerShell|Windows Terminal|Terminal|Welcome|Store|Optional Features|Drivers|Games|Diagnostic|Documentation|AMD |NVIDIA|Intel|Realtek|Update|Setup|Service|Helper|System|Framework|Microsoft |Ajuda|Suporte|Desinstalar|Instalador'
+        $startApps = Get-StartApps | Where-Object { $_.Name -and $_.AppID -and $_.Name -notmatch $excludePattern }
+
+        $results = New-Object System.Collections.ArrayList
+        $seenAppIds = New-Object System.Collections.ArrayList
+
+        # STEP A: High-Value Priority Search (Common Productivity/Social Apps)
+        $priorityTerms = @('Chrome', 'Visual Studio Code', 'VS Code', 'Discord', 'Spotify', 'Telegram', 'WhatsApp', 'Steam', 'Edge', 'Firefox', 'Cursor', 'Obsidian', 'Figma', 'Slack', 'Teams', 'Zoom', 'Notepad', 'Calculadora', 'Calculator')
+        foreach ($term in $priorityTerms) {
+          $match = $startApps | Where-Object { $_.Name -like "*$term*" } | Select-Object -First 1
+          if ($null -ne $match -and $seenAppIds -notcontains $match.AppID) {
+            $null = $results.Add([PSCustomObject]@{
+              Name = [string]$match.Name
+              Path = [string]$match.AppID
+              Command = [string]$match.AppID
+              TargetPath = ""
+            })
+            $null = $seenAppIds.Add($match.AppID)
+            if ($results.Count -ge 5) { break }
+          }
+        }
+
+        # STEP B: Search USER START MENU (APPDATA)
+        if ($results.Count -lt 5) {
+          $userPrograms = "$env:APPDATA\\Microsoft\\Windows\\Start Menu\\Programs"
+          if (Test-Path $userPrograms) {
+            $shell = New-Object -ComObject WScript.Shell
+            $userLnks = Get-ChildItem -Path $userPrograms -Filter *.lnk -Recurse | Sort-Object LastWriteTime -Descending | Select-Object -First 50
+            foreach ($lnk in $userLnks) {
+              try {
+                $target = $shell.CreateShortcut($lnk.FullName).TargetPath
+                if ($target -and (Test-Path $target)) {
+                    $item = Get-Item $target
+                    if (-not $item.PSIsContainer -and $target -match '\\.(exe|lnk|bat|cmd|msi)$') {
+                        $baseName = $lnk.BaseName
+                        $match = $startApps | Where-Object { $_.Name -eq $baseName -or $_.AppID -match [regex]::Escape($baseName) } | Select-Object -First 1
+                        $appId = if ($null -ne $match) { $match.AppID } else { $lnk.FullName }
+                        $appName = if ($null -ne $match) { $match.Name } else { $baseName }
+                        if ($seenAppIds -notcontains $appId) {
+                            $null = $results.Add([PSCustomObject]@{ Name = [string]$appName; Path = [string]$appId; Command = [string]$appId; TargetPath = [string]$lnk.FullName })
+                            $null = $seenAppIds.Add($appId)
+                            if ($results.Count -ge 5) { break }
+                        }
+                    }
+                }
+              } catch {}
+            }
+          }
+        }
+
+        # STEP C: Final Fallback
+        if ($results.Count -lt 5) {
+          foreach ($app in $startApps) {
+            if ($seenAppIds -notcontains $app.AppID) {
+              $null = $results.Add([PSCustomObject]@{ Name = [string]$app.Name; Path = [string]$app.AppID; Command = [string]$app.AppID; TargetPath = "" })
+              $null = $seenAppIds.Add($app.AppID)
+              if ($results.Count -ge 5) { break }
+            }
+          }
+        }
+
+        if ($results.Count -eq 0) { Write-Output "[]" } else { $results | ConvertTo-Json -Compress }
+      } catch { Write-Output "[]" }
+    `;
+
+    const tempScriptPath = path.join(app.getPath("userData"), "temp-discovery.ps1");
+    try {
+      fs.writeFileSync(tempScriptPath, psScriptContent, "utf8");
+      exec(`powershell -NoProfile -ExecutionPolicy Bypass -File "${tempScriptPath}"`, { maxBuffer: 1024 * 1024 * 5 }, (error, stdout, stderr) => {
+        try { fs.unlinkSync(tempScriptPath); } catch (e) {}
+        if (error) { diagLog(`[Discovery] PowerShell error: ${error.message}`); resolve([]); return; }
+        if (!stdout || stdout.trim() === "" || stdout.trim() === "[]") { diagLog("[Discovery] No apps found"); resolve([]); return; }
+        try {
+          const apps = JSON.parse(stdout.trim());
+          const result = Array.isArray(apps) ? apps : [apps];
+          diagLog(`[Discovery] Success: Found ${result.length} apps`);
+          resolve(result);
+        } catch (e) { resolve([]); }
+      });
+    } catch (err) { resolve([]); }
   });
 });
 
@@ -2054,11 +2774,14 @@ ipcMain.on("set-window-size", (event, mode) => {
   updateWindowSize(mode);
 });
 
-// IPC: Window Controls
+// IPC: Minimize — hide from taskbar (tray-only), same idea as old “close” that stayed in the tray.
 ipcMain.on("minimize-window", () => {
-  if (mainWindow) {
-    mainWindow.hide();
-    mainWindow.setSkipTaskbar(true); // Send to tray
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    mainWindow.setSkipTaskbar(true);
+    mainWindow.minimize();
+  } catch (e) {
+    console.error("minimize-window failed:", e);
   }
 });
 
@@ -2076,8 +2799,9 @@ ipcMain.on("quit-app", () => {
   app.quit();
 });
 
-  ipcMain.on("reset-config", () => {
+  ipcMain.on("reset-config", async (event, options = {}) => {
   try {
+    diagLog("[Reset] Starting full configuration reset...");
     const configPath = path.join(app.getPath("userData"), "config-v2.json");
     const oldConfigPath = path.join(app.getPath("userData"), "config.json");
     const settingsPath = path.join(app.getPath("userData"), "settings.json");
@@ -2085,25 +2809,40 @@ ipcMain.on("quit-app", () => {
     // Delete config files
     if (fs.existsSync(configPath)) {
       fs.unlinkSync(configPath);
-      console.log("Deleted config-v2.json");
+      diagLog("[Reset] Deleted config-v2.json");
     }
     if (fs.existsSync(oldConfigPath)) {
       fs.unlinkSync(oldConfigPath);
-      console.log("Deleted config.json");
+      diagLog("[Reset] Deleted config.json");
     }
     if (fs.existsSync(settingsPath)) {
       fs.unlinkSync(settingsPath);
-      console.log("Deleted settings.json");
+      diagLog("[Reset] Deleted settings.json");
     }
+
+    // Clear icon cache
+    const iconCachePath = path.join(app.getPath("userData"), "icon-cache.json");
+    if (fs.existsSync(iconCachePath)) {
+      fs.unlinkSync(iconCachePath);
+      diagLog("[Reset] Deleted icon-cache.json");
+    }
+
+    // Clear Electron session storage (Local Storage, IndexedDB, Cache, etc.)
+    const { session } = require('electron');
+    await session.defaultSession.clearStorageData();
+    diagLog("[Reset] Cleared browser session data (Local Storage, etc.)");
 
     // Clear internal caches
     iconCache.clear();
     gameModeConfig = { enabled: false, blockFullscreen: true, blockedApps: "" };
 
+    diagLog("[Reset] Configuration reset completed. Restarting...");
+
     // Relaunch logic handles dev vs prod
     if (isDev) {
       console.log("Dev mode: Reloading window instead of relaunching app...");
       if (mainWindow) {
+        await mainWindow.webContents.session.clearStorageData();
         mainWindow.reload();
         mainWindow.show();
       }
@@ -2113,6 +2852,7 @@ ipcMain.on("quit-app", () => {
     }
   } catch (err) {
     console.error("Failed to reset config:", err);
+    diagLog(`[Reset] Error: ${err.message}`);
   }
 });
 
@@ -2143,6 +2883,7 @@ ipcMain.handle("select-folder", async () => {
 });
 
 // IPC: Select Image (Custom Icon)
+// Copy into userData so the icon survives if the original file is deleted/moved.
 ipcMain.handle("select-image", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ["openFile"],
@@ -2151,10 +2892,85 @@ ipcMain.handle("select-image", async () => {
       { name: "All Files", extensions: ["*"] },
     ],
   });
-  if (!result.canceled && result.filePaths.length > 0) {
-    return result.filePaths[0];
+  if (result.canceled || result.filePaths.length === 0) return null;
+
+  const srcPath = result.filePaths[0];
+  try {
+    const customIconsDir = path.join(app.getPath("userData"), "custom-icons");
+    if (!fs.existsSync(customIconsDir)) {
+      fs.mkdirSync(customIconsDir, { recursive: true });
+    }
+    const ext = path.extname(srcPath) || ".png";
+    const destPath = path.join(
+      customIconsDir,
+      `${crypto.randomUUID()}${ext}`,
+    );
+    fs.copyFileSync(srcPath, destPath);
+    return destPath;
+  } catch (e) {
+    diagLog(`[select-image] Failed to copy into app data: ${e.message}`);
+    return null;
+  }
+});
+
+/** Pomodoro ambient: copy selected audio into userData/pomodoro-ambient. */
+ipcMain.handle("select-pomodoro-audio", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openFile"],
+    filters: [
+      {
+        name: "Audio",
+        extensions: ["mp3", "wav", "ogg", "m4a", "aac", "flac", "opus", "webm"],
+      },
+      { name: "All Files", extensions: ["*"] },
+    ],
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  const srcPath = result.filePaths[0];
+  try {
+    const dir = path.join(app.getPath("userData"), "pomodoro-ambient");
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const ext = path.extname(srcPath) || ".mp3";
+    const destPath = path.join(dir, `ambient-${crypto.randomUUID()}${ext}`);
+    fs.copyFileSync(srcPath, destPath);
+    return destPath;
+  } catch (e) {
+    diagLog(`[select-pomodoro-audio] ${e.message}`);
   }
   return null;
+});
+
+ipcMain.handle("remove-managed-pomodoro-audio", async (_, filePath) => {
+  try {
+    if (!filePath || typeof filePath !== "string") return;
+    let p = filePath.trim();
+    if (p.startsWith("file:")) p = url.fileURLToPath(p);
+    p = path.resolve(p);
+    const base = path.resolve(path.join(app.getPath("userData"), "pomodoro-ambient"));
+    const rel = path.relative(base, p);
+    if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return;
+    if (fs.existsSync(p)) fs.unlinkSync(p);
+  } catch (e) {
+    diagLog(`[remove-managed-pomodoro-audio] ${e.message}`);
+  }
+});
+
+// Delete a copied custom icon file (only if path is under userData/custom-icons).
+ipcMain.handle("remove-managed-custom-icon", async (_, urlOrPath) => {
+  try {
+    if (!urlOrPath || typeof urlOrPath !== "string") return;
+    let filePath = urlOrPath.trim();
+    if (filePath.startsWith("file:")) {
+      filePath = url.fileURLToPath(filePath);
+    }
+    filePath = path.resolve(filePath);
+    const customDir = path.resolve(path.join(app.getPath("userData"), "custom-icons"));
+    const rel = path.relative(customDir, filePath);
+    if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return;
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch (e) {
+    diagLog(`[remove-managed-custom-icon] ${e.message}`);
+  }
 });
 
 // IPC: Get File Icon
@@ -2187,14 +3003,18 @@ setInterval(saveIconCache, 60000); // Every minute
 
 ipcMain.handle("get-file-icon", async (event, filePath) => {
   try {
-    if (!filePath || typeof filePath !== "string") return null;
+    if (!filePath || typeof filePath !== "string") {
+      diagLog(`[IconRequest] Aborted: Invalid filePath: ${typeof filePath}`);
+      return null;
+    }
 
     // Check Memory Cache first (fastest)
     if (iconCache.has(filePath)) {
       const cached = iconCache.get(filePath);
-      // We removed individual timestamps to keep the file small,
-      // relying on the manual reset config if needed.
-      if (cached && cached.data) return cached.data;
+      if (cached && cached.data) {
+        // diagLog(`[IconRequest] Cache Hit: ${filePath}`);
+        return cached.data;
+      }
     }
 
     diagLog(`[IconRequest] Fetching icon for: ${filePath}`);
@@ -2202,20 +3022,33 @@ ipcMain.handle("get-file-icon", async (event, filePath) => {
     // 1. Resolve shell paths
     let resolvedPath = resolveShellPath(filePath);
     resolvedPath = resolvedPath.replace(/['\"]/g, "");
+    if (resolvedPath !== filePath) {
+      diagLog(`[IconRequest] Resolved path: ${resolvedPath}`);
+    }
 
     // Special Handling for Common Apps
-    if (
-      filePath === "Microsoft.Windows.Explorer" ||
-      filePath === "File Explorer"
-    ) {
+    const lowerPath = filePath.toLowerCase();
+    const isExplorer = lowerPath === "explorer" || lowerPath === "microsoft.windows.explorer" || lowerPath === "file explorer";
+    const isCalc = lowerPath === "calc" || lowerPath === "calculator" || lowerPath === "calculadora" || lowerPath.includes("windowscalculator");
+    const isEdge = lowerPath === "msedge" || lowerPath === "edge" || lowerPath.includes("microsoftedge");
+
+    if (isExplorer) {
       resolvedPath = path.join(
         process.env["SystemRoot"] || "C:\\Windows",
         "explorer.exe",
       );
-    } else if (
-      filePath === "Microsoft.MicrosoftEdge" ||
-      filePath === "MSEdge"
-    ) {
+    } else if (isCalc) {
+      const calcPath = path.join(
+        process.env["SystemRoot"] || "C:\\Windows",
+        "System32",
+        "calc.exe",
+      );
+      if (fs.existsSync(calcPath)) {
+        resolvedPath = calcPath;
+      } else {
+        resolvedPath = "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App";
+      }
+    } else if (isEdge) {
       const edgePath = path.join(
         process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)",
         "Microsoft\\Edge\\Application\\msedge.exe",
@@ -2236,32 +3069,50 @@ ipcMain.handle("get-file-icon", async (event, filePath) => {
       try {
         const icon = await app.getFileIcon(resolvedPath, { size: "large" });
         if (icon) {
+          diagLog(`[IconRequest] Success via Native Electron for ${resolvedPath}`);
           const dataUrl = icon.toDataURL();
           iconCache.set(filePath, { data: dataUrl });
           return dataUrl;
         }
       } catch (e) {
-        diagLog(
-          `[IconRequest] Native extraction failed for ${resolvedPath}: ${e.message}`,
-        );
+        diagLog(`[IconRequest] Native extraction failed for ${resolvedPath}: ${e.message}`);
       }
     }
 
-    // 3. PowerShell Extraction Strategy
+    // 3. PowerShell extraction — use spawn + argv so AUMIDs like Microsoft.X_y!App are not mangled by cmd.exe / string parsing
     const psScript = getAssetPath("extract-icon.ps1");
-    const command = `powershell -NoProfile -ExecutionPolicy Bypass -File "${psScript}" -Target "${resolvedPath}"`;
+    diagLog(`[IconRequest] Trying PowerShell extraction for ${resolvedPath}`);
 
     const iconData = await new Promise((resolve) => {
-      exec(command, { maxBuffer: 1024 * 1024 * 5 }, (error, stdout, stderr) => {
-        if (stdout) {
-          const lines = stdout.trim().split(/\r?\n/);
-          const dataLine = lines.find((line) => line.startsWith("data:image"));
-          if (dataLine) {
-            resolve(dataLine);
-            return;
-          }
-        }
+      const chunks = [];
+      const psExe = path.join(
+        process.env.SystemRoot || "C:\\Windows",
+        "System32",
+        "WindowsPowerShell",
+        "v1.0",
+        "powershell.exe",
+      );
+      const child = spawn(
+        fs.existsSync(psExe) ? psExe : "powershell.exe",
+        ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psScript, "-Target", resolvedPath],
+        { windowsHide: true },
+      );
+      child.stdout.on("data", (d) => chunks.push(d));
+      child.stderr.on("data", (d) =>
+        diagLog(`[IconRequest] PowerShell stderr: ${String(d).trim()}`),
+      );
+      child.on("error", (err) => {
+        diagLog(`[IconRequest] PowerShell spawn error: ${err.message}`);
         resolve(null);
+      });
+      child.on("close", (code) => {
+        if (code !== 0) {
+          diagLog(`[IconRequest] PowerShell exit ${code} for ${resolvedPath}`);
+        }
+        const stdout = Buffer.concat(chunks).toString("utf8");
+        const lines = stdout.trim().split(/\r?\n/);
+        const dataLine = lines.find((line) => line.startsWith("data:image"));
+        resolve(dataLine || null);
       });
     });
 
@@ -2272,15 +3123,19 @@ ipcMain.handle("get-file-icon", async (event, filePath) => {
     }
 
     // 4. Final Fallback
+    diagLog(`[IconRequest] Falling back to generic Native extraction for ${resolvedPath}`);
     try {
       const icon = await app.getFileIcon(resolvedPath, { size: "large" });
       const dataUrl = icon.toDataURL();
+      diagLog(`[IconRequest] Final fallback success for ${resolvedPath}`);
       iconCache.set(filePath, { data: dataUrl });
       return dataUrl;
     } catch (e) {
+      diagLog(`[IconRequest] All extraction methods failed for ${filePath}. Error: ${e.message}`);
       return null;
     }
   } catch (error) {
+    diagLog(`[IconRequest] Critical error in get-file-icon for ${filePath}: ${error.message}`);
     console.error("Critical error in get-file-icon:", error);
     return null;
   }

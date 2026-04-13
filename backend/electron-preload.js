@@ -30,7 +30,21 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.on("open-settings", listener);
     return () => ipcRenderer.removeListener("open-settings", listener);
   },
+  /** Main process hid the window to tray (Alt+F4 / system close) — React must drop "interactive" state. */
+  onWindowHidToTray: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on("window-hid-to-tray", listener);
+    return () => ipcRenderer.removeListener("window-hid-to-tray", listener);
+  },
+  /** After minimize→restore (Windows transparent window): main process reapplies bounds + hit-testing. */
+  onWindowNativeDisplayRestored: (callback) => {
+    const listener = (event, payload) => callback(payload);
+    ipcRenderer.on("window-native-display-restored", listener);
+    return () =>
+      ipcRenderer.removeListener("window-native-display-restored", listener);
+  },
   setWindowSize: (mode) => ipcRenderer.send("set-window-size", mode),
+  setWindowOpacity: (opacity) => ipcRenderer.send("set-window-opacity", opacity),
   setGameMode: (config) => ipcRenderer.send("set-game-mode", config),
   setLoginItemSettings: (settings) =>
     ipcRenderer.send("set-login-item-settings", settings),
@@ -51,8 +65,14 @@ contextBridge.exposeInMainWorld("electron", {
   selectFile: () => ipcRenderer.invoke("select-file"),
   selectFolder: () => ipcRenderer.invoke("select-folder"),
   selectImage: () => ipcRenderer.invoke("select-image"),
+  removeManagedCustomIcon: (urlOrPath) =>
+    ipcRenderer.invoke("remove-managed-custom-icon", urlOrPath),
+  selectPomodoroAudio: () => ipcRenderer.invoke("select-pomodoro-audio"),
+  removeManagedPomodoroAudio: (filePath) =>
+    ipcRenderer.invoke("remove-managed-pomodoro-audio", filePath),
   getInstalledApps: () => ipcRenderer.invoke("get-installed-apps"),
   getOnboardingApps: () => ipcRenderer.invoke("get-onboarding-apps"),
+  getStartupApps: () => ipcRenderer.invoke("get-startup-apps"),
   onExecutionError: (callback) => {
     const listener = (event, errorMsg) => callback(errorMsg);
     ipcRenderer.on("execution-error", listener);
@@ -64,7 +84,6 @@ contextBridge.exposeInMainWorld("electron", {
   setSettings: (settings) => ipcRenderer.send("set-settings", settings),
   openSettingsWindow: () => ipcRenderer.send("open-settings-window"),
   resetConfig: () => ipcRenderer.send("reset-config"),
-  openConfigFolder: () => ipcRenderer.send("open-config-folder"),
   toggleSettings: () => ipcRenderer.send("toggle-settings"),
   setBackgroundMaterial: (material) =>
     ipcRenderer.send("set-background-material", material),
@@ -78,6 +97,14 @@ contextBridge.exposeInMainWorld("electron", {
     return () => ipcRenderer.removeListener("shortcut-recorded", subscription);
   },
   saveFullConfig: (config) => ipcRenderer.send("save-full-config", config),
+  /** Blocks until written — use on shutdown / visibility hidden so notes are not lost. */
+  saveFullConfigSync: (config) => {
+    try {
+      ipcRenderer.sendSync("save-full-config-sync", config);
+    } catch (e) {
+      console.error("saveFullConfigSync failed:", e);
+    }
+  },
   getFullConfig: () => ipcRenderer.invoke("get-full-config"),
   exportConfig: () => ipcRenderer.invoke("export-config"),
   importConfig: () => ipcRenderer.invoke("import-config"),
@@ -91,6 +118,14 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.on("google-auth-success", listener);
     return () => ipcRenderer.removeListener("google-auth-success", listener);
   },
+  onGoogleAuthError: (callback) => {
+    const listener = (event, payload) => callback(payload);
+    ipcRenderer.on("google-auth-error", listener);
+    return () => ipcRenderer.removeListener("google-auth-error", listener);
+  },
+  savePersistenceLog: (message) => ipcRenderer.send("save-persistence-log", message),
+  /** Opens http(s) URLs in the system default browser (not an Electron window). */
+  openExternalUrl: (url) => ipcRenderer.invoke("open-external-url", url),
 });
 
 // Intercept console messages from the renderer process and send them to the main process

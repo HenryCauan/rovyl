@@ -16,6 +16,10 @@ interface AppSelectorProps {
     isOpen: boolean;
     onClose: () => void;
     onAppSelect: (app: { name: string; path: string; type?: 'app' | 'url' | 'folder' }) => void;
+    /** Only the installed-apps list (no URL / folder tabs) — e.g. game mode block list */
+    appsOnly?: boolean;
+    title?: string;
+    subtitle?: string;
 }
 
 type Tab = 'apps' | 'url' | 'folder';
@@ -89,7 +93,14 @@ const TabBtn: React.FC<{
 );
 
 // ─── Main Component ────────────────────────────────────────────────────────────
-export const AppSelector: React.FC<AppSelectorProps> = ({ isOpen, onClose, onAppSelect }) => {
+export const AppSelector: React.FC<AppSelectorProps> = ({
+    isOpen,
+    onClose,
+    onAppSelect,
+    appsOnly = false,
+    title = 'Adicionar ao Workspace',
+    subtitle = 'Escolha o tipo de atalho',
+}) => {
     const [tab, setTab] = useState<Tab>('apps');
     const [apps, setApps] = useState<WindowsApp[]>([]);
     const [loading, setLoading] = useState(false);
@@ -110,7 +121,7 @@ export const AppSelector: React.FC<AppSelectorProps> = ({ isOpen, onClose, onApp
         setFolderPath('');
         setFolderName('');
         loadApps();
-    }, [isOpen]);
+    }, [isOpen, appsOnly]);
 
     // Autofocus search
     useEffect(() => {
@@ -213,8 +224,8 @@ export const AppSelector: React.FC<AppSelectorProps> = ({ isOpen, onClose, onApp
                 {/* ── Header ── */}
                 <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-white/[0.06] shrink-0">
                     <div>
-                        <h2 className="text-base font-semibold text-white tracking-tight">Adicionar ao Workspace</h2>
-                        <p className="text-xs text-white/30 mt-0.5">Escolha o tipo de atalho</p>
+                        <h2 className="text-base font-semibold text-white tracking-tight">{title}</h2>
+                        <p className="text-xs text-white/30 mt-0.5">{subtitle}</p>
                     </div>
                     <button
                         onClick={onClose}
@@ -225,27 +236,33 @@ export const AppSelector: React.FC<AppSelectorProps> = ({ isOpen, onClose, onApp
                 </div>
 
                 {/* ── Tabs ── */}
-                <div className="flex gap-1.5 px-5 py-3 border-b border-white/[0.06] shrink-0 bg-[#0c0c0c]">
-                    <TabBtn
-                        active={tab === 'apps'}
-                        onClick={() => setTab('apps')}
-                        icon={<Monitor size={14} />}
-                        label="Apps"
-                        count={apps.length}
-                    />
-                    <TabBtn
-                        active={tab === 'url'}
-                        onClick={() => setTab('url')}
-                        icon={<Globe size={14} />}
-                        label="URL"
-                    />
-                    <TabBtn
-                        active={tab === 'folder'}
-                        onClick={() => setTab('folder')}
-                        icon={<Folder size={14} />}
-                        label="Pasta"
-                    />
-                </div>
+                {!appsOnly ? (
+                    <div className="flex gap-1.5 px-5 py-3 border-b border-white/[0.06] shrink-0 bg-[#0c0c0c]">
+                        <TabBtn
+                            active={tab === 'apps'}
+                            onClick={() => setTab('apps')}
+                            icon={<Monitor size={14} />}
+                            label="Apps"
+                            count={apps.length}
+                        />
+                        <TabBtn
+                            active={tab === 'url'}
+                            onClick={() => setTab('url')}
+                            icon={<Globe size={14} />}
+                            label="URL"
+                        />
+                        <TabBtn
+                            active={tab === 'folder'}
+                            onClick={() => setTab('folder')}
+                            icon={<Folder size={14} />}
+                            label="Pasta"
+                        />
+                    </div>
+                ) : (
+                    <div className="px-5 py-2.5 border-b border-white/[0.06] shrink-0 bg-[#0c0c0c]">
+                        <span className="text-[11px] font-medium text-white/35 uppercase tracking-wider">Apps instalados</span>
+                    </div>
+                )}
 
                 {/* ── Content ── */}
                 <div className="flex-1 min-h-0 overflow-hidden flex flex-col">

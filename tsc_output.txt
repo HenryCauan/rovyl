@@ -1,4 +1,0 @@
-src/components/SettingsModal.tsx(2782,31): error TS2339: Property 'exportConfig' does not exist on type 'ElectronAPI'.
-src/components/SettingsModal.tsx(2786,50): error TS2339: Property 'exportConfig' does not exist on type 'ElectronAPI'.
-src/components/SettingsModal.tsx(2800,31): error TS2339: Property 'importConfig' does not exist on type 'ElectronAPI'.
-src/components/SettingsModal.tsx(2804,50): error TS2339: Property 'importConfig' does not exist on type 'ElectronAPI'.

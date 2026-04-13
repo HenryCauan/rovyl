@@ -60,10 +60,33 @@ const normalizePathForDedup = (item: any): string => {
   return normalized;
 };
 
+/** When "recent folders" is enabled but MRU fetch is empty or fails, show one explicit slice — never auto-launch the parent IDE. */
+function buildRecentsEmptyFallback(parent: AppItem, config: UIConfig): AppItem[] {
+  return [
+    {
+      id: `${parent.id}__recents-empty-fallback`,
+      label: getTranslation(config, 'menu.recents_fallback'),
+      command: parent.command,
+      commandType: parent.commandType || 'app',
+      iconName: parent.iconName || 'AppWindow',
+      iconSource: parent.iconSource || 'lucide',
+      customIconUrl: parent.customIconUrl,
+      description: parent.label,
+    },
+  ];
+}
+
+/** Parent IDE setting: MRU slices open a terminal cwd'd to the project path (see executeCommand + IDE branch). */
+function applyOpenTerminalForRecents(recents: AppItem[], parent: AppItem): AppItem[] {
+  if (!parent.openTerminalForRecents) return recents;
+  return recents.map((r) => ({ ...r, openTerminal: true }));
+}
+
 interface RadialMenuProps {
   isOpen: boolean;
   position: Coordinates;
-  onClose: (selectedId: string | null) => void;
+  /** Pass `selectedApp` when launching an item that may not exist in saved config (e.g. MRU `recent-*` ids). */
+  onClose: (selectedId: string | null, selectedApp?: AppItem | null) => void;
   apps: AppItem[];
   config: UIConfig;
   triggerSource?: 'mmb' | 'shortcut';
@@ -78,14 +101,30 @@ interface RadialMenuItemProps {
   actualMenuRadius: number;
   actualIconSize: number;
   totalApps: number;
-  config: UIConfig;
+  /** Narrow style props so parent config identity does not bust memo for every App re-render. */
+  accentColor: string;
+  backdropOpacity: number;
+  showLabels: boolean;
+  performanceMode: boolean;
   folderStackLength: number;
   isOpen: boolean;
   onClick: (app: AppItem) => void;
 }
 
 const RadialMenuItem = React.memo(({
-  app, index, isActive, actualMenuRadius, actualIconSize, totalApps, config, folderStackLength, isOpen, onClick
+  app,
+  index,
+  isActive,
+  actualMenuRadius,
+  actualIconSize,
+  totalApps,
+  accentColor,
+  backdropOpacity,
+  showLabels,
+  performanceMode,
+  folderStackLength,
+  isOpen,
+  onClick,
 }: RadialMenuItemProps) => {
   const Icon = getIcon(app.iconName);
   const sliceAngle = 360 / totalApps;
@@ -113,9 +152,11 @@ const RadialMenuItem = React.memo(({
     return app.iconSource === 'native' && !!app.customIconUrl;
   }, [app.command, app.label, app.iconSource, app.customIconUrl]);
 
-  // Fast stagger: max 50ms total across all items for near-instant bloom
+  // Fast stagger: max 50ms total across all items for near-instant bloom (skip stagger in performance mode)
   const maxDelay = 0.05;
-  const staggerDelay = Math.min((index / Math.max(totalApps, 1)) * maxDelay, maxDelay);
+  const staggerDelay = performanceMode
+    ? 0
+    : Math.min((index / Math.max(totalApps, 1)) * maxDelay, maxDelay);
 
   return (
     <motion.div
@@ -130,13 +171,17 @@ const RadialMenuItem = React.memo(({
         scale: 0, opacity: 0, x: 0, y: 0
       }}
       exit={{ scale: 0, opacity: 0, transition: { duration: 0.1 } }}
-      transition={{
-        type: 'spring',
-        stiffness: 400,
-        damping: 25,
-        mass: 0.8,
-        delay: isOpen ? staggerDelay : 0
-      }}
+      transition={
+        performanceMode
+          ? { duration: 0.12, ease: 'easeOut', delay: isOpen ? staggerDelay : 0 }
+          : {
+              type: 'spring',
+              stiffness: 400,
+              damping: 25,
+              mass: 0.8,
+              delay: isOpen ? staggerDelay : 0,
+            }
+      }
       className="absolute top-0 left-0 pointer-events-auto cursor-pointer"
       style={{ zIndex: isActive ? 200 : 100, willChange: 'transform, opacity' }}
       onMouseDown={(e) => e.stopPropagation()}
@@ -163,15 +208,15 @@ const RadialMenuItem = React.memo(({
               ${isActive ? 'shadow-[0_0_25px_rgba(255,255,255,0.15)]' : ''}
             `}
             style={{
-              backgroundColor: isActive ? config.accentColor : `rgba(${18 + Math.round(config.backdropOpacity * 12)}, ${18 + Math.round(config.backdropOpacity * 12)}, ${20 + Math.round(config.backdropOpacity * 12)}, 0.85)`,
-              border: isActive ? `1px solid ${config.accentColor}` : `1px solid rgba(255,255,255,${0.08 + config.backdropOpacity * 0.06})`,
+              backgroundColor: isActive ? accentColor : `rgba(${18 + Math.round(backdropOpacity * 12)}, ${18 + Math.round(backdropOpacity * 12)}, ${20 + Math.round(backdropOpacity * 12)}, 0.85)`,
+              border: isActive ? `1px solid ${accentColor}` : `1px solid rgba(255,255,255,${0.08 + backdropOpacity * 0.06})`,
               color: isActive ? '#000' : '#fff',
               boxShadow: !isActive ? `0 2px 12px rgba(0,0,0,0.3)` : undefined
             }}
           >
             {/* Icon Container: Show either native icon OR vector icon, not both */}
             <div className="w-full h-full flex items-center justify-center relative">
-              {shouldUseCustomIcon ? (
+              {app.customIconUrl ? (
                 /* Native Icon (Automatically normalized) */
                 <SmartIcon
                   src={app.customIconUrl!}
@@ -196,7 +241,7 @@ const RadialMenuItem = React.memo(({
           )}
         </div>
 
-        {config.showLabels && (
+        {showLabels && (
           <motion.div
             className="absolute pointer-events-none z-30"
             style={{
@@ -237,7 +282,42 @@ const RadialMenuItem = React.memo(({
   );
 });
 
-export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClose, apps, config, triggerSource = 'shortcut', onWorkspaceSwitch, currentWorkspace }) => {
+/** One SVG spoke; `isActive` only toggles for the hovered slice so React skips other lines on pointer move. */
+const RadialSliceLine = React.memo(
+  ({
+    isActive,
+    index,
+    total,
+    actualMenuRadius,
+    accentColor,
+  }: {
+    isActive: boolean;
+    index: number;
+    total: number;
+    actualMenuRadius: number;
+    accentColor: string;
+  }) => {
+    const sliceAngle = 360 / total;
+    const angleDeg = index * sliceAngle - 90;
+    const angleRad = angleDeg * (Math.PI / 180);
+    const x = actualMenuRadius * Math.cos(angleRad);
+    const y = actualMenuRadius * Math.sin(angleRad);
+    return (
+      <line
+        x1="50%"
+        y1="50%"
+        x2={actualMenuRadius * 1.5 + x}
+        y2={actualMenuRadius * 1.5 + y}
+        stroke={isActive ? accentColor : 'white'}
+        strokeWidth={isActive ? 1.5 : 0.5}
+        opacity={isActive ? 0.5 : 0.08}
+        style={{ transition: 'opacity 0.2s ease, stroke 0.2s ease, stroke-width 0.2s ease' }}
+      />
+    );
+  }
+);
+
+const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose, apps, config, triggerSource = 'shortcut', onWorkspaceSwitch, currentWorkspace }) => {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [isCenterActive, setIsCenterActive] = useState(false);
   const [hasMoved, setHasMoved] = useState(false);
@@ -257,6 +337,8 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
   const [isLoadingRecents, setIsLoadingRecents] = useState(false);
 
   const menuRef = useRef<HTMLDivElement>(null);
+  const configRef = useRef(config);
+  configRef.current = config;
 
   const iconSizePx = config.iconSize || 64;
   const minGap = config.appSpacing || 0;
@@ -446,7 +528,6 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
       const { isCenterActive, folderStack, apps, currentLevelApps, activeIndex, onClose } = stateRef.current;
       
       const selectedItemObj = activeIndex !== null ? currentLevelApps[activeIndex] : null;
-      console.error(`[Zenith] MouseUp! ActiveIndex: ${activeIndex}, Item: ${selectedItemObj?.label}`);
 
       if (isCenterActive) {
         if (folderStack.length > 0) {
@@ -512,11 +593,6 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                 const isDuplicateLabel = rLabelLower && seenLabels.has(rLabelLower);
                 
                 if (isDuplicatePath || isDuplicateLabel) {
-                   if (isDuplicatePath) {
-                     console.error(`[Zenith] Deduplicated "${r.label}" (Path Match)`);
-                   } else {
-                     console.error(`[Zenith] Deduplicated "${r.label}" (Visual Label Match)`);
-                   }
                    return false;
                 }
                 
@@ -525,19 +601,34 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                 return true;
               });
               
-              const combined = [...manualFolders, ...uniqueRecents];
+              const combined = [...manualFolders, ...applyOpenTerminalForRecents(uniqueRecents, selectedItem)];
 
               if (combined.length > 0) {
                 setFolderStack([...folderStack, { label: selectedItem.label, apps: combined }]);
                 setCurrentLevelApps(combined);
                 setHasMoved(false);
                 setActiveIndex(null);
+              } else if (selectedItem.hasRecents) {
+                setIsLoadingRecents(false);
+                const fallback = buildRecentsEmptyFallback(selectedItem, stateRef.current.config);
+                setFolderStack([...folderStack, { label: selectedItem.label, apps: fallback }]);
+                setCurrentLevelApps(fallback);
+                setHasMoved(false);
+                setActiveIndex(null);
               } else {
-                onClose(selectedItem.id);
+                onClose(selectedItem.id, selectedItem);
               }
             }).catch(() => {
               setIsLoadingRecents(false);
-              onClose(selectedItem.id);
+              if (selectedItem.hasRecents) {
+                const fallback = buildRecentsEmptyFallback(selectedItem, stateRef.current.config);
+                setFolderStack([...folderStack, { label: selectedItem.label, apps: fallback }]);
+                setCurrentLevelApps(fallback);
+                setHasMoved(false);
+                setActiveIndex(null);
+              } else {
+                onClose(selectedItem.id, selectedItem);
+              }
             });
           } else {
             // Only manual folders
@@ -548,7 +639,7 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
             setActiveIndex(null);
           }
         } else {
-          onClose(selectedItem.id);
+          onClose(selectedItem.id, selectedItem);
         }
     };
 
@@ -630,7 +721,6 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
       if (onWorkspaceSwitch) {
         const num = parseInt(e.key);
         if (!isNaN(num) && num >= 1 && num <= 9) {
-          console.warn(`[RadialMenu.tsx] Numeric key in menu: ${e.key}`);
           // App.tsx also has a listener, but having it here doesn't hurt as App.tsx debounces it.
           e.preventDefault();
           onWorkspaceSwitch(num - 1);
@@ -643,20 +733,20 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
   }, [isOpen, onClose]);
 
   // MMB Release Logic (Hold to Open -> Release to Execute)
+  // Uses stateRef so the native listener is not torn down on every hover (activeIndex) update.
   useEffect(() => {
     if (!isOpen || triggerSource !== 'mmb' || !window.electron?.onMmbRelease) return;
 
     const handleMmbRelease = () => {
-      // console.log("MMB Release detected. Active Index:", activeIndex);
-
       const elapsed = Date.now() - openingTimeRef.current;
       const GRACE_PERIOD_MS = 250; // Ensure menu stays open for at least 250ms to prevent flickers
 
       const executeClose = () => {
+        const { isCenterActive, folderStack, currentLevelApps, activeIndex, apps, onClose } = stateRef.current;
+
         if (isCenterActive) {
           if (folderStack.length > 0) {
-            const newStack = [...folderStack];
-            newStack.pop();
+            const newStack = folderStack.slice(0, -1);
             setFolderStack(newStack);
             if (newStack.length === 0) setCurrentLevelApps(apps);
             else setCurrentLevelApps(newStack[newStack.length - 1].apps);
@@ -671,16 +761,11 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
         const selectedItem = activeIndex !== null ? currentLevelApps[activeIndex] : null;
 
         if (selectedItem) {
-          const isKnownIDE = (item: any) => {
-            const l = item.label?.toLowerCase() || '';
-            return l.includes('antigravity') || l.includes('cursor') || l.includes('vs code') || l.includes('vscode');
-          };
-
           const hasRecentFetch = (selectedItem.hasRecents) && window.electron?.getAppRecents;
           const hasManualFolders = selectedItem.children && selectedItem.children.length > 0;
 
           if (selectedItem.type === 'folder' && selectedItem.children) {
-            setFolderStack([...folderStack, { label: selectedItem.label, apps: selectedItem.children }]);
+            setFolderStack(prev => [...prev, { label: selectedItem.label, apps: selectedItem.children! }]);
             setCurrentLevelApps(selectedItem.children);
             setHasMoved(false);
             setActiveIndex(null);
@@ -696,37 +781,52 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                   const normalized = normalizePathForDedup(r);
                   return normalized && !seenPaths.has(normalized);
                 });
-                const combined = [...manualFolders, ...uniqueRecents];
+                const combined = [...manualFolders, ...applyOpenTerminalForRecents(uniqueRecents, selectedItem)];
 
                 if (combined.length > 0) {
-                  setFolderStack([...folderStack, { label: selectedItem.label, apps: combined }]);
+                  setFolderStack(prev => [...prev, { label: selectedItem.label, apps: combined }]);
                   setCurrentLevelApps(combined);
                   setHasMoved(false);
                   setActiveIndex(null);
+                } else if (selectedItem.hasRecents) {
+                  setIsLoadingRecents(false);
+                  const fallback = buildRecentsEmptyFallback(selectedItem, stateRef.current.config);
+                  setFolderStack(prev => [...prev, { label: selectedItem.label, apps: fallback }]);
+                  setCurrentLevelApps(fallback);
+                  setHasMoved(false);
+                  setActiveIndex(null);
                 } else {
-                  onClose(selectedItem.id);
+                  onClose(selectedItem.id, selectedItem);
                 }
               }).catch(() => {
                 setIsLoadingRecents(false);
-                onClose(selectedItem.id);
+                if (selectedItem.hasRecents) {
+                  const fallback = buildRecentsEmptyFallback(selectedItem, stateRef.current.config);
+                  setFolderStack(prev => [...prev, { label: selectedItem.label, apps: fallback }]);
+                  setCurrentLevelApps(fallback);
+                  setHasMoved(false);
+                  setActiveIndex(null);
+                } else {
+                  onClose(selectedItem.id, selectedItem);
+                }
               });
             } else {
               setIsLoadingRecents(false);
-              setFolderStack([...folderStack, { label: selectedItem.label, apps: manualFolders }]);
+              setFolderStack(prev => [...prev, { label: selectedItem.label, apps: manualFolders }]);
               setCurrentLevelApps(manualFolders);
               setHasMoved(false);
               setActiveIndex(null);
             }
           } else {
-            onClose(selectedItem.id);
+            onClose(selectedItem.id, selectedItem);
           }
         } else {
           onClose(null);
         }
       };
 
+      const { hasMoved } = stateRef.current;
       if (!hasMoved && elapsed < GRACE_PERIOD_MS) {
-        // console.log(`MMB release too quick (${elapsed}ms), applying grace period...`);
         setTimeout(executeClose, GRACE_PERIOD_MS - elapsed);
       } else {
         executeClose();
@@ -737,7 +837,7 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
     return () => {
       if (cleanup) cleanup();
     };
-  }, [isOpen, triggerSource, activeIndex, isCenterActive, folderStack, currentLevelApps, onClose, apps, hasMoved]);
+  }, [isOpen, triggerSource]);
 
   const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
   const [weather, setWeather] = useState<{ temp: number; condition: string } | null>(null);
@@ -791,11 +891,12 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
   }, [isOpen, config.showBattery, config.showWeather, config.weatherLocation]);
 
   const handleAppClick = React.useCallback((app: AppItem) => {
+    const cfg = configRef.current;
     const hasRecentFetch = (app.hasRecents) && window.electron?.getAppRecents;
     const hasManualFolders = app.children && app.children.length > 0;
 
     if (app.type === 'folder' && app.children) {
-      setFolderStack([...folderStack, { label: app.label, apps: app.children }]);
+      setFolderStack(prev => [...prev, { label: app.label, apps: app.children! }]);
       setCurrentLevelApps(app.children);
       setHasMoved(false);
       setActiveIndex(null);
@@ -808,31 +909,46 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
           setIsLoadingRecents(false);
           const seenPaths = new Set(manualFolders.map(c => c.command));
           const uniqueRecents = recents.filter(r => !seenPaths.has(r.command));
-          const combined = [...manualFolders, ...uniqueRecents];
+          const combined = [...manualFolders, ...applyOpenTerminalForRecents(uniqueRecents, app)];
 
           if (combined.length > 0) {
-            setFolderStack([...folderStack, { label: app.label, apps: combined }]);
+            setFolderStack(prev => [...prev, { label: app.label, apps: combined }]);
             setCurrentLevelApps(combined);
             setHasMoved(false);
             setActiveIndex(null);
+          } else if (app.hasRecents) {
+            setIsLoadingRecents(false);
+            const fallback = buildRecentsEmptyFallback(app, cfg);
+            setFolderStack(prev => [...prev, { label: app.label, apps: fallback }]);
+            setCurrentLevelApps(fallback);
+            setHasMoved(false);
+            setActiveIndex(null);
           } else {
-            onClose(app.id);
+            onClose(app.id, app);
           }
         }).catch(() => {
           setIsLoadingRecents(false);
-          onClose(app.id);
+          if (app.hasRecents) {
+            const fallback = buildRecentsEmptyFallback(app, cfg);
+            setFolderStack(prev => [...prev, { label: app.label, apps: fallback }]);
+            setCurrentLevelApps(fallback);
+            setHasMoved(false);
+            setActiveIndex(null);
+          } else {
+            onClose(app.id, app);
+          }
         });
       } else {
         setIsLoadingRecents(false);
-        setFolderStack([...folderStack, { label: app.label, apps: manualFolders }]);
+        setFolderStack(prev => [...prev, { label: app.label, apps: manualFolders }]);
         setCurrentLevelApps(manualFolders);
         setHasMoved(false);
         setActiveIndex(null);
       }
     } else {
-      onClose(app.id);
+      onClose(app.id, app);
     }
-  }, [folderStack, onClose]);
+  }, [onClose]);
 
   const getHUDStyles = () => {
     const base = "fixed text-white pointer-events-none flex flex-col z-50 p-8 gap-4";
@@ -884,8 +1000,9 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
             initial={false}
             animate={{ opacity: isOpen ? 1 : 0 }}
             transition={{ duration: 0.25, ease: 'easeOut' }}
-            className="fixed inset-0 z-[41] pointer-events-auto"
+            className="fixed inset-0 z-[41]"
             style={{
+              pointerEvents: isOpen ? 'auto' : 'none',
               background: config.menuBackgroundStyle === 'fullscreen'
                 ? `radial-gradient(circle at center, rgba(0, 0, 0, ${0.05 + config.backdropOpacity * 0.3}) 0%, rgba(0, 0, 0, ${0.2 + config.backdropOpacity * 0.5}) 100%)`
                 : `radial-gradient(circle at ${position.x}px ${position.y}px, rgba(0, 0, 0, ${0.15 + config.backdropOpacity * 0.8}) 0%, rgba(0, 0, 0, ${0.05 + config.backdropOpacity * 0.35}) ${config.menuRadius * 2.0}px, rgba(0, 0, 0, 0) 100%)`,
@@ -1016,7 +1133,6 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
               onMouseUp={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
-                console.log("RadialMenu: Center clicked, label:", centerLabel);
                 if (folderStack.length > 0) {
                   const newStack = [...folderStack];
                   newStack.pop();
@@ -1065,7 +1181,8 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
               )}
             </motion.div>
 
-            {/* Connecting Lines (SVG) - Lightweight CSS transitions */}
+            {/* Connecting Lines (SVG) — one element per slice; omit when costly (performance mode or many slices) */}
+            {!config.performanceMode && currentLevelApps.length <= 18 && (
             <svg
               className="absolute overflow-visible pointer-events-none"
               style={{
@@ -1076,29 +1193,18 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                 zIndex: 0
               }}
             >
-              {currentLevelApps.map((_, index) => {
-                const isActive = index === activeIndex;
-                const sliceAngle = 360 / currentLevelApps.length;
-                const angleDeg = (index * sliceAngle) - 90;
-                const angleRad = angleDeg * (Math.PI / 180);
-                const x = actualMenuRadius * Math.cos(angleRad);
-                const y = actualMenuRadius * Math.sin(angleRad);
-
-                return (
-                  <line
-                    key={`line-${index}`}
-                    x1="50%"
-                    y1="50%"
-                    x2={actualMenuRadius * 1.5 + x}
-                    y2={actualMenuRadius * 1.5 + y}
-                    stroke={isActive ? config.accentColor : "white"}
-                    strokeWidth={isActive ? 1.5 : 0.5}
-                    opacity={isActive ? 0.5 : 0.08}
-                    style={{ transition: 'opacity 0.2s ease, stroke 0.2s ease, stroke-width 0.2s ease' }}
-                  />
-                );
-              })}
+              {currentLevelApps.map((_, index) => (
+                <RadialSliceLine
+                  key={`line-${index}`}
+                  index={index}
+                  isActive={index === activeIndex}
+                  total={currentLevelApps.length}
+                  actualMenuRadius={actualMenuRadius}
+                  accentColor={config.accentColor}
+                />
+              ))}
             </svg>
+            )}
 
             {/* App Icons - AnimatePresence handles transition between folders */}
             <AnimatePresence>
@@ -1113,7 +1219,10 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
                     actualMenuRadius={actualMenuRadius}
                     actualIconSize={actualIconSize}
                     totalApps={currentLevelApps.length}
-                    config={config}
+                    accentColor={config.accentColor}
+                    backdropOpacity={config.backdropOpacity}
+                    showLabels={config.showLabels}
+                    performanceMode={config.performanceMode}
                     folderStackLength={folderStack.length}
                     isOpen={isOpen}
                     onClick={handleAppClick}
@@ -1126,3 +1235,5 @@ export const RadialMenu: React.FC<RadialMenuProps> = ({ isOpen, position, onClos
     </motion.div>
   );
 };
+
+export const RadialMenu = React.memo(RadialMenuInner);

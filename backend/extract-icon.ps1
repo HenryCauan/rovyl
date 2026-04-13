@@ -65,11 +65,10 @@ function ConvertTo-NormalizedIconBitmap {
     param ([System.Drawing.Bitmap]$Source)
     
     $canvasSize  = 256
-    $targetRatio = 0.75  # If the icon already fills 75%+ of its canvas, it's correctly sized — don't upscale
-    $padding     = [int]($canvasSize * 0.10)  # 10% padding (for small icons that need upscaling)
+    $targetRatio = 0.75
+    $padding     = [int]($canvasSize * 0.10)
     $innerSize   = $canvasSize - ($padding * 2)
     
-    # Find the tight bounding box of visible pixels
     $minX = $Source.Width;  $minY = $Source.Height
     $maxX = 0;              $maxY = 0
     $found = $false
@@ -96,7 +95,6 @@ function ConvertTo-NormalizedIconBitmap {
     $maxDim   = [Math]::Max($Source.Width, $Source.Height)
     $contentRatio = [Math]::Max($contentW, $contentH) / $maxDim
     
-    # Create a clean 256x256 transparent canvas
     $canvas = New-Object System.Drawing.Bitmap($canvasSize, $canvasSize, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
     $g = [System.Drawing.Graphics]::FromImage($canvas)
     $g.Clear([System.Drawing.Color]::Transparent)
@@ -106,8 +104,6 @@ function ConvertTo-NormalizedIconBitmap {
     $g.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
     
     if ($contentRatio -ge $targetRatio) {
-        # Icon is already well-sized (like Edge) — render at natural proportions, just resize to 256x256
-        # This preserves the icon's original visual weight without enlarging it
         $scale = $canvasSize / $maxDim
         $drawW = [int]($Source.Width * $scale)
         $drawH = [int]($Source.Height * $scale)
@@ -115,7 +111,6 @@ function ConvertTo-NormalizedIconBitmap {
         $destY = [int](($canvasSize - $drawH) / 2)
         $g.DrawImage($Source, $destX, $destY, $drawW, $drawH)
     } else {
-        # Icon content is too small — upscale content to fill the inner target area (80% of canvas)
         $scale = [Math]::Min($innerSize / $contentW, $innerSize / $contentH)
         $drawW = [int]($contentW * $scale)
         $drawH = [int]($contentH * $scale)
@@ -132,23 +127,22 @@ function ConvertTo-NormalizedIconBitmap {
 
 function Get-Base64Icon {
     param ([string]$Path)
-    if (-not (Test-Path $Path)) { return $null }
+    if (-not (Test-Path $Path)) { 
+        Write-Error "Path not found: $($Path)"
+        return $null 
+    }
     
     try {
         $bitmap = $null
         
-        # Check if it's a PNG file - load directly
         if ($Path -match '\.(png|jpg|jpeg|bmp)$') {
             $bitmap = [System.Drawing.Bitmap]::FromFile($Path)
         } else {
-            # Try High-Res Extraction first (for .exe, .ico, .lnk)
             $icon = [IconExtractor]::GetJumboIcon($Path)
-            
-            # Fallback if Jumbo fails
             if (-not $icon) {
+                Write-Error "Jumbo icon extraction failed for $($Path), trying ExtractAssociatedIcon"
                 $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($Path)
             }
-            
             if ($icon) {
                 $bitmap = $icon.ToBitmap()
                 $icon.Dispose()
@@ -156,200 +150,197 @@ function Get-Base64Icon {
         }
         
         if ($bitmap) {
-            # Normalize all icons to uniform size and padding
             $normalized = ConvertTo-NormalizedIconBitmap -Source $bitmap
             $bitmap.Dispose()
-            
             $stream = New-Object System.IO.MemoryStream
             $normalized.Save($stream, [System.Drawing.Imaging.ImageFormat]::Png)
             $bytes = $stream.ToArray()
             $base64 = [Convert]::ToBase64String($bytes)
             $stream.Close(); $stream.Dispose(); $normalized.Dispose()
             return "data:image/png;base64,$base64"
+        } else {
+            Write-Error "Failed to create bitmap from $($Path)"
         }
-    } catch {}
+    } catch {
+        Write-Error "Exception in Get-Base64Icon for $($Path): $_"
+    }
     return $null
 }
 
 function Get-UWPIconFromPackage {
     param ([string]$PackageFamilyName)
-    
-    # Speed optimization: filter by name directly
-    $pkg = Get-AppxPackage -Name ($PackageFamilyName.Split('_')[0]) | Where-Object { $_.PackageFamilyName -eq $PackageFamilyName }
-    if (-not $pkg) { 
-        # Fallback: try search without filter if split failed
-        $pkg = Get-AppxPackage | Where-Object { $_.PackageFamilyName -eq $PackageFamilyName }
-        if (-not $pkg) { return $null }
+    if (-not $PackageFamilyName) {
+        Write-Error "UWP: empty PackageFamilyName"
+        return $null
     }
 
-    $installPath = $pkg.InstallLocation
+    # 1) Exact PFN (Package Family Name) — most reliable
+    $pkg = Get-AppxPackage -ErrorAction SilentlyContinue | Where-Object { $_.PackageFamilyName -eq $PackageFamilyName }
+
+    # 2) Short package name (segment before _publisherId)
+    if (-not $pkg) {
+        $shortName = ($PackageFamilyName -split '_')[0]
+        if ($shortName) {
+            $pkg = Get-AppxPackage -Name $shortName -ErrorAction SilentlyContinue | Where-Object { $_.PackageFamilyName -eq $PackageFamilyName } | Select-Object -First 1
+        }
+    }
+
+    # 3) Prefix match (Copilot / CBS / renamed bundles)
+    if (-not $pkg) {
+        $prefix = ($PackageFamilyName -split '_')[0]
+        if ($prefix) {
+            $likePat = $prefix + '_*'
+            $pkg = Get-AppxPackage -ErrorAction SilentlyContinue |
+                Where-Object { $_.PackageFamilyName -eq $PackageFamilyName -or $_.PackageFamilyName -like $likePat } |
+                Select-Object -First 1
+        }
+    }
+
+    $installPath = $null
+    if ($pkg) { $installPath = $pkg.InstallLocation }
+
+    # 4) Sparse / locked-down packages: locate folder under Program Files\WindowsApps
+    if (-not $installPath) {
+        $waRoot = Join-Path ${env:ProgramFiles} "WindowsApps"
+        if (Test-Path $waRoot) {
+            $exact = Join-Path $waRoot $PackageFamilyName
+            if (Test-Path $exact) {
+                $installPath = $exact
+            } else {
+                $pre = ($PackageFamilyName -split '_')[0]
+                $dirLike = $pre + '_*'
+                $dir = Get-ChildItem -Path $waRoot -Directory -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Name -eq $PackageFamilyName -or ($pre -and $_.Name -like $dirLike) } |
+                    Sort-Object Name |
+                    Select-Object -First 1
+                if ($dir) { $installPath = $dir.FullName }
+            }
+        }
+    }
+
+    if (-not $installPath) {
+        Write-Error "UWP Package not found: $PackageFamilyName"
+        return $null
+    }
     $manifestPath = Join-Path $installPath "AppxManifest.xml"
-    if (-not (Test-Path $manifestPath)) { return $null }
-
+    if (-not (Test-Path $manifestPath)) { 
+        Write-Error "UWP Manifest not found at $manifestPath"
+        return $null 
+    }
     [xml]$xml = Get-Content $manifestPath
-    
-    # Try to find logo
-    $logoNodes = @(
-        $xml.Package.Applications.Application.VisualElements.Square150x150Logo,
-        $xml.Package.Applications.Application.VisualElements.Square44x44Logo,
-        $xml.Package.Applications.Application.VisualElements.Logo
-    )
-
+    $logoNodes = @()
+    foreach ($appEntry in @($xml.Package.Applications.Application)) {
+        if (-not $appEntry.VisualElements) { continue }
+        $ve = $appEntry.VisualElements
+        $logoNodes += @($ve.Square150x150Logo, $ve.Square310x310Logo, $ve.Square44x44Logo, $ve.Logo, $ve.Wide310x150Logo)
+    }
+    $logoNodes = $logoNodes | Where-Object { $_ }
     foreach ($logo in $logoNodes) {
         if ($logo) {
             $logoPath = Join-Path $installPath $logo
-            
-            # Try exact match
             if (Test-Path $logoPath) {
+                Write-Error "Trying exact logo match: $($logoPath)"
                 $result = Get-Base64Icon -Path $logoPath
                 if ($result) { return $result }
             }
-
-            # Try variations with higher resolution
             $dir = Split-Path $logoPath
             $name = Split-Path $logoPath -LeafBase
             $ext = Split-Path $logoPath -Extension
-            
-            # Remove scale/targetsize suffixes
             $name = $name -replace '\.scale-\d+$', '' -replace '\.targetsize-\d+$', '' -replace '\.contrast-\w+$', ''
-            
             if (Test-Path $dir) {
-                # Priority order for best quality icons
-                $patterns = @(
-                    "$name.targetsize-256$ext",
-                    "$name.targetsize-96$ext",
-                    "$name.targetsize-48$ext",
-                    "$name.scale-400$ext",
-                    "$name.scale-200$ext",
-                    "$name.scale-150$ext",
-                    "$name.scale-100$ext"
-                )
-                
+                $patterns = @("$name.targetsize-256$ext", "$name.targetsize-96$ext", "$name.targetsize-48$ext", "$name.scale-400$ext", "$name.scale-200$ext", "$name.scale-150$ext", "$name.scale-100$ext")
                 foreach ($pattern in $patterns) {
                     $fullPath = Join-Path $dir $pattern
                     if (Test-Path $fullPath) {
+                        Write-Error "Trying logo variation: $($fullPath)"
                         $result = Get-Base64Icon -Path $fullPath
                         if ($result) { return $result }
                     }
                 }
-                
-                # Wildcard search as fallback
-                $candidates = Get-ChildItem -Path $dir -Filter "$name*$ext" -ErrorAction SilentlyContinue |
-                             Where-Object { $_.Name -match '(targetsize-\d+|scale-\d+)' } |
-                             Sort-Object Name -Descending |
-                             Select-Object -First 1
-                
+                $candidates = Get-ChildItem -Path $dir -Filter "$name*$ext" -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(targetsize-\d+|scale-\d+)' } | Sort-Object Name -Descending | Select-Object -First 1
                 if ($candidates) {
+                    Write-Error "Trying wildcard candidate: $($candidates.FullName)"
                     $result = Get-Base64Icon -Path $candidates.FullName
                     if ($result) { return $result }
                 }
+            } else {
+                Write-Error "Logo directory not found: $($dir)"
             }
         }
     }
-    
-    # Fallback: search Assets folder for any PNG
     $assetsDir = Join-Path $installPath "Assets"
     if (Test-Path $assetsDir) {
-        $fallback = Get-ChildItem -Path $assetsDir -Filter "*.png" -Recurse -ErrorAction SilentlyContinue |
-                    Where-Object { $_.Name -match '(Square|Logo).*\.(targetsize-256|targetsize-96|scale-400)' } |
-                    Sort-Object Name -Descending |
-                    Select-Object -First 1
-        
+        Write-Error "Trying fallback search in Assets folder: $assetsDir"
+        $fallback = Get-ChildItem -Path $assetsDir -Filter "*.png" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(Square|Logo).*\.(targetsize-256|targetsize-96|scale-400)' } | Sort-Object Name -Descending | Select-Object -First 1
         if ($fallback) {
             $result = Get-Base64Icon -Path $fallback.FullName
             if ($result) { return $result }
         }
     }
-    
+    Write-Error "UWP icon extraction failed for $PackageFamilyName"
     return $null
 }
 
 # Main logic
-# 1. Try as file path
-if (Test-Path $Target) {
+if ($Target -and (Test-Path $Target)) {
     if ((Get-Item $Target).Attributes -match "Directory") {
-        # If it's a directory, we can't extract associated icon normally, but let's try shell info
+        $res = Get-Base64Icon -Path $Target
+        if ($res) { Write-Output $res; exit }
     } else {
         $res = Get-Base64Icon -Path $Target
         if ($res) { Write-Output $res; exit }
     }
 }
-
-# 2. Try as AUMID
 if ($Target -match '!') {
     $parts = $Target -split '!'
     $res = Get-UWPIconFromPackage -PackageFamilyName $parts[0]
     if ($res) { Write-Output $res; exit }
 }
-
-# 3. Known apps mapping
-$knownApps = @{
-    "Calculator" = "Microsoft.WindowsCalculator_8wekyb3d8bbwe";
-    "Calculadora" = "Microsoft.WindowsCalculator_8wekyb3d8bbwe";
-    "Notepad" = "Microsoft.WindowsNotepad_8wekyb3d8bbwe";
-    "Notas" = "Microsoft.WindowsNotepad_8wekyb3d8bbwe";
-    "Paint" = "Microsoft.Paint_8wekyb3d8bbwe";
-    "Photos" = "Microsoft.Windows.Photos_8wekyb3d8bbwe";
-    "Fotos" = "Microsoft.Windows.Photos_8wekyb3d8bbwe";
-    "Xbox" = "Microsoft.GamingApp_8wekyb3d8bbwe";
-    "Terminal" = "Microsoft.WindowsTerminal_8wekyb3d8bbwe";
-    "Snipping Tool" = "Microsoft.ScreenSketch_8wekyb3d8bbwe";
-    "Ferramenta de Captura" = "Microsoft.ScreenSketch_8wekyb3d8bbwe";
+if ($Target -ieq "MSEdge" -or $Target -imatch "MicrosoftEdge" -or $Target -ieq "msedge") {
+    $edgePath = Join-Path ${env:ProgramFiles(x86)} "Microsoft\Edge\Application\msedge.exe"
+    if (Test-Path $edgePath) { $res = Get-Base64Icon -Path $edgePath; if ($res) { Write-Output $res; exit } }
 }
-
-if ($knownApps.ContainsKey($Target)) {
-    $res = Get-UWPIconFromPackage -PackageFamilyName $knownApps[$Target]
-    if ($res) { Write-Output $res; exit }
+if ($Target -ieq "Explorer" -or $Target -ieq "File Explorer") {
+    $expPath = Join-Path $env:SystemRoot "explorer.exe"
+    if (Test-Path $expPath) { $res = Get-Base64Icon -Path $expPath; if ($res) { Write-Output $res; exit } }
 }
-
-# 4. Search by Name OR AppID in Start Apps
-$apps = Get-StartApps | Where-Object { $_.Name -like "*$Target*" -or $_.AppID -eq $Target -or $_.AppID -like "*$Target*" } | Select-Object -First 1
-if ($apps) {
-    $appId = $apps.AppID
+$startApp = Get-StartApps | Where-Object { $_.Name -eq $Target -or $_.AppID -eq $Target -or $_.AppID -like "*$Target*" } | Select-Object -First 1
+if (-not $startApp) { $startApp = Get-StartApps | Where-Object { $_.Name -match $Target } | Select-Object -First 1 }
+if ($startApp) {
+    $appId = $startApp.AppID
     if ($appId -match '!') {
-        $parts = $appId -split '!'
-        $res = Get-UWPIconFromPackage -PackageFamilyName $parts[0]
+        $res = Get-UWPIconFromPackage -PackageFamilyName ($appId -split '!')[0]
         if ($res) { Write-Output $res; exit }
-    } else {
-        # 1. Try if AppID is a direct path
-        if (Test-Path $appId) {
-            $res = Get-Base64Icon -Path $appId
-            if ($res) { Write-Output $res; exit }
-        }
-
-        # 2. If not a path (e.g. Squirrel ID or GUID), search for .lnk in Start Menu
-        $startMenuPaths = @(
-            "$env:APPDATA\Microsoft\Windows\Start Menu\Programs",
-            "$env:ProgramData\Microsoft\Windows\Start Menu\Programs"
-        )
-        
-        $appName = $apps.Name
-        foreach ($path in $startMenuPaths) {
-            if (Test-Path $path) {
-                # Search for shortcut matching app name (recursive)
-                $lnk = Get-ChildItem -Path $path -Filter "$appName.lnk" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-                
-                if ($lnk) {
-                    $shell = New-Object -ComObject WScript.Shell
-                    $shortcut = $shell.CreateShortcut($lnk.FullName)
-                    
-                    # Priority 1: IconLocation (often used by Squirrel apps like Discord)
-                    if ($shortcut.IconLocation) {
-                        $iconPath = $shortcut.IconLocation.Split(',')[0]
-                        if ($iconPath -and (Test-Path $iconPath)) {
-                             $res = Get-Base64Icon -Path $iconPath
-                             if ($res) { Write-Output $res; exit }
-                        }
+    }
+    if (Test-Path $appId) {
+        $res = Get-Base64Icon -Path $appId
+        if ($res) { Write-Output $res; exit }
+    }
+    $smPaths = @("$env:APPDATA\Microsoft\Windows\Start Menu\Programs", "$env:ProgramData\Microsoft\Windows\Start Menu\Programs")
+    $appName = $startApp.Name
+    foreach ($p in $smPaths) {
+        if (Test-Path $p) {
+            $lnk = Get-ChildItem -Path $p -Filter "$appName.lnk" -Recurse | Select-Object -First 1
+            if ($lnk) {
+                try {
+                    $sh = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk.FullName)
+                    if ($sh.IconLocation -and $sh.IconLocation -ne ",0") {
+                        $iconPath = $sh.IconLocation.Split(',')[0]
+                        if (Test-Path $iconPath) { $res = Get-Base64Icon -Path $iconPath; if ($res) { Write-Output $res; exit } }
                     }
-
-                    # Priority 2: TargetPath
-                    if ($shortcut.TargetPath -and (Test-Path $shortcut.TargetPath)) {
-                        $res = Get-Base64Icon -Path $shortcut.TargetPath
+                    if ($sh.TargetPath -and (Test-Path $sh.TargetPath)) {
+                        $res = Get-Base64Icon -Path $sh.TargetPath
                         if ($res) { Write-Output $res; exit }
                     }
-                }
+                    $res = Get-Base64Icon -Path $lnk.FullName
+                    if ($res) { Write-Output $res; exit }
+                } catch {}
             }
         }
     }
 }
-
+$knownApps = @{"Calculator" = "Microsoft.WindowsCalculator_8wekyb3d8bbwe"; "Calculadora" = "Microsoft.WindowsCalculator_8wekyb3d8bbwe"; "Notepad" = "Microsoft.WindowsNotepad_8wekyb3d8bbwe"; "Edge" = "Microsoft.MicrosoftEdge_8wekyb3d8bbwe"}
+if ($knownApps.ContainsKey($Target)) {
+    $res = Get-UWPIconFromPackage -PackageFamilyName $knownApps[$Target]
+    if ($res) { Write-Output $res; exit }
+}

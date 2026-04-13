@@ -1,78 +1,5 @@
 import { AppItem, UIConfig, WidgetDefinition, Workspace } from "./types";
 
-export const DEFAULT_UI_CONFIG: UIConfig = {
-  accentColor: "#FFFFFF",
-  menuRadius: 140,
-  iconSize: 64,
-  fixedPosition: true,
-  backdropBlur: 0,
-  backdropOpacity: 0.8,
-  menuOpacity: 0.8,
-  menuBackgroundStyle: "circle",
-  appSpacing: 10, // Default spacing between apps
-  activationThreshold: 60,
-  centerButton: {
-    type: "none",
-    target: "",
-    label: "",
-    iconName: "Circle",
-  },
-  showLabels: true,
-  showClock: true,
-  showDate: true,
-  showBattery: false,
-  showWeather: false,
-  clockPosition: "top-right",
-  gameMode: {
-    enabled: false,
-    mode: "list", // Default to list mode
-    blockFullscreen: true,
-    blockedApps: "csgo.exe, valorant.exe, dota2.exe, overwatch.exe",
-  },
-  globalShortcut: "Alt+Z",
-  workspaces: [], // Will be populated with DEFAULT_WORKSPACES
-  activeWorkspaceIndex: 0,
-  enableMouseTrigger: true,
-  language: "pt",
-  performanceMode: false,
-};
-
-export const AVAILABLE_WIDGETS: WidgetDefinition[] = [
-  {
-    id: "zenith_notes",
-    name: "Zenith Notes",
-    description:
-      "A minimalist card-based note taking tool with local persistence.",
-    iconName: "FileText",
-    command: "internal:notes",
-    defaultLabel: "Notes",
-  },
-  {
-    id: "zenith_alarm",
-    name: "Zenith Alarm",
-    description: "Set reminders and alarms. Runs in background.",
-    iconName: "AlarmClock",
-    command: "internal:alarm",
-    defaultLabel: "Alarms",
-  },
-  {
-    id: "zenith_stopwatch",
-    name: "Zenith Stopwatch",
-    description: "Precision chronograph with lap tracking.",
-    iconName: "Timer",
-    command: "internal:stopwatch",
-    defaultLabel: "Stopwatch",
-  },
-  {
-    id: "zenith_pomodoro",
-    name: "Zenith Pomodoro",
-    description: "Focus timer with task tracking and stats.",
-    iconName: "TimerReset",
-    command: "internal:pomodoro",
-    defaultLabel: "Pomodoro",
-  },
-];
-
 export const DEFAULT_APPS: AppItem[] = [
   {
     id: "1a7a5818-4c99-4e4f-8a4d-3e28d4d7f5d7",
@@ -80,8 +7,8 @@ export const DEFAULT_APPS: AppItem[] = [
     label: "Browser",
     direction: "N",
     iconName: "Globe",
-    iconSource: "lucide",
-    command: "",
+    iconSource: "native",
+    command: "msedge",
     description: "Web Browser",
   },
   {
@@ -99,8 +26,8 @@ export const DEFAULT_APPS: AppItem[] = [
         type: "app",
         label: "Spotify",
         iconName: "Music",
-        iconSource: "lucide",
-        command: "",
+        iconSource: "native",
+        command: "spotify",
         description: "Music Player",
       },
       {
@@ -109,7 +36,8 @@ export const DEFAULT_APPS: AppItem[] = [
         label: "YouTube",
         iconName: "Youtube",
         iconSource: "lucide",
-        command: "",
+        command: "https://www.youtube.com/",
+        commandType: "url",
         description: "Web Video",
       },
       {
@@ -118,7 +46,8 @@ export const DEFAULT_APPS: AppItem[] = [
         label: "Netflix",
         iconName: "Clapperboard",
         iconSource: "lucide",
-        command: "",
+        command: "https://www.netflix.com/",
+        commandType: "url",
         description: "Streaming",
       },
     ],
@@ -129,8 +58,8 @@ export const DEFAULT_APPS: AppItem[] = [
     label: "Games",
     direction: "SE",
     iconName: "Gamepad2",
-    iconSource: "lucide",
-    command: "",
+    iconSource: "native",
+    command: "steam",
     description: "Steam",
   },
   {
@@ -139,8 +68,8 @@ export const DEFAULT_APPS: AppItem[] = [
     label: "Chat",
     direction: "S",
     iconName: "MessageSquare",
-    iconSource: "lucide",
-    command: "",
+    iconSource: "native",
+    command: "discord",
     description: "Discord",
   },
   {
@@ -149,8 +78,8 @@ export const DEFAULT_APPS: AppItem[] = [
     label: "Files",
     direction: "SW",
     iconName: "FolderOpen",
-    iconSource: "lucide",
-    command: "",
+    iconSource: "native",
+    command: "explorer",
     description: "File Manager",
   },
   {
@@ -169,8 +98,8 @@ export const DEFAULT_APPS: AppItem[] = [
     label: "Calculator",
     direction: "NW",
     iconName: "Calculator",
-    iconSource: "lucide",
-    command: "",
+    iconSource: "native",
+    command: "calc",
     description: "Calculator",
   },
   {
@@ -195,6 +124,39 @@ export const DEFAULT_APPS: AppItem[] = [
   },
 ];
 
+/**
+ * IDs from the bundled demo radial (Browser, Media Hub, Steam, etc.) — not real Start Menu picks.
+ * If Main still contains any of these after a previous bug, we re-run Start Menu discovery to replace them.
+ */
+export const BUNDLED_DEMO_APP_IDS: ReadonlySet<string> = (() => {
+  const s = new Set<string>();
+  const walk = (items: AppItem[]) => {
+    for (const a of items) {
+      if (typeof a.command === "string" && a.command.startsWith("internal:")) continue;
+      if (a.id) s.add(a.id);
+      if (a.children?.length) walk(a.children);
+    }
+  };
+  walk(DEFAULT_APPS);
+  return s;
+})();
+
+export function workspaceContainsBundledDemoApp(workspace: Workspace): boolean {
+  const scan = (items: AppItem[]): boolean => {
+    for (const a of items) {
+      if (a.id && BUNDLED_DEMO_APP_IDS.has(a.id)) return true;
+      if (a.children?.length && scan(a.children)) return true;
+    }
+    return false;
+  };
+  return scan(workspace.apps);
+}
+
+/** Main workspace before Start Menu discovery: only Zenith widgets — never the full demo wheel (fixes wrong apps on first paint / disk). */
+export const MINIMAL_MAIN_WORKSPACE_APPS: AppItem[] = DEFAULT_APPS.filter(
+  (a) => typeof a.command === "string" && a.command.startsWith("internal:"),
+);
+
 // Default Workspaces
 export const DEFAULT_WORKSPACES: Workspace[] = [
   {
@@ -202,7 +164,7 @@ export const DEFAULT_WORKSPACES: Workspace[] = [
     name: "Main",
     hotkey: 1,
     enabled: true,
-    apps: DEFAULT_APPS,
+    apps: MINIMAL_MAIN_WORKSPACE_APPS,
     color: "#3B82F6", // Blue
   },
   {
@@ -255,3 +217,81 @@ export const DEFAULT_WORKSPACES: Workspace[] = [
     color: "#EF4444", // Red
   },
 ];
+
+export const DEFAULT_UI_CONFIG: UIConfig = {
+  accentColor: "#FFFFFF",
+  menuRadius: 140,
+  iconSize: 64,
+  fixedPosition: true,
+  backdropBlur: 34,
+  backdropOpacity: 1,
+  menuOpacity: 0.8,
+  menuBackgroundStyle: "circle",
+  appSpacing: 10, // Default spacing between apps
+  activationThreshold: 60,
+  centerButton: {
+    type: "none",
+    target: "",
+    label: "",
+    iconName: "Circle",
+  },
+  showLabels: true,
+  showClock: true,
+  showDate: true,
+  showBattery: false,
+  showWeather: false,
+  clockPosition: "top-right",
+  gameMode: {
+    enabled: false,
+    mode: "list", // Default to list mode
+    blockFullscreen: true,
+    blockedApps: "csgo.exe, valorant.exe, dota2.exe, overwatch.exe",
+  },
+  globalShortcut: "Alt+Z",
+  workspaces: DEFAULT_WORKSPACES,
+  activeWorkspaceIndex: 0,
+  enableMouseTrigger: true,
+  language: "pt",
+  performanceMode: false,
+  notesWidgetBackdropOpacity: 0.8,
+  alarmsWidgetBackdropOpacity: 0.75,
+  pomodoroWidgetBackdropOpacity: 0.55,
+  stopwatchWidgetBackdropOpacity: 0.55,
+};
+
+export const AVAILABLE_WIDGETS: WidgetDefinition[] = [
+  {
+    id: "zenith_notes",
+    name: "Zenith Notes",
+    description:
+      "A minimalist card-based note taking tool with local persistence.",
+    iconName: "FileText",
+    command: "internal:notes",
+    defaultLabel: "Notes",
+  },
+  {
+    id: "zenith_alarm",
+    name: "Zenith Alarm",
+    description: "Set reminders and alarms. Runs in background.",
+    iconName: "AlarmClock",
+    command: "internal:alarm",
+    defaultLabel: "Alarms",
+  },
+  {
+    id: "zenith_stopwatch",
+    name: "Zenith Stopwatch",
+    description: "Precision chronograph with lap tracking.",
+    iconName: "Timer",
+    command: "internal:stopwatch",
+    defaultLabel: "Stopwatch",
+  },
+  {
+    id: "zenith_pomodoro",
+    name: "Zenith Pomodoro",
+    description: "Focus timer with task tracking and stats.",
+    iconName: "TimerReset",
+    command: "internal:pomodoro",
+    defaultLabel: "Pomodoro",
+  },
+];
+

@@ -1,1 +1,0 @@
-Please follow the instructions above (the content of `verification_instructions.md`) to verify the new behavior of the application.
