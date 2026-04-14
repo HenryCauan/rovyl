@@ -223,8 +223,21 @@ export interface ElectronAPI {
     /** Screen coordinates (e.g. cursor) — which monitor should receive the fullscreen/small overlay */
     anchorScreenPoint?: { x: number; y: number },
   ) => void;
+  /** Awaitable resize — use before showing the radial so the first paint is not still windowed bounds. */
+  applyWindowSize?: (
+    mode: "small" | "fullscreen" | "windowed",
+    anchorScreenPoint?: { x: number; y: number },
+  ) => Promise<boolean>;
+  /** Re-applies desktop passthrough overlay after closing a fullscreen widget (fixes flaky clicks on Windows). */
+  reapplySmallOverlay?: () => Promise<boolean>;
+  /** Windows/Linux: `BrowserWindow.setShape` — regiões clicáveis em coords de cliente (resto passa para o ambiente). */
+  setWindowHitShape?: (
+    rects: Array<{ x: number; y: number; width: number; height: number }>,
+  ) => Promise<boolean>;
   /** 0–1; used to hide the window during fullscreen resize to avoid DWM stretching the old settings frame (flash). */
   setWindowOpacity: (opacity: number) => void;
+  /** Schedules a full Chromium repaint — helps transparent frameless windows on Windows after show/resize. */
+  invalidatePaint?: () => Promise<boolean>;
   setGameMode: (config: GameModeConfig) => void;
   getFileIcon: (path: string) => Promise<string | null>;
   minimizeWindow: () => void;

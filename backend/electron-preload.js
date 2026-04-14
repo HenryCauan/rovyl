@@ -45,7 +45,12 @@ contextBridge.exposeInMainWorld("electron", {
   },
   setWindowSize: (mode, anchorScreenPoint) =>
     ipcRenderer.send("set-window-size", mode, anchorScreenPoint),
+  applyWindowSize: (mode, anchorScreenPoint) =>
+    ipcRenderer.invoke("apply-window-size", mode, anchorScreenPoint),
+  reapplySmallOverlay: () => ipcRenderer.invoke("reapply-small-overlay"),
+  setWindowHitShape: (rects) => ipcRenderer.invoke("set-window-hit-shape", rects),
   setWindowOpacity: (opacity) => ipcRenderer.send("set-window-opacity", opacity),
+  invalidatePaint: () => ipcRenderer.invoke("invalidate-paint"),
   setGameMode: (config) => ipcRenderer.send("set-game-mode", config),
   setLoginItemSettings: (settings) =>
     ipcRenderer.send("set-login-item-settings", settings),

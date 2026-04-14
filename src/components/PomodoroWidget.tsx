@@ -12,7 +12,6 @@ import {
   Trash2,
   ChevronLeft,
   List,
-  Droplets,
   Sparkles,
   Bell,
   FolderOpen,
@@ -28,6 +27,7 @@ import {
   type AmbientPresetId,
 } from '../pomodoroSounds';
 import { POMODORO_WEB_AMBIENT_BLOB_SESSION_KEY } from '../pomodoroAmbient';
+import { WidgetBackdropOpacitySlider } from './WidgetBackdropOpacitySlider';
 
 interface PomodoroWidgetProps {
   isOpen: boolean;
@@ -296,58 +296,47 @@ export const PomodoroWidget: React.FC<PomodoroWidgetProps> = ({
 
   const backdropAlpha = Math.min(
     1,
-    Math.max(0, uiConfig.pomodoroWidgetBackdropOpacity ?? 0.55),
+    Math.max(0, uiConfig.pomodoroWidgetBackdropOpacity ?? 0.85),
   );
 
   const glassSurface =
     'bg-[rgba(12,12,14,0.88)] backdrop-blur-[48px] border border-white/[0.06] shadow-[0_40px_100px_-20px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.04)]';
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-6 cursor-default">
+    <div className="pointer-events-none fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        transition={{ duration: 0.35 }}
-        className="absolute inset-0 backdrop-blur-[40px]"
+        transition={{ duration: 0.22 }}
+        className="pointer-events-auto absolute inset-0 backdrop-blur-[40px]"
         style={{ backgroundColor: `rgba(6, 6, 8, ${backdropAlpha})` }}
         onClick={onClose}
       />
-
       {!deepFocus && !showPanel && (
-        <label
-          className="pointer-events-auto absolute right-5 top-5 z-[65] flex cursor-pointer items-center gap-2 rounded-2xl border border-white/[0.08] bg-black/25 px-3 py-2 backdrop-blur-md"
-          title={t('pomodoro.backdrop_opacity')}
+        <WidgetBackdropOpacitySlider
+          value={backdropAlpha}
+          onChange={(next) =>
+            setConfig((prev) => ({
+              ...prev,
+              pomodoroWidgetBackdropOpacity: next,
+            }))
+          }
+          label={t('pomodoro.backdrop_opacity')}
+        />
+      )}
+      <div className="relative z-[70] w-full max-w-[min(92vw,380px)] cursor-default pointer-events-auto">
+        <motion.div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Pomodoro"
+          initial={{ opacity: 0, scale: 0.98, y: 6 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.98, y: 6 }}
+          transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
+          className={`relative z-[1] w-full overflow-hidden rounded-[28px] ${glassSurface}`}
           onClick={(e) => e.stopPropagation()}
         >
-          <Droplets size={14} className="shrink-0 text-white/45" strokeWidth={1.5} />
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={Math.round(backdropAlpha * 100)}
-            onChange={(e) =>
-              setConfig((prev) => ({
-                ...prev,
-                pomodoroWidgetBackdropOpacity: Number(e.target.value) / 100,
-              }))
-            }
-            className="h-1 w-[80px] cursor-pointer appearance-none rounded-full bg-white/15 accent-white [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white/85"
-          />
-        </label>
-      )}
-
-      <motion.div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Pomodoro"
-        initial={{ opacity: 0, scale: 0.97, y: 10 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.97, y: 10 }}
-        transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
-        className={`relative z-[70] w-full max-w-[min(92vw,380px)] overflow-hidden rounded-[28px] ${glassSurface}`}
-        onClick={(e) => e.stopPropagation()}
-      >
         <div className="flex items-center gap-2 px-4 pt-4">
           {deepFocus && !showPanel ? (
             <>
@@ -860,7 +849,8 @@ export const PomodoroWidget: React.FC<PomodoroWidgetProps> = ({
             </motion.div>
           )}
         </AnimatePresence>
-      </motion.div>
+        </motion.div>
+      </div>
     </div>
   );
 };

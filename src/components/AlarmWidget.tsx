@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Bell, Plus, Trash2, Check, Clock, Play, Droplets } from 'lucide-react';
+import { X, Bell, Plus, Trash2, Check, Clock, Play } from 'lucide-react';
 import { Alarm, UIConfig } from '../types';
 import { getTranslation } from '../translations';
 import { AlarmTimePicker } from './AlarmTimePicker';
+import { WidgetBackdropOpacitySlider } from './WidgetBackdropOpacitySlider';
 
 interface AlarmWidgetProps {
     isOpen: boolean;
@@ -245,31 +246,38 @@ export const AlarmWidget: React.FC<AlarmWidgetProps> = ({ isOpen, onClose, alarm
 
     const sorted = [...alarms].sort((a, b) => a.time.localeCompare(b.time));
     const enabledCount = alarms.filter(a => a.enabled).length;
-    const backdropAlpha = Math.min(1, Math.max(0, config.alarmsWidgetBackdropOpacity ?? 0.75));
+    const backdropAlpha = Math.min(1, Math.max(0, config.alarmsWidgetBackdropOpacity ?? 0.85));
 
     return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-            {/* Backdrop — opacidade configurável (como no widget Notes) */}
+        <div className="pointer-events-none fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4">
             <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.22 }}
-                className="absolute inset-0 backdrop-blur-[40px]"
+                className="pointer-events-auto absolute inset-0 backdrop-blur-[40px]"
                 style={{ backgroundColor: `rgba(6, 6, 8, ${backdropAlpha})` }}
                 onClick={onClose}
             />
-
-            {/* Painel — preto sólido, moldura + grade (P&B) */}
+            <WidgetBackdropOpacitySlider
+                value={backdropAlpha}
+                onChange={next =>
+                    setConfig(prev => ({
+                        ...prev,
+                        alarmsWidgetBackdropOpacity: next,
+                    }))
+                }
+                label={t('alarm.backdrop_opacity')}
+            />
             <motion.div
-                initial={{ scale: 0.98, opacity: 0, y: 10 }}
+                layout
+                initial={{ scale: 0.98, opacity: 0, y: 8 }}
                 animate={{ scale: 1, opacity: 1, y: 0 }}
-                exit={{ scale: 0.98, opacity: 0, y: 10 }}
+                exit={{ scale: 0.98, opacity: 0, y: 8 }}
                 transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-                className="relative z-[70] flex w-full overflow-hidden rounded-[28px] border border-white/[0.09] bg-black shadow-[0_40px_100px_-24px_rgba(0,0,0,0.9)]"
+                className={`relative z-[70] flex w-full overflow-hidden rounded-[28px] border border-white/[0.09] bg-black shadow-[0_40px_100px_-24px_rgba(0,0,0,0.9)] pointer-events-auto ${composerOpen ? 'max-w-[min(812px,96vw)]' : 'max-w-[min(460px,96vw)]'}`}
                 style={{
-                    maxWidth: composerOpen ? 812 : 460,
-                    maxHeight: 'min(88vh, 660px)',
+                    maxHeight: 'min(calc(100dvh - 5.5rem), 660px)',
                     transition: 'max-width 0.38s cubic-bezier(0.22, 1, 0.36, 1)',
                 }}
                 onClick={e => e.stopPropagation()}
@@ -300,22 +308,6 @@ export const AlarmWidget: React.FC<AlarmWidgetProps> = ({ isOpen, onClose, alarm
                             </div>
                         </div>
                         <div className="flex shrink-0 items-center gap-3">
-                            <label className="flex cursor-pointer items-center gap-2" title={t('alarm.backdrop_opacity')}>
-                                <Droplets size={14} className="shrink-0 text-white/35" strokeWidth={1.5} />
-                                <input
-                                    type="range"
-                                    min={0}
-                                    max={100}
-                                    value={Math.round(backdropAlpha * 100)}
-                                    onChange={e =>
-                                        setConfig(prev => ({
-                                            ...prev,
-                                            alarmsWidgetBackdropOpacity: Number(e.target.value) / 100,
-                                        }))
-                                    }
-                                    className="h-1 w-[72px] appearance-none rounded-full bg-white/10 accent-white [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white/80"
-                                />
-                            </label>
                             <button
                                 type="button"
                                 onClick={onClose}

@@ -254,10 +254,10 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   enableMouseTrigger: true,
   language: "pt",
   performanceMode: false,
-  notesWidgetBackdropOpacity: 0.8,
-  alarmsWidgetBackdropOpacity: 0.75,
-  pomodoroWidgetBackdropOpacity: 0.55,
-  stopwatchWidgetBackdropOpacity: 0.55,
+  notesWidgetBackdropOpacity: 0.85,
+  alarmsWidgetBackdropOpacity: 0.85,
+  pomodoroWidgetBackdropOpacity: 0.85,
+  stopwatchWidgetBackdropOpacity: 0.85,
 };
 
 export const AVAILABLE_WIDGETS: WidgetDefinition[] = [

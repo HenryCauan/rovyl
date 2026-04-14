@@ -1405,7 +1405,7 @@ const WorkspaceCard = React.memo(({
                     </h4>
                     <div className="h-[1px] w-4 bg-white/10 group-hover:w-8 group-hover:bg-white/30 transition-all duration-700" />
                     <span className="text-[8px] text-white/20 font-bold uppercase tracking-[0.2em] mt-1 group-hover:text-white/40 transition-colors duration-500">
-                        {workspace.apps.length} {getTranslation(config, 'workspaces.shortcuts') || 'Atalhos'}
+                        {`${workspace.apps.length} ${getTranslation(config, 'workspaces.shortcuts') || 'Atalhos'}`}
                     </span>
                 </div>
             </div>

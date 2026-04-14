@@ -751,7 +751,7 @@ export const NotesWidget: React.FC<NotesWidgetProps> = ({
 
     const focusedNote = focusedNoteId ? notes.find(n => n.id === focusedNoteId) : null;
 
-    const backdropAlpha = Math.min(1, Math.max(0, config.notesWidgetBackdropOpacity ?? 0.8));
+    const backdropAlpha = Math.min(1, Math.max(0, config.notesWidgetBackdropOpacity ?? 0.85));
 
     const handleCreate = () => {
         const id = crypto.randomUUID();

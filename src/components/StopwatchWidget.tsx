@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect, useCallback, Dispatch, SetStateAction } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
-import { X, Play, Pause, RotateCcw, Flag, Droplets } from 'lucide-react';
+import { X, Play, Pause, RotateCcw, Flag } from 'lucide-react';
 import { UIConfig } from '../types';
 import { getTranslation } from '../translations';
+import { setStopwatchHud } from '../stopwatchHudStore';
+import { WidgetBackdropOpacitySlider } from './WidgetBackdropOpacitySlider';
 
 const FONT = "'Space Grotesk', ui-sans-serif, system-ui, sans-serif";
 
@@ -26,6 +28,14 @@ export const StopwatchWidget: React.FC<StopwatchWidgetProps> = ({ isOpen, onClos
   useEffect(() => {
     timeRef.current = time;
   }, [time]);
+
+  useEffect(() => {
+    if (isRunning || time > 0) {
+      setStopwatchHud({ ms: time, isRunning });
+    } else {
+      setStopwatchHud(null);
+    }
+  }, [isRunning, time]);
 
   const t = (key: string) => getTranslation(config, key);
 
@@ -123,53 +133,42 @@ export const StopwatchWidget: React.FC<StopwatchWidgetProps> = ({ isOpen, onClos
 
   const backdropAlpha = Math.min(
     1,
-    Math.max(0, config.stopwatchWidgetBackdropOpacity ?? 0.55),
+    Math.max(0, config.stopwatchWidgetBackdropOpacity ?? 0.85),
   );
 
   return (
-    <div className="fixed inset-0 z-[60] flex cursor-default items-center justify-center p-5">
+    <div className="pointer-events-none fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        transition={{ duration: 0.3 }}
-        className="absolute inset-0 backdrop-blur-[40px]"
+        transition={{ duration: 0.22 }}
+        className="pointer-events-auto absolute inset-0 backdrop-blur-[40px]"
         style={{ backgroundColor: `rgba(6, 6, 8, ${backdropAlpha})` }}
         onClick={onClose}
       />
-
-      <label
-        className="pointer-events-auto absolute right-5 top-5 z-[65] flex cursor-pointer items-center gap-2 rounded-2xl border border-white/[0.08] bg-black/25 px-3 py-2 backdrop-blur-md"
-        title={t('stopwatch.backdrop_opacity')}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <Droplets size={14} className="shrink-0 text-white/45" strokeWidth={1.5} />
-        <input
-          type="range"
-          min={0}
-          max={100}
-          value={Math.round(backdropAlpha * 100)}
-          onChange={(e) =>
-            setConfig((prev) => ({
-              ...prev,
-              stopwatchWidgetBackdropOpacity: Number(e.target.value) / 100,
-            }))
-          }
-          className="h-1 w-[80px] cursor-pointer appearance-none rounded-full bg-white/15 accent-white [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white/85"
-        />
-      </label>
-
-      <motion.div
-        role="dialog"
-        aria-modal="true"
-        aria-label={t('stopwatch.title')}
-        initial={{ opacity: 0, scale: 0.97, y: 8 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.97, y: 8 }}
-        transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
-        className={`relative z-[70] w-full max-w-[min(92vw,340px)] overflow-hidden rounded-[28px] ${glassSurface}`}
-        onClick={(e) => e.stopPropagation()}
-      >
+      <WidgetBackdropOpacitySlider
+        value={backdropAlpha}
+        onChange={(next) =>
+          setConfig((prev) => ({
+            ...prev,
+            stopwatchWidgetBackdropOpacity: next,
+          }))
+        }
+        label={t('stopwatch.backdrop_opacity')}
+      />
+      <div className="relative z-[70] w-full max-w-[min(92vw,340px)] cursor-default pointer-events-auto">
+        <motion.div
+          role="dialog"
+          aria-modal="true"
+          aria-label={t('stopwatch.title')}
+          initial={{ opacity: 0, scale: 0.98, y: 6 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.98, y: 6 }}
+          transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
+          className={`relative z-[1] w-full overflow-hidden rounded-[28px] ${glassSurface}`}
+          onClick={(e) => e.stopPropagation()}
+        >
         <div className="flex items-center justify-between px-5 pt-5">
           <div className="flex min-w-0 items-center gap-3">
             <motion.span
@@ -345,7 +344,8 @@ export const StopwatchWidget: React.FC<StopwatchWidgetProps> = ({ isOpen, onClos
           )}
         </AnimatePresence>
 
-      </motion.div>
+        </motion.div>
+      </div>
     </div>
   );
 };

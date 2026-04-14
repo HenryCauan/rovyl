@@ -322,7 +322,16 @@ const RadialSliceLine = React.memo(
   }
 );
 
-const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose, apps, config, triggerSource = 'shortcut', onWorkspaceSwitch, currentWorkspace }) => {
+const RadialMenuInner: React.FC<RadialMenuProps> = ({
+  isOpen,
+  position,
+  onClose,
+  apps,
+  config,
+  triggerSource = 'shortcut',
+  onWorkspaceSwitch,
+  currentWorkspace,
+}) => {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [isCenterActive, setIsCenterActive] = useState(false);
   const [hasMoved, setHasMoved] = useState(false);
@@ -344,7 +353,6 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose,
   const menuRef = useRef<HTMLDivElement>(null);
   const configRef = useRef(config);
   configRef.current = config;
-
   const iconSizePx = config.iconSize || 64;
   const minGap = config.appSpacing || 0;
   const numberOfApps = currentLevelApps.length;
@@ -458,7 +466,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose,
     isCenterActive,
     hasMoved,
     folderStack,
-    apps
+    apps,
   });
 
   useEffect(() => {
@@ -472,7 +480,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose,
       isCenterActive,
       hasMoved,
       folderStack,
-      apps
+      apps,
     };
   }, [isOpen, position, activeIndex, onClose, currentLevelApps, config, isCenterActive, hasMoved, folderStack, apps]);
 
@@ -557,8 +565,9 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose,
         if (onWorkspaceSwitch) onWorkspaceSwitch(idx);
         const ws = config.workspaces[idx];
         if (ws?.enabled) {
-          setFolderStack([{ label: ws.name, apps: ws.apps }]);
-          setCurrentLevelApps(ws.apps);
+          const list = ws.apps;
+          setFolderStack([{ label: ws.name, apps: list }]);
+          setCurrentLevelApps(list);
           setHasMoved(false);
           setActiveIndex(null);
         }
@@ -692,10 +701,11 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose,
       if (nextIndex !== currentIndex) {
         const nextWs = config.workspaces[nextIndex];
         if (!nextWs) return;
+        const list = nextWs.apps;
         setFolderStack([]);
         setActiveIndex(null);
         setHasMoved(false);
-        setCurrentLevelApps(nextWs.apps);
+        setCurrentLevelApps(list);
         onWorkspaceSwitch(nextIndex);
       }
     };
@@ -790,8 +800,9 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose,
           if (onWorkspaceSwitch) onWorkspaceSwitch(idx);
           const ws = config.workspaces[idx];
           if (ws?.enabled) {
-            setFolderStack([{ label: ws.name, apps: ws.apps }]);
-            setCurrentLevelApps(ws.apps);
+            const list = ws.apps;
+            setFolderStack([{ label: ws.name, apps: list }]);
+            setCurrentLevelApps(list);
             setHasMoved(false);
             setActiveIndex(null);
           }
@@ -935,8 +946,9 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose,
       if (onWorkspaceSwitch) onWorkspaceSwitch(idx);
       const ws = cfg.workspaces[idx];
       if (ws?.enabled) {
-        setFolderStack([{ label: ws.name, apps: ws.apps }]);
-        setCurrentLevelApps(ws.apps);
+        const list = ws.apps;
+        setFolderStack([{ label: ws.name, apps: list }]);
+        setCurrentLevelApps(list);
         setHasMoved(false);
         setActiveIndex(null);
       }
@@ -1136,7 +1148,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({ isOpen, position, onClose,
                     {currentWorkspace.name.toUpperCase()}
                   </div>
                   <div className="text-[9px] font-bold text-white/20 uppercase tracking-widest mt-0.5">
-                    {currentWorkspace.apps.length} {t('workspaces.active_modules')}
+                    {apps.length} {t('workspaces.active_modules')}
                   </div>
                 </div>
               </div>

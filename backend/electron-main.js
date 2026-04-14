@@ -11,7 +11,7 @@ const {
   dialog,
 } = require("electron");
 const path = require("path");
-const { exec, spawn } = require("child_process");
+const { exec, spawn, execFile } = require("child_process");
 const os = require("os");
 const fs = require("fs");
 const crypto = require("crypto");
@@ -84,12 +84,15 @@ function applyEnvFileContent(content) {
 
 /**
  * Packaged apps don't ship the repo-root .env.local. Load from (in order, last wins per key):
- * - project / asar parent (dev or rare bundled file)
+ * - project / asar parent: `.env` then `.env.local` (último ganha) — funciona com `npm start` sem build
  * - resources (extraResources / beside installer)
  * - userData (recommended for installed builds: copy .env.local here)
  */
 function loadEnvLocalFiles() {
-  const paths = [path.join(__dirname, "..", ".env.local")];
+  const paths = [
+    path.join(__dirname, "..", ".env"),
+    path.join(__dirname, "..", ".env.local"),
+  ];
   try {
     if (process.resourcesPath) {
       paths.push(path.join(process.resourcesPath, ".env.local"));
@@ -112,6 +115,12 @@ function loadEnvLocalFiles() {
 }
 
 loadEnvLocalFiles();
+
+/** Último recurso se GPU partilhada continuar a travar Edge/outros browsers com o Zenith aberto. */
+if (process.env.ZENITH_DISABLE_HARDWARE_ACCELERATION === "1") {
+  app.disableHardwareAcceleration();
+  diagLog("[GPU] ZENITH_DISABLE_HARDWARE_ACCELERATION=1 — renderização por software.");
+}
 
 // Periodic flush to ensure logs aren't stuck in queue
 setInterval(processLogQueue, 5000);
@@ -187,22 +196,29 @@ diagLog("Zenith Main Process Started");
 /** Declared before single-instance lock so `second-instance` can safely reference it. */
 let mainWindow;
 
-// Performance: GPU rendering optimizations
-// IMPORTANT: disable-gpu-rasterization was REMOVED — it forced CPU rendering causing sluggish animations.
-app.commandLine.appendSwitch("disable-gpu-cache"); // Avoid stale cache issues on startup
-app.commandLine.appendSwitch("no-sandbox"); // Required for some Electron builds
-app.commandLine.appendSwitch("enable-zero-copy-dxgi-video"); // Optimize video rendering on Windows
-app.commandLine.appendSwitch(
-  "disable-features",
-  "WindowOcclusionPrediction,CalculateNativeWinOcclusion",
-); // Prevent OS from hiding/throttling window
-app.commandLine.appendSwitch(
-  "enable-features",
-  "VaapiVideoDecoder,CanvasOopRasterization",
-); // GPU-accelerated rendering
-app.commandLine.appendSwitch("disable-software-rasterizer"); // Prevent fallback to software rendering
-app.commandLine.appendSwitch("enable-gpu-rasterization"); // Explicitly enable GPU rasterization for smooth animations
-app.commandLine.appendSwitch("ignore-gpu-blocklist"); // Use GPU even if on the blocklist (some integrated GPUs)
+// Chromium: evitar afetar a pilha GPU/DWM de todo o Windows (Edge, Zen Browser, etc. a “carregar para sempre”).
+// O bloco antigo (ignore-gpu-blocklist, etc.) podia degradar drivers partilhados. Só ativar com ZENITH_AGGRESSIVE_GPU=1.
+if (process.env.ZENITH_AGGRESSIVE_GPU === "1") {
+  diagLog("[GPU] ZENITH_AGGRESSIVE_GPU=1 — switches Chromium legados ativos.");
+  app.commandLine.appendSwitch("disable-gpu-cache");
+  app.commandLine.appendSwitch("no-sandbox");
+  app.commandLine.appendSwitch("enable-zero-copy-dxgi-video");
+  app.commandLine.appendSwitch(
+    "disable-features",
+    "WindowOcclusionPrediction,CalculateNativeWinOcclusion",
+  );
+  app.commandLine.appendSwitch(
+    "enable-features",
+    "VaapiVideoDecoder,CanvasOopRasterization",
+  );
+  app.commandLine.appendSwitch("disable-software-rasterizer");
+  app.commandLine.appendSwitch("enable-gpu-rasterization");
+  app.commandLine.appendSwitch("ignore-gpu-blocklist");
+} else {
+  diagLog(
+    "[GPU] Modo seguro: sem flags agressivas. Se o radial ficar estranho, experimente ZENITH_AGGRESSIVE_GPU=1 em .env.local",
+  );
+}
 
 // Fix Taskbar Icon Grouping
 app.setAppUserModelId("com.henry.zenith"); // AUMID explicitly set
@@ -573,8 +589,11 @@ function showMenuAtCursor(source = "shortcut") {
 
   const cursorPoint = screen.getCursorScreenPoint();
 
-  // Hide native window during the transition so DWM never shows the stretched old framebuffer (settings flash).
-  mainWindow.setOpacity(0);
+  // Resize before IPC so the first renderer paint is already monitor-sized (send() is async; windowed→radial looked like "dashboard size").
+  updateWindowSize("fullscreen", { x: cursorPoint.x, y: cursorPoint.y });
+
+  // Do NOT setOpacity(0) here — on Windows + transparent BrowserWindow it often leaves the compositor
+  // without a fresh web frame (user sees through / "nothing", while hit-testing still works).
 
   mainWindow.webContents.send("open-menu", {
     x: cursorPoint.x,
@@ -588,8 +607,9 @@ function showMenuAtCursor(source = "shortcut") {
     mainWindow.setSkipTaskbar(false);
     mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
+    windowBuriedPassive = false;
     mainWindow.setIgnoreMouseEvents(false);
-    // Opacity restored by renderer after setWindowSize('fullscreen') (see App openMenu).
+    mainWindow.setOpacity(1);
     mainWindow.show();
 
     mainWindow.focus();
@@ -605,6 +625,17 @@ function showMenuAtCursor(source = "shortcut") {
         mainWindow.setSkipTaskbar(true);
       }
     }, 100);
+
+    try {
+      if (
+        mainWindow.webContents &&
+        typeof mainWindow.webContents.invalidate === "function"
+      ) {
+        mainWindow.webContents.invalidate();
+      }
+    } catch (e) {
+      /* ignore */
+    }
   });
 }
 
@@ -630,6 +661,13 @@ function updateWindowSize(mode, anchorScreenPoint) {
   const b = targetDisplay.bounds;
 
   if (mode === "fullscreen") {
+    try {
+      if (typeof mainWindow.setShape === "function") {
+        mainWindow.setShape([]);
+      }
+    } catch (e) {
+      /* ignore */
+    }
     mainWindow.setBounds({
       x: b.x,
       y: b.y,
@@ -651,12 +689,23 @@ function updateWindowSize(mode, anchorScreenPoint) {
     mainWindow.setBackgroundColor("#00000000"); // Maintain transparency mask
     mainWindow.setAlwaysOnTop(false);
     mainWindow.setIgnoreMouseEvents(false);
+    try {
+      if (typeof mainWindow.setShape === "function") {
+        mainWindow.setShape([]);
+      }
+    } catch (e) {
+      /* ignore */
+    }
   } else if (mode === "small") {
     if (mainWindow.isFullScreen()) {
       mainWindow.setFullScreen(false);
     }
-    mainWindow.setIgnoreMouseEvents(true, { forward: true });
-    mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
+    clearSkipTaskbarHideTimer();
+    try {
+      mainWindow.setSkipTaskbar(true);
+    } catch (e) {
+      /* ignore */
+    }
     mainWindow.setBackgroundColor("#00000000"); // ESSENTIAL for zero-lag transparency
     mainWindow.setBounds({
       x: b.x,
@@ -664,6 +713,21 @@ function updateWindowSize(mode, anchorScreenPoint) {
       width: b.width,
       height: b.height,
     });
+    mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
+    mainWindow.setResizable(true);
+    /*
+     * Clique fora da ilha: o renderer envia `set-window-hit-shape` com retângulo(s) em coords de cliente.
+     * setShape (Windows/Linux): fora da região o rato vai para o ambiente.
+     * macOS: normalmente sem setShape — mantém forward.
+     */
+    mainWindow.setIgnoreMouseEvents(false);
+    if (typeof mainWindow.setShape !== "function") {
+      try {
+        mainWindow.setIgnoreMouseEvents(true, { forward: true });
+      } catch (e) {
+        /* ignore */
+      }
+    }
   }
 }
 
@@ -1874,7 +1938,18 @@ app.whenReady().then(async () => {
     if (wantHook) startMouseHook();
     else stopMouseHook();
   };
-  syncMouseHookState();
+  const mouseHookDelayMs = Number.parseInt(
+    process.env.ZENITH_MOUSE_HOOK_DELAY_MS ?? "12000",
+    10,
+  );
+  if (mouseHookDelayMs > 0) {
+    diagLog(
+      `[MouseHook] Primeira ativação do hook global adiada ${mouseHookDelayMs}ms (ZENITH_MOUSE_HOOK_DELAY_MS=0 para imediato).`,
+    );
+    setTimeout(() => syncMouseHookState(), mouseHookDelayMs);
+  } else {
+    syncMouseHookState();
+  }
 });
 
 // IPC: Recebe atualização de configuração do Game Mode
@@ -2645,6 +2720,27 @@ ipcMain.on("show-window", () => {
   }
   // hide-window forces opacity 0 — restore immediately so the user never interacts with a "dead" layer
   mainWindow.setOpacity(1);
+  try {
+    if (typeof mainWindow.webContents.invalidate === "function") {
+      mainWindow.webContents.invalidate();
+    }
+  } catch (e) {
+    /* ignore */
+  }
+});
+
+/** Force Chromium to schedule a full repaint — helps transparent/frameless windows on Windows after resize/show. */
+ipcMain.handle("invalidate-paint", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  try {
+    if (typeof mainWindow.webContents.invalidate === "function") {
+      mainWindow.webContents.invalidate();
+      return true;
+    }
+  } catch (e) {
+    /* ignore */
+  }
+  return false;
 });
 
 ipcMain.on("set-window-opacity", (event, opacity) => {
@@ -2789,6 +2885,59 @@ ipcMain.handle("get-startup-apps", async () => {
 // IPC: Toggle Window Size
 ipcMain.on("set-window-size", (event, mode, anchorScreenPoint) => {
   updateWindowSize(mode, anchorScreenPoint);
+});
+
+/** Same as set-window-size but invoke() so the renderer can await before painting (avoids one frame at windowed bounds). */
+ipcMain.handle("apply-window-size", (event, mode, anchorScreenPoint) => {
+  updateWindowSize(mode, anchorScreenPoint);
+  return true;
+});
+
+/** Re-run `small` overlay (forward mouse) — refreshes Windows hit-testing after fullscreen → HUD-only. */
+ipcMain.handle("reapply-small-overlay", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  const point = screen.getCursorScreenPoint();
+  updateWindowSize("small", point);
+  try {
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.webContents.focus();
+  } catch (e) {
+    /* ignore */
+  }
+  return true;
+});
+
+/**
+ * Região(ões) clicável(is) em coordenadas de **cliente** (como getBoundingClientRect no renderer).
+ * Fora disto o Windows envia o rato para a janela por baixo — resolve ilha “transparente” com forward.
+ * Deduplicação: `setShape` repetido com as mesmas regiões custa ao DWM — evita trabalho se nada mudou.
+ */
+let lastWindowHitShapeKey = "";
+ipcMain.handle("set-window-hit-shape", (event, rects) => {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  if (typeof mainWindow.setShape !== "function") return false;
+  try {
+    if (!rects || !Array.isArray(rects) || rects.length === 0) {
+      if (lastWindowHitShapeKey === "__empty__") return true;
+      lastWindowHitShapeKey = "__empty__";
+      mainWindow.setShape([]);
+      return true;
+    }
+    const normalized = rects.map((r) => ({
+      x: Math.round(r.x),
+      y: Math.round(r.y),
+      width: Math.max(1, Math.round(r.width)),
+      height: Math.max(1, Math.round(r.height)),
+    }));
+    const key = JSON.stringify(normalized);
+    if (key === lastWindowHitShapeKey) return true;
+    lastWindowHitShapeKey = key;
+    mainWindow.setShape(normalized);
+    return true;
+  } catch (e) {
+    return false;
+  }
 });
 
 // IPC: Minimize — hide from taskbar (tray-only), same idea as old “close” that stayed in the tray.
@@ -3157,6 +3306,21 @@ ipcMain.handle("get-file-icon", async (event, filePath) => {
     return null;
   }
 });
+
+function stripBom(str) {
+  return String(str || "").replace(/^\uFEFF/, "").trim();
+}
+
+function getPowerShellExePath() {
+  const root = process.env.SystemRoot || "C:\\Windows";
+  return path.join(
+    root,
+    "System32",
+    "WindowsPowerShell",
+    "v1.0",
+    "powershell.exe",
+  );
+}
 
 let installedAppsCache = null;
 
