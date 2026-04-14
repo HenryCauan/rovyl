@@ -237,7 +237,7 @@ if (!gotTheLock) {
         windowBuriedPassive = false;
         if (mainWindow.isMinimized()) mainWindow.restore();
         mainWindow.setOpacity(1);
-        mainWindow.setIgnoreMouseEvents(false);
+        applyMousePolicyAfterReveal(mainWindow);
         mainWindow.setSkipTaskbar(false);
         mainWindow.show();
         mainWindow.focus();
@@ -282,6 +282,36 @@ let windowBuriedPassive = false;
 
 /** Last mode passed to updateWindowSize — used to fix hit-testing after minimize/restore without renderer IPC. */
 let nativeWindowSizeMode = "windowed";
+
+/** Sync with `set-window-hit-shape`: "__empty__" ou "" = rato reencaminhado; outro = regiões HUD. */
+let lastWindowHitShapeKey = "";
+
+/**
+ * `show-window` e restauros de foco não podem forçar `setIgnoreMouseEvents(false)` em modo `small`:
+ * isso fazia o overlay a tamanho do monitor capturar o rato (invisível).
+ */
+function applyMousePolicyAfterReveal(win) {
+  const w = win || mainWindow;
+  if (!w || w.isDestroyed()) return;
+  try {
+    if (nativeWindowSizeMode === "fullscreen" || nativeWindowSizeMode === "windowed") {
+      w.setIgnoreMouseEvents(false);
+      return;
+    }
+    if (nativeWindowSizeMode === "small") {
+      if (lastWindowHitShapeKey === "__empty__" || lastWindowHitShapeKey === "") {
+        if (typeof w.setShape === "function") {
+          w.setShape([]);
+        }
+        w.setIgnoreMouseEvents(true, { forward: true });
+      } else {
+        w.setIgnoreMouseEvents(false);
+      }
+    }
+  } catch (e) {
+    /* ignore */
+  }
+}
 
 /** When true, allow BrowserWindow to close (real quit). Otherwise close → hide to tray. */
 let isAppQuitting = false;
@@ -472,7 +502,7 @@ function attachWindowUserRestoreGuards(window) {
     if (!window || window.isDestroyed() || !windowBuriedPassive) return;
     try {
       window.setOpacity(1);
-      window.setIgnoreMouseEvents(false);
+      applyMousePolicyAfterReveal(window);
       window.setSkipTaskbar(false);
       windowBuriedPassive = false;
       diagLog("[Window] Recovered from passive hide (focus — taskbar or Alt+Tab).");
@@ -486,7 +516,7 @@ function attachWindowUserRestoreGuards(window) {
     try {
       if (windowBuriedPassive) {
         window.setOpacity(1);
-        window.setIgnoreMouseEvents(false);
+        applyMousePolicyAfterReveal(window);
         window.setSkipTaskbar(false);
         windowBuriedPassive = false;
         diagLog("[Window] Recovered from passive hide (restore).");
@@ -668,6 +698,7 @@ function updateWindowSize(mode, anchorScreenPoint) {
     } catch (e) {
       /* ignore */
     }
+    lastWindowHitShapeKey = "__empty__";
     mainWindow.setBounds({
       x: b.x,
       y: b.y,
@@ -697,6 +728,7 @@ function updateWindowSize(mode, anchorScreenPoint) {
       /* ignore */
     }
   } else if (mode === "small") {
+    lastWindowHitShapeKey = "__empty__";
     if (mainWindow.isFullScreen()) {
       mainWindow.setFullScreen(false);
     }
@@ -716,17 +748,21 @@ function updateWindowSize(mode, anchorScreenPoint) {
     mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
     mainWindow.setResizable(true);
     /*
-     * Clique fora da ilha: o renderer envia `set-window-hit-shape` com retângulo(s) em coords de cliente.
-     * setShape (Windows/Linux): fora da região o rato vai para o ambiente.
-     * macOS: normalmente sem setShape — mantém forward.
+     * Overlay passivo: por defeito o rato vai para o ambiente. Só fica “sólido” onde o renderer
+     * envia `set-window-hit-shape` com retângulos — senão setShape([])+ignore(false) fazia a janela
+     * a tamanho do monitor capturar todos os cliques (invisível).
      */
-    mainWindow.setIgnoreMouseEvents(false);
-    if (typeof mainWindow.setShape !== "function") {
-      try {
-        mainWindow.setIgnoreMouseEvents(true, { forward: true });
-      } catch (e) {
-        /* ignore */
+    try {
+      if (typeof mainWindow.setShape === "function") {
+        mainWindow.setShape([]);
       }
+    } catch (e) {
+      /* ignore */
+    }
+    try {
+      mainWindow.setIgnoreMouseEvents(true, { forward: true });
+    } catch (e) {
+      /* ignore */
     }
   }
 }
@@ -2710,7 +2746,6 @@ ipcMain.on("show-window", () => {
 
   windowBuriedPassive = false;
 
-  mainWindow.setIgnoreMouseEvents(false);
   mainWindow.show();
   mainWindow.focus();
   try {
@@ -2727,6 +2762,7 @@ ipcMain.on("show-window", () => {
   } catch (e) {
     /* ignore */
   }
+  applyMousePolicyAfterReveal(mainWindow);
 });
 
 /** Force Chromium to schedule a full repaint — helps transparent/frameless windows on Windows after resize/show. */
@@ -2913,17 +2949,27 @@ ipcMain.handle("reapply-small-overlay", () => {
  * Fora disto o Windows envia o rato para a janela por baixo — resolve ilha “transparente” com forward.
  * Deduplicação: `setShape` repetido com as mesmas regiões custa ao DWM — evita trabalho se nada mudou.
  */
-let lastWindowHitShapeKey = "";
 ipcMain.handle("set-window-hit-shape", (event, rects) => {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
-  if (typeof mainWindow.setShape !== "function") return false;
   try {
     if (!rects || !Array.isArray(rects) || rects.length === 0) {
       if (lastWindowHitShapeKey === "__empty__") return true;
       lastWindowHitShapeKey = "__empty__";
-      mainWindow.setShape([]);
+      if (typeof mainWindow.setShape === "function") {
+        try {
+          mainWindow.setShape([]);
+        } catch (e) {
+          /* ignore */
+        }
+      }
+      try {
+        mainWindow.setIgnoreMouseEvents(true, { forward: true });
+      } catch (e) {
+        /* ignore */
+      }
       return true;
     }
+    if (typeof mainWindow.setShape !== "function") return false;
     const normalized = rects.map((r) => ({
       x: Math.round(r.x),
       y: Math.round(r.y),
@@ -2933,6 +2979,11 @@ ipcMain.handle("set-window-hit-shape", (event, rects) => {
     const key = JSON.stringify(normalized);
     if (key === lastWindowHitShapeKey) return true;
     lastWindowHitShapeKey = key;
+    try {
+      mainWindow.setIgnoreMouseEvents(false);
+    } catch (e) {
+      /* ignore */
+    }
     mainWindow.setShape(normalized);
     return true;
   } catch (e) {
