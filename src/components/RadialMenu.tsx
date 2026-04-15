@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Coordinates, AppItem, UIConfig, Workspace } from '../types';
 import { getIcon } from '../iconMap';
@@ -469,7 +469,8 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     apps,
   });
 
-  useEffect(() => {
+  /** Layout: pointer math uses `position` — must match props before paint or first rAF sees stale center (fullscreen vs ilha small). */
+  useLayoutEffect(() => {
     stateRef.current = {
       isOpen,
       position,
@@ -1028,16 +1029,25 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   }, [onClose, onWorkspaceSwitch]);
 
   const getHUDStyles = () => {
-    const base = "fixed text-white pointer-events-none flex flex-col z-50 p-8 gap-4";
-    const safePosition = ['top-left', 'top-right', 'bottom-left', 'bottom-right'].includes(config.clockPosition)
+    /** z-[10+] dentro do wrapper z-[70] — overlay de dim fica em z-[2] para não cobrir ícones/HUD */
+    const base = "fixed text-white pointer-events-none flex flex-col z-[10] p-8 gap-4";
+    const safePosition = [
+      'top-left',
+      'top-center',
+      'top-right',
+      'bottom-left',
+      'bottom-right',
+    ].includes(config.clockPosition)
       ? config.clockPosition
-      : 'top-right';
+      : 'top-center';
 
     switch (safePosition) {
       case 'bottom-left': return `${base} bottom-0 left-0 items-start text-left`;
       case 'bottom-right': return `${base} bottom-0 right-0 items-end text-right`;
       case 'top-left': return `${base} top-0 left-0 items-start text-left`;
-      case 'top-right': default: return `${base} top-0 right-0 items-end text-right`;
+      case 'top-center': return `${base} top-0 left-1/2 -translate-x-1/2 items-center text-center`;
+      case 'top-right': return `${base} top-0 right-0 items-end text-right`;
+      default: return `${base} top-0 left-1/2 -translate-x-1/2 items-center text-center`;
     }
   };
 
@@ -1054,7 +1064,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
 
   return (
     <motion.div
-      className="fixed inset-0 z-40"
+      className="fixed inset-0 z-[70]"
       initial={false}
       animate={{ 
         visibility: isOpen ? 'visible' : 'hidden' 
@@ -1073,7 +1083,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
             <motion.div
               key="blur-vignette"
               animate={{ opacity: isOpen ? 1 : 0 }}
-              className="fixed inset-0 z-40 pointer-events-none"
+              className="fixed inset-0 z-[1] pointer-events-none"
               style={{
                 // Vignette mask: transparent in the center so the Acrylic blur is visible,
                 // dark at the edges to hide the white border that native Acrylic creates.
@@ -1089,7 +1099,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
             initial={false}
             animate={{ opacity: isOpen ? 1 : 0 }}
             transition={{ duration: isOpen ? 0.25 : 0.12, ease: 'easeOut' }}
-            className="fixed inset-0 z-[41]"
+            className="fixed inset-0 z-[2]"
             style={{
               pointerEvents: isOpen ? 'auto' : 'none',
               background: config.menuBackgroundStyle === 'fullscreen' ? overlayFullscreen : overlayRadial,
@@ -1154,7 +1164,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
             <motion.div
               initial={false}
               animate={{ opacity: isOpen ? 1 : 0, x: isOpen ? 0 : -20 }}
-              className="fixed top-8 left-8 z-50 pointer-events-none"
+              className="fixed top-8 left-8 z-[10] pointer-events-none"
             >
               <div className="flex items-center gap-2 px-4 py-2 bg-black/40 backdrop-blur-md border border-white/10 rounded-full">
                 <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-xs font-bold text-white">
@@ -1185,7 +1195,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
               height: 0,
               willChange: 'transform, opacity'
             }}
-            className="fixed z-50 pointer-events-none"
+            className="fixed z-[10] pointer-events-none"
             tabIndex={-1}
           >
 

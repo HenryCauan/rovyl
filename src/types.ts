@@ -157,7 +157,12 @@ export interface UIConfig {
   showBattery: boolean; // New
   showWeather: boolean; // New
   weatherLocation?: string; // New: CEP or city name for weather
-  clockPosition: "top-left" | "top-right" | "bottom-left" | "bottom-right";
+  clockPosition:
+    | "top-left"
+    | "top-center"
+    | "top-right"
+    | "bottom-left"
+    | "bottom-right";
   gameMode: GameModeConfig;
   globalShortcut: string; // New: Global keyboard shortcut (e.g. 'Alt+Space')
   workspaces: Workspace[]; // New: Workspace configurations
@@ -171,6 +176,11 @@ export interface UIConfig {
   enableMouseTrigger: boolean;
   language: "pt" | "en" | "es" | "fr" | "de" | "it" | "ja" | "zh" | "ko" | "ru";
   performanceMode: boolean; // New: Strict performance mode for zero-lag
+  /**
+   * Start Menu discovery já correu ou o Main foi guardado com apps à medida — não voltar a importar atalhos no arranque.
+   * Persistido em config-v2.json (localStorage pode ser limpo após reboot).
+   */
+  mainStartMenuDiscoveryDone?: boolean;
   /** Mostrar relógio no ambiente (modo desktop) em repouso — mantém overlay composto; mais uso de GPU. */
   deskIslandClockWhileIdle?: boolean;
   /** Notes widget fullscreen overlay darkness (0 = transparent, 1 = opaque). */

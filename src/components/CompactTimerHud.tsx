@@ -1,5 +1,5 @@
-import React, { useLayoutEffect, useRef } from 'react';
-import type { PomodoroConfig, PomodoroState, UIConfig } from '../types';
+import React, { useLayoutEffect, useRef, useState } from 'react';
+import type { PomodoroConfig, PomodoroState } from '../types';
 import type { StopwatchHudSnapshot } from '../stopwatchHudStore';
 import { getTranslation } from '../translations';
 import {
@@ -7,21 +7,32 @@ import {
   stopwatchCompactHudVisible,
 } from '../utils/compactTimerHudVisibility';
 
-/** Fundo opaco — sem backdrop-blur (GPU / janela transparente no Windows). */
-const islandCardClass =
-  'rounded-2xl border border-white/15 bg-[rgba(10,10,12,0.92)] px-4 py-2.5 shadow-lg min-w-[7.5rem]';
+/**
+ * “Ambient pill” — compacto, sem backdrop-blur (overlay transparente no Windows).
+ * Borda em cabelo, sombra suave, leve highlight interno.
+ */
+const islandPillClass =
+  'inline-flex min-w-0 items-center gap-2.5 rounded-full border border-white/[0.08] bg-[rgba(11,11,13,0.92)] px-3.5 py-1.5 shadow-[0_10px_40px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.055)]';
 
-function islandCornerClass(pos: string | undefined): string {
-  switch (pos) {
-    case 'top-right':
-      return 'top-0 right-0 items-end';
-    case 'bottom-left':
-      return 'bottom-0 left-0 items-start';
-    case 'bottom-right':
-      return 'bottom-0 right-0 items-end';
-    default:
-      return 'top-0 left-0 items-start';
+const islandPulseDot =
+  'h-[5px] w-[5px] shrink-0 rounded-full bg-emerald-400/95 shadow-[0_0_10px_rgba(52,211,153,0.5)]';
+
+/** Faixa no topo: largura = viewport; ilha centrada em X com flex (sem translate). */
+function islandTopStripClass(paintReady: boolean): string {
+  return [
+    'fixed inset-x-0 top-0 z-[45] flex justify-center pt-[max(1.25rem,env(safe-area-inset-top,0px))] px-4 pb-4 pointer-events-none overflow-visible transition-opacity duration-150',
+    paintReady ? 'opacity-100' : 'opacity-0',
+  ].join(' ');
+}
+
+/** Só este bloco entra no rect do hit-shape — deve envolver só a pill, não a faixa inteira. */
+function islandClusterClassNames(sideBySideTimerStrips: boolean): string {
+  const base =
+    'pointer-events-auto items-center max-w-[min(100vw-1rem,52rem)] justify-center';
+  if (sideBySideTimerStrips) {
+    return `${base} flex flex-row flex-wrap gap-2`;
   }
+  return `${base} flex flex-col gap-2 max-w-[min(100vw-1.5rem,24rem)]`;
 }
 
 function formatStopwatchMs(ms: number): string {
@@ -44,8 +55,10 @@ type Props = {
   stopwatchSnap: StopwatchHudSnapshot | null;
 };
 
+/** Sempre HH:MM (24h), sem segundos — formato mínimo para a ilha de relógio. */
 function formatIdleClock(): string {
-  return new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
 export const CompactTimerHud: React.FC<Props> = ({
@@ -61,12 +74,21 @@ export const CompactTimerHud: React.FC<Props> = ({
   const t = (k: string) => getTranslation(config, k);
   const rootRef = useRef<HTMLDivElement>(null);
   const idleTimeRef = useRef<HTMLSpanElement>(null);
+  /** Evita mostrar a ilha durante vários frames em que o HWND / viewport ainda mudam (saltava entre cantos). */
+  const [paintReady, setPaintReady] = useState(false);
+  const lastSentBoundsRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
 
   const showPomodoro = pomodoroCompactHudVisible(isPomodoroOpen, pomodoroState, pomodoroConfig);
   const showStopwatch = stopwatchCompactHudVisible(isStopwatchOpen, stopwatchSnap);
-  const allowIdleClock = config.deskIslandClockWhileIdle === true;
+  const allowIdleClock = config.deskIslandClockWhileIdle !== false;
+  /** Relógio HH:MM só em repouso — some quando há faixa de widget (Pomodoro e/ou Cronómetro). */
   const showIdleClock =
     allowIdleClock && !suppressFloatingClock && !showPomodoro && !showStopwatch;
+
+  const sideBySideTimerStrips = showPomodoro && showStopwatch;
+  const pillClass = islandPillClass;
+  const labelMicro = 'text-[8px] font-semibold uppercase tracking-[0.2em]';
+  const timeSize = 'text-[15px]';
 
   const visible = isDesktopMode && (showPomodoro || showStopwatch || showIdleClock);
 
@@ -100,6 +122,8 @@ export const CompactTimerHud: React.FC<Props> = ({
     if (!isDesktopMode || !window.electron?.setWindowHitShape) return;
 
     if (!visible) {
+      setPaintReady(false);
+      lastSentBoundsRef.current = null;
       void window.electron.setWindowHitShape([]);
       return;
     }
@@ -107,22 +131,29 @@ export const CompactTimerHud: React.FC<Props> = ({
     const el = rootRef.current;
     if (!el) return;
 
-    const apply = () => {
+    const pad = 20;
+
+    const applyNow = () => {
       const r = el.getBoundingClientRect();
       if (r.width < 2 || r.height < 2) return;
-      const pad = 10;
-      /** Rect em coordenadas de ecrã — o main process encolhe o HWND à ilha (sem overlay invisível a ecrã inteiro). */
-      void window.electron!.setWindowHitShape!(
-        [
-          {
-            x: Math.round(window.screenX + r.left - pad),
-            y: Math.round(window.screenY + r.top - pad),
-            width: Math.round(r.width + pad * 2),
-            height: Math.round(r.height + pad * 2),
-          },
-        ],
-        { coordinateSpace: 'screen' },
-      );
+      const next = {
+        x: Math.round(window.screenX + r.left - pad),
+        y: Math.round(window.screenY + r.top - pad),
+        width: Math.round(r.width + pad * 2),
+        height: Math.round(r.height + pad * 2),
+      };
+      const prev = lastSentBoundsRef.current;
+      if (
+        prev &&
+        Math.abs(prev.x - next.x) < 3 &&
+        Math.abs(prev.y - next.y) < 3 &&
+        Math.abs(prev.width - next.width) < 3 &&
+        Math.abs(prev.height - next.height) < 3
+      ) {
+        return;
+      }
+      lastSentBoundsRef.current = next;
+      void window.electron!.setWindowHitShape!([next], { coordinateSpace: 'screen' });
     };
 
     let debounce: ReturnType<typeof setTimeout> | null = null;
@@ -130,56 +161,79 @@ export const CompactTimerHud: React.FC<Props> = ({
       if (debounce !== null) clearTimeout(debounce);
       debounce = window.setTimeout(() => {
         debounce = null;
-        apply();
-      }, 48);
+        applyNow();
+      }, 140);
     };
 
-    apply();
-    const ro = new ResizeObserver(applyDebounced);
-    ro.observe(el);
+    setPaintReady(false);
+    let cancelled = false;
+    let raf2Id = 0;
+    let ro: ResizeObserver | null = null;
+
+    const raf1 = requestAnimationFrame(() => {
+      raf2Id = requestAnimationFrame(() => {
+        if (cancelled) return;
+        applyNow();
+        queueMicrotask(() => {
+          if (!cancelled) applyNow();
+        });
+        setPaintReady(true);
+        ro = new ResizeObserver(applyDebounced);
+        ro.observe(el);
+      });
+    });
+
     return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2Id);
       if (debounce !== null) clearTimeout(debounce);
-      ro.disconnect();
+      ro?.disconnect();
+      setPaintReady(false);
+      lastSentBoundsRef.current = null;
       void window.electron?.setWindowHitShape?.([]);
     };
   }, [isDesktopMode, visible, showPomodoro, showStopwatch, showIdleClock, suppressFloatingClock]);
 
   if (!visible) return null;
 
-  const pos = config.clockPosition;
-  const corner = islandCornerClass(pos);
-
   const pm = Math.floor(Math.max(0, pomodoroState.timeLeft) / 60);
   const ps = Math.max(0, pomodoroState.timeLeft) % 60;
   const pomodoroLabel = `${pm}:${String(ps).padStart(2, '0')}`;
+  const timeStyleBase = 'font-mono font-semibold tabular-nums leading-none text-white/[0.96]';
+  const timeStyleDynamic = `${timeStyleBase} ${timeSize}`;
 
   return (
-    <div ref={rootRef} className={`pointer-events-auto fixed z-[45] flex flex-col gap-2 p-6 ${corner}`}>
-      {showPomodoro && (
-        <div className={islandCardClass}>
-          <div className="text-[9px] font-bold uppercase tracking-widest text-white/45">Pomodoro</div>
-          <div className="font-mono text-lg font-semibold tabular-nums text-white">{pomodoroLabel}</div>
-        </div>
-      )}
-      {showStopwatch && stopwatchSnap && (
-        <div className={islandCardClass}>
-          <div className="text-[9px] font-bold uppercase tracking-widest text-white/45">Stopwatch</div>
-          <div className="font-mono text-lg font-semibold tabular-nums text-white">
-            {formatStopwatchMs(stopwatchSnap.ms)}
+    <div className={islandTopStripClass(paintReady)}>
+      <div ref={rootRef} className={islandClusterClassNames(sideBySideTimerStrips)}>
+        {showPomodoro && (
+          <div
+            className={`${pillClass} min-w-[8.25rem] max-w-[min(42vw,20rem)] shrink-0 justify-between`}
+            title={t('pomodoro.timer')}
+          >
+            <span className={`${labelMicro} text-white/40 font-semibold uppercase`}>{t('hud.island_label_pom')}</span>
+            <span className={timeStyleDynamic}>{pomodoroLabel}</span>
           </div>
-        </div>
-      )}
-      {showIdleClock && (
-        <div
-          className={`${islandCardClass} min-w-0 [contain:paint]`}
-          title={t('hud.island_clock')}
-        >
-          <span
-            ref={idleTimeRef}
-            className="font-mono text-xl font-semibold tabular-nums text-white tracking-tight"
-          />
-        </div>
-      )}
+        )}
+        {showStopwatch && stopwatchSnap && (
+          <div
+            className={`${pillClass} min-w-[8.25rem] max-w-[min(42vw,20rem)] shrink-0 justify-between`}
+            title={t('stopwatch.title')}
+          >
+            <span className={`${labelMicro} text-white/40 font-semibold uppercase`}>{t('hud.island_label_stop')}</span>
+            <span className={timeStyleDynamic}>{formatStopwatchMs(stopwatchSnap.ms)}</span>
+          </div>
+        )}
+        {showIdleClock && (
+          <div
+            className={`${pillClass} pl-2.5 pr-3.5 gap-2.5 justify-between`}
+            title={t('hud.island_clock')}
+          >
+            <span className={islandPulseDot} aria-hidden />
+            <span ref={idleTimeRef} className={`${timeStyleBase} text-[15px] tracking-tight`} />
+          </div>
+        )}
+      </div>
     </div>
   );
 };

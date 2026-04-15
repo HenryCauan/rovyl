@@ -270,6 +270,31 @@ let gameModeConfig = {
 // Window Management Persistence
 let lastWindowedBounds = { width: 1280, height: 800, x: 100, y: 100 };
 let isUpdatingBounds = false;
+
+/** Ilha (modo `small` + hit-shape) encolhe o HWND — não gravar isso como "janela normal" ou o dashboard abre num rect minúsculo. */
+const MIN_REASONABLE_WINDOWED_W = 480;
+const MIN_REASONABLE_WINDOWED_H = 360;
+
+function resetLastWindowedBoundsIfIslandCorrupted() {
+  const b = lastWindowedBounds;
+  if (
+    b &&
+    b.width >= MIN_REASONABLE_WINDOWED_W &&
+    b.height >= MIN_REASONABLE_WINDOWED_H
+  ) {
+    return;
+  }
+  try {
+    const { workArea } = screen.getPrimaryDisplay();
+    const w = Math.min(1280, Math.max(MIN_REASONABLE_WINDOWED_W, workArea.width - 80));
+    const h = Math.min(800, Math.max(MIN_REASONABLE_WINDOWED_H, workArea.height - 80));
+    const x = Math.round(workArea.x + (workArea.width - w) / 2);
+    const y = Math.round(workArea.y + (workArea.height - h) / 2);
+    lastWindowedBounds = { x, y, width: w, height: h };
+  } catch (e) {
+    lastWindowedBounds = { width: 1280, height: 800, x: 100, y: 100 };
+  }
+}
 /** Cleared when leaving radial overlay for settings so a pending hide does not break the window. */
 let skipTaskbarHideTimer = null;
 
@@ -464,9 +489,10 @@ async function createWindow() {
       }, 200);
     });
 
-    // Track bounds for persistence
+    // Track bounds for persistence — só em modo `windowed` (fullscreen/small usam bounds especiais; small+ilha não deve sobrescrever o último tamanho real).
     newWindow.on("resize", () => {
       if (
+        nativeWindowSizeMode === "windowed" &&
         !newWindow.isFullScreen() &&
         !newWindow.isMaximized() &&
         !isUpdatingBounds
@@ -480,6 +506,7 @@ async function createWindow() {
 
     newWindow.on("move", () => {
       if (
+        nativeWindowSizeMode === "windowed" &&
         !newWindow.isFullScreen() &&
         !newWindow.isMaximized() &&
         !isUpdatingBounds
@@ -783,6 +810,7 @@ function updateWindowSize(mode, anchorScreenPoint) {
       mainWindow.setFullScreen(false);
     }
     mainWindow.setResizable(true);
+    resetLastWindowedBoundsIfIslandCorrupted();
     isUpdatingBounds = true;
     mainWindow.setBounds(lastWindowedBounds);
     isUpdatingBounds = false;
@@ -1386,8 +1414,12 @@ app.whenReady().then(async () => {
           windowBuriedPassive = false;
           mainWindow.setSkipTaskbar(false);
           mainWindow.setVisibleOnAllWorkspaces(false);
-          updateWindowSize("windowed");
           mainWindow.setIgnoreMouseEvents(false);
+
+          // Não chamar `updateWindowSize` aqui: expandir o HWND antes do React desmontar a ilha causa frames
+          // vazios / ilha no topo e pode atrasar o compositor. O renderer faz `setWindowSize('windowed')` em
+          // `useLayoutEffect` logo após `flushSync` em `open-dashboard`.
+          mainWindow.webContents.send("open-dashboard");
 
           // Smooth Entry Trick: Mask the initial white flash/compositor stutter
           mainWindow.setOpacity(0);
@@ -1402,7 +1434,6 @@ app.whenReady().then(async () => {
               } catch (e) {
                 /* ignore */
               }
-              mainWindow.webContents.send("open-dashboard");
             }
           }, 50);
         },

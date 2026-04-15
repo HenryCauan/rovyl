@@ -448,6 +448,9 @@ export const translations: Record<Language, Record<string, string>> = {
     "hud.quadrant_top_right": "Superior Direito",
     "hud.quadrant_bottom_left": "Inferior Esquerdo",
     "hud.quadrant_bottom_right": "Inferior Direito",
+    "hud.quadrant_top_center": "Superior Centro",
+    "hud.island_label_pom": "POM",
+    "hud.island_label_stop": "STW",
 
     "gamemode.operational_logic": "Lógica Operacional",
     "gamemode.stealth_mode": "Modo Stealth",
@@ -974,6 +977,9 @@ export const translations: Record<Language, Record<string, string>> = {
     "hud.quadrant_top_right": "Top Right",
     "hud.quadrant_bottom_left": "Bottom Left",
     "hud.quadrant_bottom_right": "Bottom Right",
+    "hud.quadrant_top_center": "Top Center",
+    "hud.island_label_pom": "POM",
+    "hud.island_label_stop": "STW",
 
     "gamemode.operational_logic": "Operational Logic",
     "gamemode.stealth_mode": "Stealth Mode",
@@ -1355,6 +1361,9 @@ export const translations: Record<Language, Record<string, string>> = {
     "hud.quadrant_top_right": "Superior Derecha",
     "hud.quadrant_bottom_left": "Inferior Izquierda",
     "hud.quadrant_bottom_right": "Inferior Derecha",
+    "hud.quadrant_top_center": "Superior Centro",
+    "hud.island_label_pom": "POM",
+    "hud.island_label_stop": "STW",
 
     "gamemode.operational_logic": "Lógica Operacional",
     "gamemode.stealth_mode": "Modo Stealth",
@@ -1694,6 +1703,9 @@ export const translations: Record<Language, Record<string, string>> = {
     "hud.quadrant_top_right": "Haut Droite",
     "hud.quadrant_bottom_left": "Bas Gauche",
     "hud.quadrant_bottom_right": "Bas Droite",
+    "hud.quadrant_top_center": "Haut Centre",
+    "hud.island_label_pom": "POM",
+    "hud.island_label_stop": "STW",
 
     "gamemode.operational_logic": "Logique Opérationnelle",
     "gamemode.stealth_mode": "Mode Furtif",
@@ -2061,6 +2073,9 @@ export const translations: Record<Language, Record<string, string>> = {
     "hud.quadrant_top_right": "Oben Rechts",
     "hud.quadrant_bottom_left": "Unten Links",
     "hud.quadrant_bottom_right": "Unten Rechts",
+    "hud.quadrant_top_center": "Oben Mitte",
+    "hud.island_label_pom": "POM",
+    "hud.island_label_stop": "STW",
 
     "gamemode.operational_logic": "Operative Logik",
     "gamemode.stealth_mode": "Stealth-Modus",
@@ -2428,6 +2443,9 @@ export const translations: Record<Language, Record<string, string>> = {
     "hud.quadrant_top_right": "Alto Destra",
     "hud.quadrant_bottom_left": "Basso Sinistra",
     "hud.quadrant_bottom_right": "Basso Destra",
+    "hud.quadrant_top_center": "Alto Centro",
+    "hud.island_label_pom": "POM",
+    "hud.island_label_stop": "STW",
 
     "gamemode.operational_logic": "Logica Operativa",
     "gamemode.stealth_mode": "Modalità Stealth",
@@ -2793,6 +2811,9 @@ export const translations: Record<Language, Record<string, string>> = {
     "hud.quadrant_top_right": "右上",
     "hud.quadrant_bottom_left": "左下",
     "hud.quadrant_bottom_right": "右下",
+    "hud.quadrant_top_center": "上中央",
+    "hud.island_label_pom": "POM",
+    "hud.island_label_stop": "STW",
 
     "gamemode.operational_logic": "動作ロジック",
     "gamemode.stealth_mode": "ステルスモード",
@@ -3154,6 +3175,9 @@ export const translations: Record<Language, Record<string, string>> = {
     "hud.quadrant_top_right": "右上",
     "hud.quadrant_bottom_left": "左下",
     "hud.quadrant_bottom_right": "右下",
+    "hud.quadrant_top_center": "顶部居中",
+    "hud.island_label_pom": "POM",
+    "hud.island_label_stop": "STW",
 
     "gamemode.operational_logic": "运行逻辑",
     "gamemode.stealth_mode": "隐身模式",
@@ -3516,6 +3540,9 @@ export const translations: Record<Language, Record<string, string>> = {
     "hud.quadrant_top_right": "오른쪽 상단",
     "hud.quadrant_bottom_left": "왼쪽 하단",
     "hud.quadrant_bottom_right": "오른쪽 하단",
+    "hud.quadrant_top_center": "상단 중앙",
+    "hud.island_label_pom": "POM",
+    "hud.island_label_stop": "STW",
 
     "gamemode.operational_logic": "작동 로직",
     "gamemode.stealth_mode": "스텔스 모드",
@@ -3881,6 +3908,9 @@ export const translations: Record<Language, Record<string, string>> = {
     "hud.quadrant_top_right": "Верхний Правый",
     "hud.quadrant_bottom_left": "Нижний Левый",
     "hud.quadrant_bottom_right": "Нижний Правый",
+    "hud.quadrant_top_center": "Верх Центр",
+    "hud.island_label_pom": "POM",
+    "hud.island_label_stop": "STW",
 
     "gamemode.operational_logic": "Операционная Логика",
     "gamemode.stealth_mode": "Стелс Режим",

@@ -1295,14 +1295,17 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                         </div>
                         <div
                             className="flex items-center justify-between p-4 bg-white/[0.03] border border-white/5 rounded-2xl cursor-pointer group hover:bg-white/[0.05]"
-                            onClick={() => setConfig({ ...config, deskIslandClockWhileIdle: !(config.deskIslandClockWhileIdle === true) })}
+                            onClick={() => {
+                              const on = config.deskIslandClockWhileIdle !== false;
+                              setConfig({ ...config, deskIslandClockWhileIdle: !on });
+                            }}
                         >
                             <div className="space-y-1 pr-4">
                                 <span className="text-sm font-semibold text-white/80 group-hover:text-white block">{getTranslation(config, 'performance.idle_island')}</span>
                                 <span className="text-[10px] text-white/30 uppercase tracking-wider block font-bold leading-tight">{getTranslation(config, 'performance.idle_island_desc')}</span>
                             </div>
-                            <div className={`w-11 h-6 shrink-0 rounded-full relative transition-all duration-500 ${config.deskIslandClockWhileIdle === true ? 'bg-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.3)]' : 'bg-white/10'}`}>
-                                <div className={`absolute top-1 w-4 h-4 rounded-full transition-all duration-500 ${config.deskIslandClockWhileIdle === true ? 'left-6 bg-black' : 'left-1 bg-white/40'}`} />
+                            <div className={`w-11 h-6 shrink-0 rounded-full relative transition-all duration-500 ${config.deskIslandClockWhileIdle !== false ? 'bg-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.3)]' : 'bg-white/10'}`}>
+                                <div className={`absolute top-1 w-4 h-4 rounded-full transition-all duration-500 ${config.deskIslandClockWhileIdle !== false ? 'left-6 bg-black' : 'left-1 bg-white/40'}`} />
                             </div>
                         </div>
                         </div>
@@ -2458,21 +2461,41 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
                         transition={{ delay: 0.3 }}
                     >
                         <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.3em] block ml-1 mb-6">{getTranslation(config, 'hud.spatial_quadrant')}</label>
-                        <div className="grid grid-cols-2 gap-3">
-                            {['top-left', 'top-right', 'bottom-left', 'bottom-right'].map((pos) => (
-                                <button
-                                    key={pos}
-                                    onClick={() => setConfig({ ...config, clockPosition: pos as any })}
-                                    className={`py-4 rounded-xl border flex flex-col items-center justify-center gap-3 transition-all duration-500 ${config.clockPosition === pos
-                                        ? 'bg-white text-black border-white shadow-xl translate-y-[-1px]'
-                                        : 'bg-black/40 border-white/5 text-white/30 hover:border-white/10 hover:text-white/60'}`}
-                                >
-                                    <div className={`w-1.5 h-1.5 rounded-full transition-all duration-500 ${config.clockPosition === pos ? 'bg-black scale-125' : 'bg-white/10'}`} />
-                                    <span className="font-medium text-[9px] uppercase tracking-[0.2em]">
-                                        {getTranslation(config, `hud.quadrant_${pos.replace('-', '_')}`)}
-                                    </span>
-                                </button>
-                            ))}
+                        <div className="flex flex-col gap-3">
+                            <div className="grid grid-cols-3 gap-2">
+                                {(['top-left', 'top-center', 'top-right'] as const).map((pos) => (
+                                    <button
+                                        key={pos}
+                                        type="button"
+                                        onClick={() => setConfig({ ...config, clockPosition: pos })}
+                                        className={`py-3 rounded-xl border flex flex-col items-center justify-center gap-2 transition-all duration-500 ${config.clockPosition === pos
+                                            ? 'bg-white text-black border-white shadow-xl translate-y-[-1px]'
+                                            : 'bg-black/40 border-white/5 text-white/30 hover:border-white/10 hover:text-white/60'}`}
+                                    >
+                                        <div className={`w-1.5 h-1.5 rounded-full transition-all duration-500 ${config.clockPosition === pos ? 'bg-black scale-125' : 'bg-white/10'}`} />
+                                        <span className="font-medium text-[8px] uppercase tracking-[0.18em] text-center leading-tight px-0.5">
+                                            {getTranslation(config, `hud.quadrant_${pos.replace(/-/g, '_')}`)}
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 w-full max-w-[14rem] mx-auto">
+                                {(['bottom-left', 'bottom-right'] as const).map((pos) => (
+                                    <button
+                                        key={pos}
+                                        type="button"
+                                        onClick={() => setConfig({ ...config, clockPosition: pos })}
+                                        className={`py-3 rounded-xl border flex flex-col items-center justify-center gap-2 transition-all duration-500 ${config.clockPosition === pos
+                                            ? 'bg-white text-black border-white shadow-xl translate-y-[-1px]'
+                                            : 'bg-black/40 border-white/5 text-white/30 hover:border-white/10 hover:text-white/60'}`}
+                                    >
+                                        <div className={`w-1.5 h-1.5 rounded-full transition-all duration-500 ${config.clockPosition === pos ? 'bg-black scale-125' : 'bg-white/10'}`} />
+                                        <span className="font-medium text-[8px] uppercase tracking-[0.18em] text-center leading-tight px-0.5">
+                                            {getTranslation(config, `hud.quadrant_${pos.replace(/-/g, '_')}`)}
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     </motion.div>
                 </div>

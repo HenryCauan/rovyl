@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { flushSync } from 'react-dom';
 import { RadialMenu } from './components/RadialMenu';
 import { Toast } from './components/Toast';
@@ -76,6 +76,20 @@ async function buildMainAppsFromStartMenuDiscovery(
   return [...built, ...MINIMAL_MAIN_WORKSPACE_APPS];
 }
 
+/** Main já tem atalhos reais ou apps fora do conjunto mínimo de widgets — não reimportar Menu Iniciar após reboot. */
+function mainWorkspaceAlreadyCustomized(mainWs: Workspace | undefined): boolean {
+  if (!mainWs?.apps?.length) return false;
+  const minimalIds = new Set(
+    MINIMAL_MAIN_WORKSPACE_APPS.map((a) => a.id).filter((id): id is string => !!id),
+  );
+  if (mainWs.apps.length > MINIMAL_MAIN_WORKSPACE_APPS.length) return true;
+  for (const a of mainWs.apps) {
+    if (a.id && !minimalIds.has(a.id)) return true;
+    if (typeof a.command === 'string' && !a.command.startsWith('internal:')) return true;
+  }
+  return false;
+}
+
 // Helper function to find an app by ID anywhere in the nested structure
 const findAppRecursive = (items: AppItem[], id: string): AppItem | undefined => {
   for (const item of items) {
@@ -141,11 +155,53 @@ export default function App() {
   const [lastLaunched, setLastLaunched] = useState<AppItem | null>(null);
   const [executionError, setExecutionError] = useState<string | null>(null);
   const [isDesktopMode, setIsDesktopMode] = useState(false);
+  /** Só montar a ilha depois de `setWindowSize('small')` com bounds do monitor — senão o hit-shape usa coords com a janela ainda em 1280×800 (dev). */
+  const [electronSmallOverlayReady, setElectronSmallOverlayReady] = useState(false);
   const isDesktopModeRef = useRef(false);
   isDesktopModeRef.current = isDesktopMode;
 
   /** Declared before handlers that resize the window — keeps IPC + React in sync. */
   const lastWindowState = useRef<'fullscreen' | 'windowed' | 'small' | null>(null);
+
+  /** Garante HWND em `windowed` quando o painel/definições estão abertos (após o React atualizar o estado). */
+  useLayoutEffect(() => {
+    if (!isDesktopMode || !window.electron?.setWindowSize) return;
+    if (!isDashboardOpen && !isSettingsOpen) return;
+    try {
+      window.electron.setWindowSize('windowed');
+      window.electron.showWindow();
+      lastWindowState.current = 'windowed';
+    } catch {
+      /* ignore */
+    }
+  }, [isDesktopMode, isDashboardOpen, isSettingsOpen]);
+
+  useLayoutEffect(() => {
+    if (!isDesktopMode || !window.electron?.setWindowSize) {
+      setElectronSmallOverlayReady(false);
+      return;
+    }
+    /** Painel / definições usam `windowed` — não forçar `small` aqui (evita sobrescrever o primeiro arranque). */
+    if (isDashboardOpen || isSettingsOpen) {
+      setElectronSmallOverlayReady(true);
+      return;
+    }
+    const ax = window.screen.availLeft + Math.floor(window.screen.availWidth / 2);
+    const ay = window.screen.availTop + Math.floor(window.screen.availHeight / 2);
+    window.electron.setWindowSize('small', { x: ax, y: ay });
+    lastWindowState.current = 'small';
+    let id2 = 0;
+    const id1 = requestAnimationFrame(() => {
+      id2 = requestAnimationFrame(() => {
+        setElectronSmallOverlayReady(true);
+      });
+    });
+    return () => {
+      cancelAnimationFrame(id1);
+      cancelAnimationFrame(id2);
+      setElectronSmallOverlayReady(false);
+    };
+  }, [isDesktopMode, isDashboardOpen, isSettingsOpen]);
 
   const [isAppReady, setIsAppReady] = useState(true); // Defaults to true so initial loading works normally
 
@@ -159,6 +215,10 @@ export default function App() {
   targetWorkspaceIndexRef.current = config.activeWorkspaceIndex;
   const switchDebounceTimer = useRef<NodeJS.Timeout | null>(null);
 
+  /** Notas / alarmes / pomodoro / stopwatch em modo painel — não combinar com ilha de repouso (camadas z-index). */
+  const anyFullscreenWidgetOpen =
+    isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen;
+
   /** Faixas compactas + ilha de relógio opcional — mantém overlay visível em modo desktop quando aplicável. */
   const timerHudActive = compactTimerHudShouldShow(
     isPomodoroOpen,
@@ -168,7 +228,9 @@ export default function App() {
     stopwatchHudSnap,
     isDesktopMode,
     isMenuOpen,
-    config.deskIslandClockWhileIdle === true,
+    config.deskIslandClockWhileIdle !== false,
+    anyFullscreenWidgetOpen,
+    isDashboardOpen || isSettingsOpen,
   );
 
   useEffect(() => {
@@ -448,17 +510,27 @@ export default function App() {
       const mainWs = nextConfig.workspaces.find(
         (ws) => ws.id === 'workspace-1' || ws.name === 'Main',
       );
-      const discoveryDone = localStorage.getItem(LS_MAIN_DISCOVERY_DONE);
+      const lsDiscoveryDone = localStorage.getItem(LS_MAIN_DISCOVERY_DONE) === 'true';
       const legacyOnboardingDone = localStorage.getItem(LS_ZENITH_INITIALIZED_LEGACY);
       const hasDemoFingerprint = mainWs ? workspaceContainsBundledDemoApp(mainWs) : false;
       const mainIsEmpty = !!(mainWs && mainWs.apps.length === 0);
       const canDiscover = !!window.electron?.getStartupApps;
+      const mainCustom = mainWorkspaceAlreadyCustomized(mainWs);
+      /** Disco + heurística: evita re-scan quando só o localStorage foi limpo (ex.: sessão Electron). */
+      let discoveryDoneEffective =
+        lsDiscoveryDone ||
+        nextConfig.mainStartMenuDiscoveryDone === true ||
+        mainCustom;
+      if (mainCustom && nextConfig.mainStartMenuDiscoveryDone !== true) {
+        nextConfig = { ...nextConfig, mainStartMenuDiscoveryDone: true };
+        discoveryDoneEffective = true;
+      }
 
       const shouldTryStartMenuIpc =
         canDiscover &&
-        (hasDemoFingerprint ||
-          mainIsEmpty ||
-          (!discoveryDone && !legacyOnboardingDone));
+        !discoveryDoneEffective &&
+        !legacyOnboardingDone &&
+        (hasDemoFingerprint || mainIsEmpty);
 
       const stripMainToZenithOnly = () => {
         const mi = nextConfig.workspaces.findIndex(
@@ -502,7 +574,7 @@ export default function App() {
                 setConfig((prev) => {
                   const workspaces = [...prev.workspaces];
                   workspaces[mainIdx] = { ...workspaces[mainIdx], apps: mergedApps };
-                  return { ...prev, workspaces };
+                  return { ...prev, workspaces, mainStartMenuDiscoveryDone: true };
                 });
               } else if (discoverHasDemoFingerprint) {
                 setConfig((prev) => {
@@ -512,7 +584,7 @@ export default function App() {
                   if (mi === -1) return prev;
                   const workspaces = [...prev.workspaces];
                   workspaces[mi] = { ...workspaces[mi], apps: MINIMAL_MAIN_WORKSPACE_APPS };
-                  return { ...prev, workspaces };
+                  return { ...prev, workspaces, mainStartMenuDiscoveryDone: true };
                 });
               }
             } catch (e) {
@@ -525,7 +597,7 @@ export default function App() {
                   if (mi === -1) return prev;
                   const workspaces = [...prev.workspaces];
                   workspaces[mi] = { ...workspaces[mi], apps: MINIMAL_MAIN_WORKSPACE_APPS };
-                  return { ...prev, workspaces };
+                  return { ...prev, workspaces, mainStartMenuDiscoveryDone: true };
                 });
               }
             } finally {
@@ -533,13 +605,15 @@ export default function App() {
                 setStartMenuResolving({ open: false, lang: uiLangDeferred }),
               );
               localStorage.setItem(LS_MAIN_DISCOVERY_DONE, 'true');
+              setConfig((prev) =>
+                prev.mainStartMenuDiscoveryDone === true
+                  ? prev
+                  : { ...prev, mainStartMenuDiscoveryDone: true },
+              );
             }
           })();
         }, START_MENU_DISCOVERY_DEFER_MS);
-      } else if (hasDemoFingerprint) {
-        stripMainToZenithOnly();
-        localStorage.setItem(LS_MAIN_DISCOVERY_DONE, 'true');
-      } else if (!discoveryDone) {
+      } else if (!lsDiscoveryDone && discoveryDoneEffective) {
         localStorage.setItem(LS_MAIN_DISCOVERY_DONE, 'true');
       }
 
@@ -757,10 +831,10 @@ export default function App() {
           trialEndsAt: trialDate.toISOString(),
           avatarUrl: authData.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(authData.name)}&background=0D8ABC&color=fff`,
         };
-        setUser(newUser);
-        
-        // Ensure settings reflecting the login
-        setIsDashboardOpen(true); 
+        flushSync(() => {
+          setUser(newUser);
+          setIsDashboardOpen(true);
+        });
       });
     }
   }, []);
@@ -994,24 +1068,33 @@ export default function App() {
   openMenuRef.current = openMenu;
 
   // After setBounds(fullscreen), inner/outer window metrics update a frame late — re-map screen anchor → client so the radial is not clipped (multi-monitor / half-screen).
+  const syncMenuPositionFromAnchor = useCallback(() => {
+    if (configRef.current.fixedPosition) {
+      setMenuPosition({
+        x: window.innerWidth / 2,
+        y: window.innerHeight / 2,
+      });
+      return;
+    }
+    const ax = menuAnchorScreenRef.current;
+    if (ax) {
+      setMenuPosition({
+        x: ax.x - window.screenX,
+        y: ax.y - window.screenY,
+      });
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!isMenuOpen || !isDesktopMode) return;
+    syncMenuPositionFromAnchor();
+  }, [isMenuOpen, isDesktopMode, syncMenuPositionFromAnchor]);
+
   useEffect(() => {
     if (!isMenuOpen || !isDesktopMode) return;
 
     const sync = () => {
-      if (configRef.current.fixedPosition) {
-        setMenuPosition({
-          x: window.innerWidth / 2,
-          y: window.innerHeight / 2,
-        });
-        return;
-      }
-      const ax = menuAnchorScreenRef.current;
-      if (ax) {
-        setMenuPosition({
-          x: ax.x - window.screenX,
-          y: ax.y - window.screenY,
-        });
-      }
+      syncMenuPositionFromAnchor();
     };
 
     sync();
@@ -1025,7 +1108,7 @@ export default function App() {
       cancelAnimationFrame(rafB);
       window.removeEventListener('resize', sync);
     };
-  }, [isMenuOpen, isDesktopMode]);
+  }, [isMenuOpen, isDesktopMode, syncMenuPositionFromAnchor]);
 
   /** Repaint após abrir ou fechar o radial — evita DWM/GPU ficar num estado mau (congelar outros apps até reabrir o menu). */
   const prevIsMenuOpenForPaintRef = useRef(isMenuOpen);
@@ -1045,9 +1128,21 @@ export default function App() {
 
   // IPC: menu / dashboard / settings — must run after openMenu exists; use openMenuRef so handler always calls latest openMenu.
   useEffect(() => {
+    const hasRunBefore = localStorage.getItem('zenith_first_run_complete');
     if (window.electron) {
-      setIsDesktopMode(true);
       if (configRef.current.gameMode) window.electron.setGameMode(configRef.current.gameMode);
+      flushSync(() => {
+        setIsDesktopMode(true);
+        if (!hasRunBefore) {
+          setIsDashboardOpen(true);
+        }
+      });
+    } else {
+      flushSync(() => {
+        if (!hasRunBefore) {
+          setIsDashboardOpen(true);
+        }
+      });
     }
 
     const cleanupMenu = window.electron?.onOpenMenu((data: { x: number, y: number, source?: 'mmb' | 'shortcut' }) => {
@@ -1055,27 +1150,20 @@ export default function App() {
     });
 
     const cleanupDashboard = window.electron?.onOpenDashboard(() => {
-      setIsSettingsOpen(false);
-      setIsDashboardOpen(true);
-      // Same as onOpenSettings: always restore native window + hit-testing. If React still thought
-      // the dashboard was "visible" (e.g. window was hidden from the tray/main process), the
-      // visibility effect skips showWindow — leaving ignoreMouseEvents(true) from passive hide.
-      if (window.electron) {
-        window.electron.setWindowSize('windowed');
-        window.electron.showWindow();
-        lastWindowState.current = 'windowed';
-      }
+      flushSync(() => {
+        setIsSettingsOpen(false);
+        setIsDashboardOpen(true);
+      });
+      window.electron?.showWindow();
     });
 
     const cleanupSettings = window.electron?.onOpenSettings(() => {
-      setIsMenuOpen(false);
-      setIsSettingsOpen(true);
-      setIsDashboardOpen(true);
-      if (window.electron) {
-        window.electron.setWindowSize('windowed');
-        window.electron.showWindow();
-        lastWindowState.current = 'windowed';
-      }
+      flushSync(() => {
+        setIsMenuOpen(false);
+        setIsSettingsOpen(true);
+        setIsDashboardOpen(true);
+      });
+      window.electron?.showWindow();
     });
 
     const cleanupWindowState = window.electron?.onWindowState((state) => {
@@ -1115,10 +1203,7 @@ export default function App() {
         lastWindowState.current = m;
       });
 
-    const hasRunBefore = localStorage.getItem('zenith_first_run_complete');
     if (!hasRunBefore) {
-      setIsDashboardOpen(true);
-      if (window.electron) window.electron.setWindowSize('windowed');
       localStorage.setItem('zenith_first_run_complete', 'true');
     }
 
@@ -1214,16 +1299,12 @@ export default function App() {
 
   // Centralized function to open settings and handle dashboard logic
   const handleOpenSettings = () => {
-    if (isMenuOpen) setIsMenuOpen(false);
-    setIsSettingsOpen(true);
-    setIsDashboardOpen(true); // Ensure settings opens in "page" mode (full window)
-    // When opening settings from dashboard, we keep track of it via existing props
-    // or we can just let SettingsModal call onOpenDashboard when closed.
-    if (isDesktopMode && window.electron) {
-      window.electron.setWindowSize('windowed');
-      window.electron.showWindow();
-      lastWindowState.current = 'windowed';
-    }
+    flushSync(() => {
+      if (isMenuOpen) setIsMenuOpen(false);
+      setIsSettingsOpen(true);
+      setIsDashboardOpen(true);
+    });
+    if (isDesktopMode) window.electron?.showWindow();
   };
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button === 1) { // Botão do meio
@@ -1411,9 +1492,12 @@ export default function App() {
   };
 
   const handleLogout = () => {
-    setUser(null);
-    setIsSettingsOpen(false);
-    setIsDashboardOpen(true);
+    flushSync(() => {
+      setUser(null);
+      setIsSettingsOpen(false);
+      setIsDashboardOpen(true);
+    });
+    if (isDesktopMode) window.electron?.showWindow();
   };
 
   const handleUserProfileUpdate = useCallback((patch: Partial<UserProfile>) => {
@@ -1486,7 +1570,7 @@ export default function App() {
         absolute inset-0 overflow-hidden
         ${isMenuOpen
           ? 'opacity-0 pointer-events-none invisible !transition-none'
-          : `transition-all duration-300 ${(isDashboardOpen || isSettingsOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || alarmRinging || pomodoroEndOverlay) ? 'opacity-100 visible' : 'opacity-0 pointer-events-none invisible'}`
+          : `${(isDashboardOpen || isSettingsOpen) ? '!transition-none' : 'transition-all duration-300'} ${(isDashboardOpen || isSettingsOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || alarmRinging || pomodoroEndOverlay) ? 'opacity-100 visible' : 'opacity-0 pointer-events-none invisible'}`
         }
         ${!isMenuOpen && (isDashboardOpen || isSettingsOpen) ? 'bg-[#0A0A0A]' : ''}
         ${!isMenuOpen && (isDashboardOpen || isSettingsOpen) ? 'border border-white/10 rounded-xl shadow-[0_0_50px_rgba(0,0,0,0.5)]' : ''}
@@ -1595,8 +1679,11 @@ export default function App() {
                     }
                   }}
                   onOpenDashboard={() => {
-                    setIsSettingsOpen(false);
-                    setIsDashboardOpen(true);
+                    flushSync(() => {
+                      setIsSettingsOpen(false);
+                      setIsDashboardOpen(true);
+                    });
+                    if (isDesktopMode) window.electron?.showWindow();
                   }}
                   user={user}
                   onLogout={handleLogout}
@@ -1689,18 +1776,22 @@ export default function App() {
       {/* TRANSPARENT LAYER — no background, RadialMenu + toasts live here    */}
       {/* ------------------------------------------------------------------ */}
 
-        {!isMenuOpen && !islandHoldAfterRadialClose && (
-        <CompactTimerHud
-          config={config}
-          isDesktopMode={isDesktopMode}
-          suppressFloatingClock={isMenuOpen}
-          isPomodoroOpen={isPomodoroOpen}
-          isStopwatchOpen={isStopwatchOpen}
-          pomodoroState={pomodoro.state}
-          pomodoroConfig={pomodoro.config}
-          stopwatchSnap={stopwatchHudSnap}
-        />
-        )}
+        {!isMenuOpen &&
+          !islandHoldAfterRadialClose &&
+          electronSmallOverlayReady &&
+          timerHudActive &&
+          !anyFullscreenWidgetOpen && (
+            <CompactTimerHud
+              config={config}
+              isDesktopMode={isDesktopMode}
+              suppressFloatingClock={isMenuOpen}
+              isPomodoroOpen={isPomodoroOpen}
+              isStopwatchOpen={isStopwatchOpen}
+              pomodoroState={pomodoro.state}
+              pomodoroConfig={pomodoro.config}
+              stopwatchSnap={stopwatchHudSnap}
+            />
+          )}
 
         <RadialMenu
           isOpen={isMenuOpen}

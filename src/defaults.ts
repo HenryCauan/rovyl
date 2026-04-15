@@ -240,7 +240,7 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   showDate: true,
   showBattery: false,
   showWeather: false,
-  clockPosition: "top-right",
+  clockPosition: "top-center",
   gameMode: {
     enabled: false,
     mode: "list", // Default to list mode
@@ -254,7 +254,9 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   enableMouseTrigger: true,
   language: "pt",
   performanceMode: false,
-  deskIslandClockWhileIdle: false,
+  mainStartMenuDiscoveryDone: false,
+  /** Ilha no ambiente (desktop): relógio HH:MM em repouso, sem segundos. */
+  deskIslandClockWhileIdle: true,
   notesWidgetBackdropOpacity: 0.85,
   alarmsWidgetBackdropOpacity: 0.85,
   pomodoroWidgetBackdropOpacity: 0.85,
