@@ -254,6 +254,7 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   enableMouseTrigger: true,
   language: "pt",
   performanceMode: false,
+  deskIslandClockWhileIdle: false,
   notesWidgetBackdropOpacity: 0.85,
   alarmsWidgetBackdropOpacity: 0.85,
   pomodoroWidgetBackdropOpacity: 0.85,

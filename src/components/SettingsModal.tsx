@@ -1283,6 +1283,7 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                     </BentoCard>
 
                     <BentoCard title={getTranslation(config, 'performance.title')} icon={Zap} description={getTranslation(config, 'performance.desc')} className="md:col-span-1 lg:col-span-3">
+                        <div className="flex flex-col gap-3">
                         <div className="flex items-center justify-between p-4 bg-white/[0.03] border border-white/5 rounded-2xl cursor-pointer group hover:bg-white/[0.05]" onClick={() => setConfig({ ...config, performanceMode: !config.performanceMode })}>
                             <div className="space-y-1">
                                 <span className="text-sm font-semibold text-white/80 group-hover:text-white block">{getTranslation(config, 'performance.strict')}</span>
@@ -1291,6 +1292,19 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                             <div className={`w-11 h-6 rounded-full relative transition-all duration-500 ${config.performanceMode ? 'bg-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.3)]' : 'bg-white/10'}`}>
                                 <div className={`absolute top-1 w-4 h-4 rounded-full transition-all duration-500 ${config.performanceMode ? 'left-6 bg-black' : 'left-1 bg-white/40'}`} />
                             </div>
+                        </div>
+                        <div
+                            className="flex items-center justify-between p-4 bg-white/[0.03] border border-white/5 rounded-2xl cursor-pointer group hover:bg-white/[0.05]"
+                            onClick={() => setConfig({ ...config, deskIslandClockWhileIdle: !(config.deskIslandClockWhileIdle === true) })}
+                        >
+                            <div className="space-y-1 pr-4">
+                                <span className="text-sm font-semibold text-white/80 group-hover:text-white block">{getTranslation(config, 'performance.idle_island')}</span>
+                                <span className="text-[10px] text-white/30 uppercase tracking-wider block font-bold leading-tight">{getTranslation(config, 'performance.idle_island_desc')}</span>
+                            </div>
+                            <div className={`w-11 h-6 shrink-0 rounded-full relative transition-all duration-500 ${config.deskIslandClockWhileIdle === true ? 'bg-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.3)]' : 'bg-white/10'}`}>
+                                <div className={`absolute top-1 w-4 h-4 rounded-full transition-all duration-500 ${config.deskIslandClockWhileIdle === true ? 'left-6 bg-black' : 'left-1 bg-white/40'}`} />
+                            </div>
+                        </div>
                         </div>
                     </BentoCard>
                 </div>

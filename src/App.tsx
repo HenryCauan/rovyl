@@ -31,6 +31,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStopwatchHudSnapshot } from './stopwatchHudStore';
 import { compactTimerHudShouldShow } from './utils/compactTimerHudVisibility';
+import { CompactTimerHud } from './components/CompactTimerHud';
 
 const LS_MAIN_DISCOVERY_DONE = 'zenith_main_discovery_done';
 
@@ -134,6 +135,9 @@ export default function App() {
   /** Screen-space anchor for the radial center — keeps client coords correct after fullscreen + multi-monitor. */
   const menuAnchorScreenRef = useRef<{ x: number; y: number } | null>(null);
   const [triggerSource, setTriggerSource] = useState<'mmb' | 'shortcut'>('shortcut');
+  /** Evita a ilha compacta aparecer no mesmo instante em que o radial ainda desvanece (flash do relógio do radial). */
+  const [islandHoldAfterRadialClose, setIslandHoldAfterRadialClose] = useState(false);
+  const prevIsMenuOpenRef = useRef(false);
   const [lastLaunched, setLastLaunched] = useState<AppItem | null>(null);
   const [executionError, setExecutionError] = useState<string | null>(null);
   const [isDesktopMode, setIsDesktopMode] = useState(false);
@@ -155,14 +159,28 @@ export default function App() {
   targetWorkspaceIndexRef.current = config.activeWorkspaceIndex;
   const switchDebounceTimer = useRef<NodeJS.Timeout | null>(null);
 
-  /** Faixas Pomodoro/cronómetro compactas — mantém overlay visível em modo desktop quando há timer ativo. */
+  /** Faixas compactas + ilha de relógio opcional — mantém overlay visível em modo desktop quando aplicável. */
   const timerHudActive = compactTimerHudShouldShow(
     isPomodoroOpen,
     isStopwatchOpen,
     pomodoro.state,
     pomodoro.config,
     stopwatchHudSnap,
+    isDesktopMode,
+    isMenuOpen,
+    config.deskIslandClockWhileIdle === true,
   );
+
+  useEffect(() => {
+    const wasOpen = prevIsMenuOpenRef.current;
+    if (wasOpen && !isMenuOpen) {
+      setIslandHoldAfterRadialClose(true);
+      const t = window.setTimeout(() => setIslandHoldAfterRadialClose(false), 320);
+      prevIsMenuOpenRef.current = false;
+      return () => clearTimeout(t);
+    }
+    prevIsMenuOpenRef.current = isMenuOpen;
+  }, [isMenuOpen]);
 
   const [notes, setNotes] = useState<Note[]>([]);
   const defaultNoteWorkspace: NoteWorkspace = { id: 'default', name: 'Geral' };
@@ -968,12 +986,8 @@ export default function App() {
 
     // Do not dip window opacity to 0 here — show-window already sets opacity 1 in main. A 0 → rAF → 1
     // sequence left the BrowserWindow stuck invisible on some systems (clicks still hit; radial UI gone).
-
-    if (isDesktopModeRef.current && window.electron?.applyWindowSize) {
-      void window.electron.applyWindowSize('fullscreen', anchorForFullscreen).catch(() => {
-        /* ignore */
-      });
-    }
+    // Não chamar applyWindowSize aqui: setWindowSize(fullscreen) já corre de forma síncrona em cima; um segundo
+    // updateWindowSize(fullscreen) repetia bounds/DWM sem necessidade (pior com ilha small→radial).
   };
 
   const openMenuRef = useRef(openMenu);
@@ -1013,12 +1027,19 @@ export default function App() {
     };
   }, [isMenuOpen, isDesktopMode]);
 
-  /** Transparent Electron windows on Windows sometimes skip compositing a new frame until invalidate (blank overlay, hits still work). */
+  /** Repaint após abrir ou fechar o radial — evita DWM/GPU ficar num estado mau (congelar outros apps até reabrir o menu). */
+  const prevIsMenuOpenForPaintRef = useRef(isMenuOpen);
   useEffect(() => {
-    if (!isMenuOpen || !window.electron?.invalidatePaint) return;
+    if (!window.electron?.invalidatePaint) return;
+    const was = prevIsMenuOpenForPaintRef.current;
+    prevIsMenuOpenForPaintRef.current = isMenuOpen;
+    const opening = !was && isMenuOpen;
+    const closing = was && !isMenuOpen;
+    if (!opening && !closing) return;
+    const delay = opening ? 120 : 220;
     const t = window.setTimeout(() => {
-      void window.electron.invalidatePaint?.();
-    }, 120);
+      void window.electron?.invalidatePaint?.();
+    }, delay);
     return () => clearTimeout(t);
   }, [isMenuOpen]);
 
@@ -1667,6 +1688,19 @@ export default function App() {
       {/* ------------------------------------------------------------------ */}
       {/* TRANSPARENT LAYER — no background, RadialMenu + toasts live here    */}
       {/* ------------------------------------------------------------------ */}
+
+        {!isMenuOpen && !islandHoldAfterRadialClose && (
+        <CompactTimerHud
+          config={config}
+          isDesktopMode={isDesktopMode}
+          suppressFloatingClock={isMenuOpen}
+          isPomodoroOpen={isPomodoroOpen}
+          isStopwatchOpen={isStopwatchOpen}
+          pomodoroState={pomodoro.state}
+          pomodoroConfig={pomodoro.config}
+          stopwatchSnap={stopwatchHudSnap}
+        />
+        )}
 
         <RadialMenu
           isOpen={isMenuOpen}

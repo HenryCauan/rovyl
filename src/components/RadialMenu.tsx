@@ -895,13 +895,19 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   useEffect(() => {
     if (!isOpen) return;
 
-    // Battery
+    let cancelled = false;
+    let batteryObj: Awaited<ReturnType<typeof navigator.getBattery>> | null = null;
+    const onBatteryLevel = () => {
+      if (cancelled || !batteryObj) return;
+      setBatteryLevel(Math.round(batteryObj.level * 100));
+    };
+
     if (config.showBattery && 'getBattery' in navigator) {
-      // @ts-ignore
-      navigator.getBattery().then(battery => {
+      void navigator.getBattery().then((battery) => {
+        if (cancelled) return;
+        batteryObj = battery;
         setBatteryLevel(Math.round(battery.level * 100));
-        // @ts-ignore
-        battery.addEventListener('levelchange', () => setBatteryLevel(Math.round(battery.level * 100)));
+        battery.addEventListener('levelchange', onBatteryLevel);
       });
     }
 
@@ -914,7 +920,6 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
         (now - weatherCache.lastFetch) < WEATHER_TTL_MS;
 
       if (cacheValid) {
-        // Serve from cache immediately — no network
         setWeather(weatherCache.data);
       } else {
         const fetchWeather = async () => {
@@ -924,19 +929,29 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
             const data = await response.json();
             const current = data.current_condition[0];
             const result = { temp: parseInt(current.temp_C), condition: current.weatherDesc[0].value };
-            // Update cache
             weatherCache.data = result;
             weatherCache.lastFetch = Date.now();
             weatherCache.location = loc;
-            setWeather(result);
+            if (!cancelled) setWeather(result);
           } catch (err) {
             console.error("Failed to fetch weather:", err);
-            if (!weatherCache.data) setWeather({ temp: 0, condition: '---' });
+            if (!cancelled && !weatherCache.data) setWeather({ temp: 0, condition: '---' });
           }
         };
         fetchWeather();
       }
     }
+
+    return () => {
+      cancelled = true;
+      if (batteryObj) {
+        try {
+          batteryObj.removeEventListener('levelchange', onBatteryLevel);
+        } catch {
+          /* ignore */
+        }
+      }
+    };
   }, [isOpen, config.showBattery, config.showWeather, config.weatherLocation]);
 
   const handleAppClick = React.useCallback((app: AppItem) => {
@@ -1045,7 +1060,8 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
         visibility: isOpen ? 'visible' : 'hidden' 
       }}
       transition={{
-        visibility: { delay: isOpen ? 0 : 0.25 }
+        /* Sem atraso ao fechar — senão o HUD (relógio) do radial ficava visível por cima/atras da ilha compacta. */
+        visibility: { delay: 0 },
       }}
       style={{ 
         pointerEvents: isOpen ? 'auto' : 'none',
@@ -1072,7 +1088,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
           <motion.div
             initial={false}
             animate={{ opacity: isOpen ? 1 : 0 }}
-            transition={{ duration: 0.25, ease: 'easeOut' }}
+            transition={{ duration: isOpen ? 0.25 : 0.12, ease: 'easeOut' }}
             className="fixed inset-0 z-[41]"
             style={{
               pointerEvents: isOpen ? 'auto' : 'none',
@@ -1086,6 +1102,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
             <motion.div
               initial={false}
               animate={{ opacity: isOpen ? 1 : 0, x: isOpen ? 0 : 20 }}
+              transition={{ duration: isOpen ? 0.22 : 0 }}
               className={getHUDStyles()}
             >
               {/* Clock & Date */}

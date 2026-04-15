@@ -669,6 +669,74 @@ function showMenuAtCursor(source = "shortcut") {
   });
 }
 
+/** Modo `small` passivo: HWND ao tamanho do monitor — forward fora do HUD (histórico). */
+function applySmallModeFullMonitorBounds(anchorScreenPoint) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const point =
+    anchorScreenPoint &&
+    typeof anchorScreenPoint.x === "number" &&
+    typeof anchorScreenPoint.y === "number" &&
+    !Number.isNaN(anchorScreenPoint.x) &&
+    !Number.isNaN(anchorScreenPoint.y)
+      ? anchorScreenPoint
+      : screen.getCursorScreenPoint();
+  const targetDisplay = screen.getDisplayNearestPoint(point);
+  const b = targetDisplay.bounds;
+  mainWindow.setBounds({
+    x: b.x,
+    y: b.y,
+    width: b.width,
+    height: b.height,
+  });
+}
+
+function unionScreenRects(rects) {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const r of rects) {
+    if (!r || typeof r.x !== "number") continue;
+    const x1 = r.x;
+    const y1 = r.y;
+    const x2 = r.x + r.width;
+    const y2 = r.y + r.height;
+    minX = Math.min(minX, x1);
+    minY = Math.min(minY, y1);
+    maxX = Math.max(maxX, x2);
+    maxY = Math.max(maxY, y2);
+  }
+  if (!Number.isFinite(minX)) return null;
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY,
+  };
+}
+
+function clampBoundsToWorkArea(bounds, workArea) {
+  let { x, y, width, height } = bounds;
+  const minW = 48;
+  const minH = 28;
+  width = Math.max(minW, Math.round(width));
+  height = Math.max(minH, Math.round(height));
+  if (width > workArea.width) width = workArea.width;
+  if (height > workArea.height) height = workArea.height;
+  x = Math.max(workArea.x, Math.min(x, workArea.x + workArea.width - width));
+  y = Math.max(workArea.y, Math.min(y, workArea.y + workArea.height - height));
+  return { x: Math.round(x), y: Math.round(y), width, height };
+}
+
+function boundsApproxEqual(a, b, eps = 2) {
+  return (
+    Math.abs(a.x - b.x) <= eps &&
+    Math.abs(a.y - b.y) <= eps &&
+    Math.abs(a.width - b.width) <= eps &&
+    Math.abs(a.height - b.height) <= eps
+  );
+}
+
 /**
  * @param {string} mode
  * @param {{ x: number, y: number } | undefined} anchorScreenPoint — screen coordinates (e.g. cursor). Picks the monitor with getDisplayNearestPoint so multi-monitor matches the radial overlay.
@@ -676,6 +744,7 @@ function showMenuAtCursor(source = "shortcut") {
 function updateWindowSize(mode, anchorScreenPoint) {
   if (!mainWindow) return;
 
+  const previousMode = nativeWindowSizeMode;
   nativeWindowSizeMode = mode;
 
   let point =
@@ -739,18 +808,13 @@ function updateWindowSize(mode, anchorScreenPoint) {
       /* ignore */
     }
     mainWindow.setBackgroundColor("#00000000"); // ESSENTIAL for zero-lag transparency
-    mainWindow.setBounds({
-      x: b.x,
-      y: b.y,
-      width: b.width,
-      height: b.height,
-    });
+    applySmallModeFullMonitorBounds(point);
     mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
     mainWindow.setResizable(true);
     /*
-     * Overlay passivo: por defeito o rato vai para o ambiente. Só fica “sólido” onde o renderer
-     * envia `set-window-hit-shape` com retângulos — senão setShape([])+ignore(false) fazia a janela
-     * a tamanho do monitor capturar todos os cliques (invisível).
+     * Ilha: `set-window-hit-shape` com coordinateSpace "screen" encolhe o HWND à ilha — cliques fora
+     * não passam por uma camada transparente a ecrã inteiro (evita congelar o DWM ao clicar noutras apps).
+     * Até lá: overlay ao tamanho do monitor + forward (histórico).
      */
     try {
       if (typeof mainWindow.setShape === "function") {
@@ -761,6 +825,23 @@ function updateWindowSize(mode, anchorScreenPoint) {
     }
     try {
       mainWindow.setIgnoreMouseEvents(true, { forward: true });
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  /*
+   * `small` e `fullscreen` usam os mesmos bounds no monitor — o SO pode não emitir resize.
+   * Sem invalidate, o DWM/Chromium pode ficar com camadas antigas (congelamento ao abrir o radial com a ilha).
+   */
+  if (previousMode !== mode) {
+    try {
+      if (
+        mainWindow.webContents &&
+        typeof mainWindow.webContents.invalidate === "function"
+      ) {
+        mainWindow.webContents.invalidate();
+      }
     } catch (e) {
       /* ignore */
     }
@@ -2945,12 +3026,15 @@ ipcMain.handle("reapply-small-overlay", () => {
 });
 
 /**
- * Região(ões) clicável(is) em coordenadas de **cliente** (como getBoundingClientRect no renderer).
- * Fora disto o Windows envia o rato para a janela por baixo — resolve ilha “transparente” com forward.
- * Deduplicação: `setShape` repetido com as mesmas regiões custa ao DWM — evita trabalho se nada mudou.
+ * Ilha: com `coordinateSpace: "screen"` encolhemos o HWND ao rect da ilha — fora disso o rato não
+ * passa por uma janela topmost transparente a ecrã inteiro (cliques noutras apps deixam de “travar” o DWM).
+ * Legado: coords de cliente + `setShape` em janela a ecrã inteiro.
  */
-ipcMain.handle("set-window-hit-shape", (event, rects) => {
+ipcMain.handle("set-window-hit-shape", (event, rects, opts = {}) => {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
+  const coordinateSpace =
+    opts && opts.coordinateSpace === "screen" ? "screen" : "client";
+
   try {
     if (!rects || !Array.isArray(rects) || rects.length === 0) {
       if (lastWindowHitShapeKey === "__empty__") return true;
@@ -2962,13 +3046,72 @@ ipcMain.handle("set-window-hit-shape", (event, rects) => {
           /* ignore */
         }
       }
+      /*
+       * Só em modo `small` o rato deve reencaminhar por defeito. Em fullscreen (radial), limpar a
+       * ilha compacta desmonta o HUD e envia [] — não podemos aplicar forward aqui senão o menu radial
+       * fica “invisível” ao clique e parece um retângulo minúsculo atrás da ilha.
+       */
       try {
-        mainWindow.setIgnoreMouseEvents(true, { forward: true });
+        if (nativeWindowSizeMode === "fullscreen" || nativeWindowSizeMode === "windowed") {
+          mainWindow.setIgnoreMouseEvents(false);
+        } else {
+          applySmallModeFullMonitorBounds(undefined);
+          mainWindow.setIgnoreMouseEvents(true, { forward: true });
+        }
+      } catch (e) {
+        /* ignore */
+      }
+      try {
+        if (
+          mainWindow.webContents &&
+          typeof mainWindow.webContents.invalidate === "function"
+        ) {
+          mainWindow.webContents.invalidate();
+        }
       } catch (e) {
         /* ignore */
       }
       return true;
     }
+
+    if (nativeWindowSizeMode === "small" && coordinateSpace === "screen") {
+      const u = unionScreenRects(rects);
+      if (!u || u.width < 3 || u.height < 3) return false;
+      const center = { x: u.x + u.width / 2, y: u.y + u.height / 2 };
+      const disp = screen.getDisplayNearestPoint(center);
+      const nb = clampBoundsToWorkArea(u, disp.workArea);
+      const key = JSON.stringify(nb);
+      if (key === lastWindowHitShapeKey) return true;
+      const cur = mainWindow.getBounds();
+      lastWindowHitShapeKey = key;
+      if (!boundsApproxEqual(cur, nb)) {
+        mainWindow.setBounds(nb);
+      }
+      try {
+        if (typeof mainWindow.setShape === "function") {
+          mainWindow.setShape([]);
+        }
+      } catch (e) {
+        /* ignore */
+      }
+      try {
+        mainWindow.setIgnoreMouseEvents(false);
+      } catch (e) {
+        /* ignore */
+      }
+      try {
+        if (
+          mainWindow.webContents &&
+          typeof mainWindow.webContents.invalidate === "function"
+        ) {
+          mainWindow.webContents.invalidate();
+        }
+      } catch (e) {
+        /* ignore */
+      }
+      return true;
+    }
+
     if (typeof mainWindow.setShape !== "function") return false;
     const normalized = rects.map((r) => ({
       x: Math.round(r.x),

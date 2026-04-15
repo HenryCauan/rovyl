@@ -171,6 +171,8 @@ export interface UIConfig {
   enableMouseTrigger: boolean;
   language: "pt" | "en" | "es" | "fr" | "de" | "it" | "ja" | "zh" | "ko" | "ru";
   performanceMode: boolean; // New: Strict performance mode for zero-lag
+  /** Mostrar relógio no ambiente (modo desktop) em repouso — mantém overlay composto; mais uso de GPU. */
+  deskIslandClockWhileIdle?: boolean;
   /** Notes widget fullscreen overlay darkness (0 = transparent, 1 = opaque). */
   notesWidgetBackdropOpacity?: number;
   /** Alarms widget fullscreen overlay darkness (0 = transparent, 1 = opaque). */
@@ -230,9 +232,10 @@ export interface ElectronAPI {
   ) => Promise<boolean>;
   /** Re-applies desktop passthrough overlay after closing a fullscreen widget (fixes flaky clicks on Windows). */
   reapplySmallOverlay?: () => Promise<boolean>;
-  /** Windows/Linux: `BrowserWindow.setShape` — regiões clicáveis em coords de cliente (resto passa para o ambiente). */
+  /** Windows/Linux: ilha — `coordinateSpace: "screen"` encolhe o HWND; sem isso, coords de cliente + setShape. */
   setWindowHitShape?: (
     rects: Array<{ x: number; y: number; width: number; height: number }>,
+    opts?: { coordinateSpace?: "screen" | "client" },
   ) => Promise<boolean>;
   /** 0–1; used to hide the window during fullscreen resize to avoid DWM stretching the old settings frame (flash). */
   setWindowOpacity: (opacity: number) => void;

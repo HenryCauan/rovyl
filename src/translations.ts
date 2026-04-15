@@ -120,6 +120,8 @@ export const translations: Record<Language, Record<string, string>> = {
     "performance.desc": "Modo Performance (Zero-Lag)",
     "performance.strict": "Performance Estrita",
     "performance.strict_desc": "Desativa desfoque e elementos pesados; remove o hook global do botão do meio (menos carga no sistema)",
+    "performance.idle_island": "Relógio no ambiente (repouso)",
+    "performance.idle_island_desc": "Mostra o horário (HH:MM, atualiza por minuto) em repouso. Mantém o overlay composto — pode afetar vídeo/GPU.",
 
 
     "status.executing": "Executando...",
@@ -434,6 +436,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "hud.time_flow": "Fluxo do Tempo",
     "hud.chronometer": "Cronómetro",
     "hud.calendar": "Calendário",
+    "hud.island_clock": "Horário local",
     "hud.vital_metrics": "Métricas Vitais",
     "hud.system_awareness": "Percepção do Sistema",
     "hud.energy_status": "Status de Energia",
@@ -649,6 +652,8 @@ export const translations: Record<Language, Record<string, string>> = {
     "performance.desc": "Performance Mode (Zero-Lag)",
     "performance.strict": "Strict Performance",
     "performance.strict_desc": "Disables blur and heavy effects; turns off the global middle-click hook (lower system load)",
+    "performance.idle_island": "Desktop clock (idle)",
+    "performance.idle_island_desc": "Shows local time (HH:MM, updates once per minute) when idle. Keeps the overlay composited — can affect video/GPU.",
 
 
     "status.executing": "Executing...",
@@ -957,6 +962,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "hud.time_flow": "Time Flow",
     "hud.chronometer": "Chronometer",
     "hud.calendar": "Calendar",
+    "hud.island_clock": "Local time",
     "hud.vital_metrics": "Vital Metrics",
     "hud.system_awareness": "System Awareness",
     "hud.energy_status": "Energy Status",
