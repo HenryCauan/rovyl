@@ -151,6 +151,8 @@ export default function App() {
   const [triggerSource, setTriggerSource] = useState<'mmb' | 'shortcut'>('shortcut');
   /** Evita a ilha compacta aparecer no mesmo instante em que o radial ainda desvanece (flash do relógio do radial). */
   const [islandHoldAfterRadialClose, setIslandHoldAfterRadialClose] = useState(false);
+  /** Evita repetir reapply quando já estamos em ilha de repouso; repõe ao sair do estado. */
+  const prevIdleIslandHudRef = useRef(false);
   const prevIsMenuOpenRef = useRef(false);
   const [lastLaunched, setLastLaunched] = useState<AppItem | null>(null);
   const [executionError, setExecutionError] = useState<string | null>(null);
@@ -971,6 +973,39 @@ export default function App() {
     }
     wasPomodoroOrStopwatchWidgetOpenRef.current = open;
   }, [isPomodoroOpen, isStopwatchOpen, timerHudActive, isDesktopMode]);
+
+  /**
+   * Arranque a frio (npm start / início do Windows): o BrowserWindow nasce em rect “windowed” e o primeiro
+   * `setWindowSize('small')` pode ficar desincronizado do DWM até haver um ciclo forte (abrir o radial fazia isso).
+   * Ao entrar pela primeira vez no estado “ilha de repouso” visível, reforçamos o overlay `small` no main.
+   */
+  useEffect(() => {
+    if (!window.electron?.reapplySmallOverlay) return;
+    const wantsIdleIslandHud =
+      isDesktopMode &&
+      electronSmallOverlayReady &&
+      timerHudActive &&
+      !isDashboardOpen &&
+      !isSettingsOpen &&
+      !isMenuOpen;
+    const wasIdle = prevIdleIslandHudRef.current;
+    prevIdleIslandHudRef.current = wantsIdleIslandHud;
+    if (!wantsIdleIslandHud) return;
+    if (wasIdle) return;
+
+    const t = window.setTimeout(() => {
+      void window.electron?.reapplySmallOverlay?.();
+      void window.electron?.invalidatePaint?.();
+    }, 320);
+    return () => clearTimeout(t);
+  }, [
+    isDesktopMode,
+    electronSmallOverlayReady,
+    timerHudActive,
+    isDashboardOpen,
+    isSettingsOpen,
+    isMenuOpen,
+  ]);
 
   const openMenu = (
     x: number,
