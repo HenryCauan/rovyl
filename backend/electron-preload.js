@@ -10,6 +10,14 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.on("open-menu", listener);
     return () => ipcRenderer.removeListener("open-menu", listener);
   },
+  /** zenith-verify:radial-handshake-preload — Main vai mostrar o radial — pintar cobertura neutra e confirmar antes de `open-menu` (evita flash pós-minimizar). */
+  onPrepareRadialShow: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on("prepare-radial-show", listener);
+    return () => ipcRenderer.removeListener("prepare-radial-show", listener);
+  },
+  notifyRadialPrepPaintDone: () =>
+    ipcRenderer.send("radial-prep-paint-done"),
   onOpenDashboard: (callback) => {
     const listener = (event) => callback();
     ipcRenderer.on("open-dashboard", listener);

@@ -1,0 +1,17 @@
+---
+description: Contrato Electron/radial no Windows — evitar regressão de flash DWM ao minimizar/restaurar
+globs: src/App.tsx,backend/electron-main.js,backend/electron-preload.js
+alwaysApply: false
+---
+
+# Radial + janela (Windows)
+
+Ao alterar abertura do radial, minimizar para a bandeja ou redimensionamento fullscreen:
+
+1. **Main (`showMenuAtCursor`)**: Manter ordem **`prepare-radial-show` → renderer confirma → `open-menu` → `show()`**. Não enviar `open-menu` antes do ack (`radial-prep-paint-done`) quando o fluxo de prep está ativo.
+2. **Renderer (`openMenu`)**: No **primeiro** `flushSync` ao abrir, **não** limpar `radialPreShowSolidCover`; limpar só no **segundo** `flushSync` (com menu já a abrir). Caso contrário o `show()` do main pode coincidir com textura antiga.
+3. **Preload**: Manter `onPrepareRadialShow` + `notifyRadialPrepPaintDone` alinhados com os canais IPC do main.
+4. **Minimizar**: Manter um frame de cobertura neutra antes de `minimize()` quando aplicável (`flushNeutralFrameThenMinimize`), para o snapshot do sistema não ser o dashboard.
+5. **`restore`**: Aplicar `pendingWindowSize` / fullscreen pendente **antes** de propagar estado que force modo windowed no renderer (evita corrida com IPC).
+
+Marcadores `zenith-verify:radial-handshake-*` no código são checados por `npm run build`. Se mudares o desenho de propósito, atualiza **scripts/verify-radial-windowing.mjs** e esta regra em conjunto.

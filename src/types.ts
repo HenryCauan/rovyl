@@ -219,6 +219,9 @@ export interface ElectronAPI {
       source?: "mmb" | "shortcut";
     }) => void,
   ) => () => void;
+  /** Antes de abrir o radial a partir do main — cobrir frame antigo (ex.: dashboard ao restaurar). */
+  onPrepareRadialShow?: (callback: () => void) => () => void;
+  notifyRadialPrepPaintDone?: () => void;
   onOpenDashboard: (callback: () => void) => () => void;
   onMouseUp: (callback: () => void) => () => void;
   onMmbRelease: (callback: () => void) => () => void;

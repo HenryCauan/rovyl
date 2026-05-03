@@ -117,9 +117,14 @@ function windowCenterScreenPoint(): { x: number; y: number } {
 }
 
 export default function App() {
+  /* zenith-verify:radial-handshake-renderer — overlays/handshake radial; ver scripts/verify-radial-windowing.mjs */
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   /** Esconde dashboard/definições antes do `await applyWindowSize('fullscreen')` — sem isto, ao restaurar da bandeja aparece um frame da última UI. */
   const [radialOpenAwaitingFullscreen, setRadialOpenAwaitingFullscreen] = useState(false);
+  /** Um frame sólido antes de minimizar — evita o Windows guardar bitmap do dashboard e flash ao reabrir o radial. */
+  const [minimizeNeutralCoverActive, setMinimizeNeutralCoverActive] = useState(false);
+  /** Main: `prepare-radial-show` — pintar antes de `show()` para não expor textura antiga (minimizado/dashboard). */
+  const [radialPreShowSolidCover, setRadialPreShowSolidCover] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const isDashboardOpenRef = useRef(false);
   const isSettingsOpenRef = useRef(false);
@@ -972,6 +977,8 @@ export default function App() {
       setPomodoroEndOverlay(null);
       setPanelChromeDismissedForIsland(false);
       setRadialOpenAwaitingFullscreen(false);
+      setMinimizeNeutralCoverActive(false);
+      setRadialPreShowSolidCover(false);
     };
   });
 
@@ -1173,7 +1180,11 @@ export default function App() {
           y: window.screenY + window.innerHeight / 2,
         });
 
-    flushSync(() => setRadialOpenAwaitingFullscreen(true));
+    flushSync(() => {
+      setRadialOpenAwaitingFullscreen(true);
+      setMinimizeNeutralCoverActive(false);
+      /** Manter `radialPreShowSolidCover` até ao 2.º flush — senão o `show()` do main pode ocorrer durante o `await` e expor a textura antiga. */
+    });
 
     try {
     /** `applyWindowSize` (invoke) garante que o main aplicou fullscreen antes do flushSync — evita 1.º paint ainda em rect windowed. */
@@ -1196,6 +1207,7 @@ export default function App() {
 
     flushSync(() => {
       setRadialOpenAwaitingFullscreen(false);
+      setRadialPreShowSolidCover(false);
       setIsSettingsOpen(false);
       setIsMenuOpen(true);
       setIsDashboardOpen(false);
@@ -1225,11 +1237,7 @@ export default function App() {
       }
       window.electron.showWindow();
       lastVisibility.current = true;
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          void window.electron?.invalidatePaint?.();
-        });
-      });
+      /** Evitar `invalidatePaint` ao abrir — no Windows costuma causar um flash (dashboard/textura antiga) logo após o radial aparecer. */
     }
 
     isHolding.current = true;
@@ -1241,10 +1249,25 @@ export default function App() {
     // Do not dip window opacity to 0 here — show-window already sets opacity 1 in main. A 0 → rAF → 1
     // sequence left the BrowserWindow stuck invisible on some systems (clicks still hit; radial UI gone).
     } catch (e) {
-      flushSync(() => setRadialOpenAwaitingFullscreen(false));
+      flushSync(() => {
+        setRadialOpenAwaitingFullscreen(false);
+        setMinimizeNeutralCoverActive(false);
+        setRadialPreShowSolidCover(false);
+      });
       throw e;
     }
   };
+
+  /** Pinta um frame neutro antes de `minimize()` para o snapshot do Windows não ser o dashboard (flash ao abrir radial depois). */
+  const flushNeutralFrameThenMinimize = useCallback(() => {
+    if (!window.electron?.minimizeWindow) return;
+    flushSync(() => setMinimizeNeutralCoverActive(true));
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.electron!.minimizeWindow();
+      });
+    });
+  }, []);
 
   const openMenuRef = useRef(openMenu);
   openMenuRef.current = openMenu;
@@ -1302,19 +1325,17 @@ export default function App() {
     };
   }, [isMenuOpen, isDesktopMode, syncMenuPositionFromAnchor]);
 
-  /** Repaint após abrir ou fechar o radial — evita DWM/GPU ficar num estado mau (congelar outros apps até reabrir o menu). */
+  /** Repaint só ao fechar o radial — invalidate ao abrir piscava o frame (dashboard→fullscreen) no Windows. */
   const prevIsMenuOpenForPaintRef = useRef(isMenuOpen);
   useEffect(() => {
     if (!window.electron?.invalidatePaint) return;
     const was = prevIsMenuOpenForPaintRef.current;
     prevIsMenuOpenForPaintRef.current = isMenuOpen;
-    const opening = !was && isMenuOpen;
     const closing = was && !isMenuOpen;
-    if (!opening && !closing) return;
-    const delay = opening ? 120 : 220;
+    if (!closing) return;
     const t = window.setTimeout(() => {
       void window.electron?.invalidatePaint?.();
-    }, delay);
+    }, 220);
     return () => clearTimeout(t);
   }, [isMenuOpen]);
 
@@ -1343,10 +1364,21 @@ export default function App() {
       void openMenuRef.current(data.x, data.y, data.source ?? 'shortcut', 'screen');
     });
 
+    const cleanupPrepareRadial = window.electron?.onPrepareRadialShow?.(() => {
+      flushSync(() => setRadialPreShowSolidCover(true));
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          window.electron?.notifyRadialPrepPaintDone?.();
+        });
+      });
+    });
+
     const cleanupDashboard = window.electron?.onOpenDashboard(() => {
       flushSync(() => {
         setHideIslandForWindowedPanelTransition(true);
         setPanelChromeDismissedForIsland(false);
+        setMinimizeNeutralCoverActive(false);
+        setRadialPreShowSolidCover(false);
         setIsSettingsOpen(false);
         setIsDashboardOpen(true);
       });
@@ -1391,6 +1423,10 @@ export default function App() {
     });
 
     const cleanupMainWindowMinimized = window.electron?.onMainWindowMinimized?.(({ minimized }) => {
+      if (minimized) {
+        setMinimizeNeutralCoverActive(false);
+        setRadialPreShowSolidCover(false);
+      }
       if (
         minimized &&
         (isDashboardOpenRef.current || isSettingsOpenRef.current)
@@ -1421,6 +1457,7 @@ export default function App() {
 
     return () => {
       cleanupMenu?.();
+      cleanupPrepareRadial?.();
       cleanupDashboard?.();
       cleanupSettings?.();
       cleanupWindowState?.();
@@ -1617,6 +1654,7 @@ export default function App() {
   const handleMenuClose = useCallback((selectedId: string | null, selectedApp?: AppItem | null) => {
     setIsMenuOpen(false);
     setRadialOpenAwaitingFullscreen(false);
+    setRadialPreShowSolidCover(false);
     isHolding.current = false;
 
     const cfg = configRef.current;
@@ -1801,9 +1839,12 @@ export default function App() {
         if (isMenuOpen) setIsMenuOpen(false);
       }}
     >
-
-
-
+      {isDesktopMode && (minimizeNeutralCoverActive || radialPreShowSolidCover) && (
+        <div
+          className="fixed inset-0 z-[99999] bg-[#0A0A0A] pointer-events-none"
+          aria-hidden
+        />
+      )}
 
       {/* Visibility Wrapper — ONLY for opaque content (Dashboard, Settings, Widgets) */}
       {/* RadialMenu renders OUTSIDE this wrapper to stay truly transparent */}
@@ -1811,7 +1852,7 @@ export default function App() {
       <div className={`
         absolute inset-0 overflow-hidden
         ${isMenuOpen || radialOpenAwaitingFullscreen
-          ? 'opacity-0 pointer-events-none invisible !transition-none'
+          ? 'hidden !transition-none'
           : `${panelSurfaceOpen ? '!transition-none' : 'transition-all duration-300'} ${(panelSurfaceOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || alarmRinging || pomodoroEndOverlay) ? 'opacity-100 visible' : 'opacity-0 pointer-events-none invisible'}`
         }
         ${!isMenuOpen && !radialOpenAwaitingFullscreen && panelSurfaceOpen ? 'bg-[#0A0A0A]' : ''}
@@ -1833,7 +1874,7 @@ export default function App() {
             <div className="flex items-center gap-1 pointer-events-auto" style={{ WebkitAppRegion: 'no-drag' } as any}>
               <button
                 className="w-8 h-6 flex items-center justify-center text-white/30 hover:text-white hover:bg-white/10 rounded-md transition-all duration-200"
-                onClick={() => window.electron?.minimizeWindow()}
+                onClick={() => flushNeutralFrameThenMinimize()}
                 title="Minimizar para a bandeja (sem ícone na barra de tarefas)"
               >
                 <Minus size={13} strokeWidth={2} />
@@ -1989,7 +2030,7 @@ export default function App() {
       {/* Durante `applyWindowSize` o painel já está oculto no React — fundo sólido evita flash do wallpaper / última textura do compositor. */}
       {isDesktopMode && radialOpenAwaitingFullscreen && (
         <div
-          className="fixed inset-0 z-[53] bg-[#0A0A0A] pointer-events-auto"
+          className="fixed inset-0 z-[65] bg-[#0A0A0A] pointer-events-auto"
           aria-hidden
         />
       )}

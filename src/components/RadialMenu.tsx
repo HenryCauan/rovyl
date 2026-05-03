@@ -424,6 +424,13 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     setCurrentLevelApps(getRootRadialApps(config, apps));
   }, [isOpen, folderStack.length, apps, config.workspaceSwitchMode, config.workspaces, config]);
 
+  /** Lista vazia: manter foco visual no centro (volta / centro) — antes o rato não atualizava o hub. */
+  useEffect(() => {
+    if (!isOpen || currentLevelApps.length > 0) return;
+    setActiveIndex(null);
+    setIsCenterActive(true);
+  }, [isOpen, currentLevelApps.length]);
+
   const t = (key: string) => getTranslation(config, key);
 
   // Determine Center Icon
@@ -509,13 +516,27 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     const processMouseMove = () => {
       if (!lastMouseEvent) return;
       const { position, config, currentLevelApps, hasMoved, activeIndex } = stateRef.current;
-      if (currentLevelApps.length === 0) return;
 
       const e = lastMouseEvent;
       const deltaX = e.clientX - position.x;
       const deltaY = e.clientY - position.y;
       const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
       const MOVEMENT_BUFFER = 15;
+
+      if (currentLevelApps.length === 0) {
+        if (!hasMoved && distance > MOVEMENT_BUFFER) {
+          setHasMoved(true);
+        }
+        if (distance < config.activationThreshold) {
+          if (activeIndex !== null) setActiveIndex(null);
+          if (!stateRef.current.isCenterActive) setIsCenterActive(true);
+        } else {
+          if (stateRef.current.isCenterActive) setIsCenterActive(false);
+          if (activeIndex !== null) setActiveIndex(null);
+        }
+        rafId = null;
+        return;
+      }
 
       if (!hasMoved && distance > MOVEMENT_BUFFER) {
         setHasMoved(true);
@@ -1391,7 +1412,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
             </motion.div>
 
             {/* Connecting Lines (SVG) — one element per slice; omit when costly (performance mode or many slices) */}
-            {!config.performanceMode && currentLevelApps.length <= 18 && (
+            {!config.performanceMode && currentLevelApps.length <= 18 && currentLevelApps.length > 0 && (
             <svg
               className="absolute overflow-visible pointer-events-none"
               style={{

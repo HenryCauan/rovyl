@@ -696,10 +696,18 @@ function setupMainWindow(window) {
   });
 }
 
+/* zenith-verify:radial-handshake-main — prepare → radial-prep-paint-done → open-menu → show; ver scripts/verify-radial-windowing.mjs */
 function showMenuAtCursor(source = "shortcut") {
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
   const cursorPoint = screen.getCursorScreenPoint();
+
+  let wasMinimized = false;
+  try {
+    wasMinimized = mainWindow.isMinimized();
+  } catch (e) {
+    wasMinimized = false;
+  }
 
   // Resize before IPC so the first renderer paint is already monitor-sized (send() is async; windowed→radial looked like "dashboard size").
   updateWindowSize("fullscreen", { x: cursorPoint.x, y: cursorPoint.y });
@@ -707,48 +715,88 @@ function showMenuAtCursor(source = "shortcut") {
   // Do NOT setOpacity(0) here — on Windows + transparent BrowserWindow it often leaves the compositor
   // without a fresh web frame (user sees through / "nothing", while hit-testing still works).
 
-  mainWindow.webContents.send("open-menu", {
-    x: cursorPoint.x,
-    y: cursorPoint.y,
-    source: source,
-  });
-
-  setImmediate(() => {
+  const sendOpenMenuAndReveal = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
 
-    mainWindow.setSkipTaskbar(false);
-    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    mainWindow.webContents.send("open-menu", {
+      x: cursorPoint.x,
+      y: cursorPoint.y,
+      source: source,
+    });
 
-    windowBuriedPassive = false;
-    mainWindow.setIgnoreMouseEvents(false);
-    mainWindow.setOpacity(1);
-    mainWindow.show();
+    setImmediate(() => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
 
-    mainWindow.focus();
-    mainWindow.webContents.focus();
-    if (process.platform === "win32") {
-      mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
-    }
+      mainWindow.setSkipTaskbar(false);
+      mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
-    clearSkipTaskbarHideTimer();
-    skipTaskbarHideTimer = setTimeout(() => {
-      skipTaskbarHideTimer = null;
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.setSkipTaskbar(true);
+      windowBuriedPassive = false;
+      mainWindow.setIgnoreMouseEvents(false);
+      mainWindow.setOpacity(1);
+      mainWindow.show();
+
+      mainWindow.focus();
+      mainWindow.webContents.focus();
+      if (process.platform === "win32") {
+        mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
       }
-    }, 100);
 
+      clearSkipTaskbarHideTimer();
+      skipTaskbarHideTimer = setTimeout(() => {
+        skipTaskbarHideTimer = null;
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.setSkipTaskbar(true);
+        }
+      }, 100);
+
+      const invalidatePaintSafe = () => {
+        try {
+          if (
+            mainWindow.webContents &&
+            typeof mainWindow.webContents.invalidate === "function"
+          ) {
+            mainWindow.webContents.invalidate();
+          }
+        } catch (e) {
+          /* ignore */
+        }
+      };
+
+      if (wasMinimized) {
+        invalidatePaintSafe();
+        setImmediate(invalidatePaintSafe);
+      } else {
+        invalidatePaintSafe();
+      }
+    });
+  };
+
+  const wc = mainWindow.webContents;
+  if (!wc || wc.isDestroyed()) {
+    sendOpenMenuAndReveal();
+    return;
+  }
+
+  /**
+   * Pedir ao renderer um frame sólido (#0A0A0A) ANTES de `open-menu` + `show`.
+   * Sem isto, ao restaurar da minimização o DWM mostra primeiro a textura antiga (dashboard).
+   */
+  const prepTimeoutMs = wasMinimized ? 280 : 140;
+  const prepPromise = new Promise((resolve) => {
+    const t = setTimeout(resolve, prepTimeoutMs);
+    ipcMain.once("radial-prep-paint-done", () => {
+      clearTimeout(t);
+      resolve();
+    });
     try {
-      if (
-        mainWindow.webContents &&
-        typeof mainWindow.webContents.invalidate === "function"
-      ) {
-        mainWindow.webContents.invalidate();
-      }
+      wc.send("prepare-radial-show");
     } catch (e) {
-      /* ignore */
+      clearTimeout(t);
+      resolve();
     }
   });
+
+  prepPromise.then(sendOpenMenuAndReveal);
 }
 
 /** Modo `small` passivo: HWND ao tamanho do monitor — forward fora do HUD (histórico). */

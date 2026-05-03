@@ -7,11 +7,12 @@
   "description": "Menu Radial Zenith",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && vite build && node scripts/verify-radial-windowing.mjs",
     "electron": "wait-on tcp:5173 && cross-env NODE_ENV=development node scripts/launch-electron.js",
     "start": "concurrently -k \"npm run dev\" \"npm run electron\"",
     "dist": "npm run build && electron-builder",
-    "test:win32-launch": "node --test backend/win32-launch.test.cjs"
+    "test:win32-launch": "node --test backend/win32-launch.test.cjs",
+    "verify:radial-windowing": "node scripts/verify-radial-windowing.mjs"
   },
   "dependencies": {
     "active-win": "^8.2.1",
