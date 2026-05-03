@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Coordinates, AppItem, UIConfig, Workspace } from '../types';
 import { getIcon } from '../iconMap';
-import { Settings2, CornerUpLeft } from 'lucide-react';
+import { Settings2, CornerUpLeft, Cloud } from 'lucide-react';
 import { SmartIcon } from './SmartIcon';
 import { getTranslation } from '../translations';
 import {
@@ -17,6 +17,21 @@ const weatherCache: { data: { temp: number; condition: string } | null; lastFetc
   data: null, lastFetch: 0, location: ''
 };
 const WEATHER_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+const CLOCK_HUD_POSITIONS = [
+  'top-left',
+  'top-center',
+  'top-right',
+  'bottom-left',
+  'bottom-right',
+] as const;
+
+/** Subconjunto da API Battery — evita `BatteryManager` quando o TS/DOM local não o expõe. */
+type ZenithBattery = {
+  level: number;
+  addEventListener(type: 'levelchange', listener: () => void): void;
+  removeEventListener(type: 'levelchange', listener: () => void): void;
+};
 
 // Helper to extract a normalized path from a command string for deduplication
 const normalizePathForDedup = (item: any): string => {
@@ -897,14 +912,15 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     if (!isOpen) return;
 
     let cancelled = false;
-    let batteryObj: Awaited<ReturnType<typeof navigator.getBattery>> | null = null;
+    let batteryObj: ZenithBattery | null = null;
     const onBatteryLevel = () => {
       if (cancelled || !batteryObj) return;
       setBatteryLevel(Math.round(batteryObj.level * 100));
     };
 
-    if (config.showBattery && 'getBattery' in navigator) {
-      void navigator.getBattery().then((battery) => {
+    const nav = navigator as Navigator & { getBattery?: () => Promise<ZenithBattery> };
+    if (config.showBattery && typeof nav.getBattery === 'function') {
+      void nav.getBattery().then((battery) => {
         if (cancelled) return;
         batteryObj = battery;
         setBatteryLevel(Math.round(battery.level * 100));
@@ -1028,28 +1044,65 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     }
   }, [onClose, onWorkspaceSwitch]);
 
-  const getHUDStyles = () => {
-    /** z-[10+] dentro do wrapper z-[70] — overlay de dim fica em z-[2] para não cobrir ícones/HUD */
-    const base = "fixed text-white pointer-events-none flex flex-col z-[10] p-8 gap-4";
-    const safePosition = [
-      'top-left',
-      'top-center',
-      'top-right',
-      'bottom-left',
-      'bottom-right',
-    ].includes(config.clockPosition)
-      ? config.clockPosition
-      : 'top-center';
+  /** Região do relógio — usada também para desviar o chip do workspace e evitar sobreposição. */
+  const hudRegion: (typeof CLOCK_HUD_POSITIONS)[number] = CLOCK_HUD_POSITIONS.includes(
+    config.clockPosition as (typeof CLOCK_HUD_POSITIONS)[number],
+  )
+    ? (config.clockPosition as (typeof CLOCK_HUD_POSITIONS)[number])
+    : 'top-center';
 
-    switch (safePosition) {
-      case 'bottom-left': return `${base} bottom-0 left-0 items-start text-left`;
-      case 'bottom-right': return `${base} bottom-0 right-0 items-end text-right`;
-      case 'top-left': return `${base} top-0 left-0 items-start text-left`;
-      case 'top-center': return `${base} top-0 left-1/2 -translate-x-1/2 items-center text-center`;
-      case 'top-right': return `${base} top-0 right-0 items-end text-right`;
-      default: return `${base} top-0 left-1/2 -translate-x-1/2 items-center text-center`;
+  /** Só posicionamento + translate no ecrã — sem `motion` aqui para o Framer não pisar `-translate-x-1/2`. */
+  const hudShellClass = (() => {
+    const z = 'fixed z-[10] pointer-events-none text-white';
+    switch (hudRegion) {
+      case 'bottom-left':
+        return `${z} bottom-0 left-0`;
+      case 'bottom-right':
+        return `${z} bottom-0 right-0`;
+      case 'top-left':
+        return `${z} top-0 left-0`;
+      case 'top-center':
+        return `${z} top-0 left-1/2 -translate-x-1/2`;
+      case 'top-right':
+        return `${z} top-0 right-0`;
+      default:
+        return `${z} top-0 left-1/2 -translate-x-1/2`;
     }
-  };
+  })();
+
+  const hudInnerClass = (() => {
+    const pad = 'p-5 sm:p-6 md:pt-7 md:px-8 md:pb-8';
+    const gap = 'gap-3 sm:gap-4';
+    switch (hudRegion) {
+      case 'bottom-left':
+        return `flex flex-col ${pad} ${gap} items-start text-left max-w-[min(92vw,440px)]`;
+      case 'bottom-right':
+        return `flex flex-col ${pad} ${gap} items-end text-right max-w-[min(92vw,440px)]`;
+      case 'top-left':
+        return `flex flex-col ${pad} ${gap} items-start text-left max-w-[min(92vw,440px)]`;
+      case 'top-center':
+        return `flex flex-col ${pad} ${gap} items-center text-center w-max max-w-[min(92vw,560px)] mx-auto`;
+      case 'top-right':
+        return `flex flex-col ${pad} ${gap} items-end text-right max-w-[min(92vw,440px)]`;
+      default:
+        return `flex flex-col ${pad} ${gap} items-center text-center w-max max-w-[min(92vw,560px)] mx-auto`;
+    }
+  })();
+
+  /** Chip do espaço: canto oposto ao HUD quando este está no topo-esquerda/direita. */
+  const workspaceShellClass =
+    hudRegion === 'top-left'
+      ? 'fixed top-6 right-6 sm:top-8 sm:right-8 z-[10] pointer-events-none'
+      : hudRegion === 'top-right'
+        ? 'fixed top-6 left-6 sm:top-8 sm:left-8 z-[10] pointer-events-none'
+        : 'fixed top-6 left-6 sm:top-8 sm:left-8 z-[10] pointer-events-none';
+
+  const hudStatusRowClass =
+    hudRegion === 'top-center'
+      ? 'flex flex-wrap items-center justify-center gap-x-5 gap-y-2 w-full'
+      : hudRegion === 'top-right' || hudRegion === 'bottom-right'
+        ? 'flex flex-wrap items-center justify-end gap-x-5 gap-y-2 w-full'
+        : 'flex flex-wrap items-center justify-start gap-x-5 gap-y-2 w-full';
 
   /** Without acrylic/blur (performance mode), the radial overlay used to fade to transparent at the edges — too much of the desktop showed through. Stronger full-screen dimming while respecting `backdropOpacity`. */
   const bo = config.backdropOpacity;
@@ -1082,6 +1135,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
           {config.backdropBlur > 0 && !config.performanceMode && (
             <motion.div
               key="blur-vignette"
+              initial={false}
               animate={{ opacity: isOpen ? 1 : 0 }}
               className="fixed inset-0 z-[1] pointer-events-none"
               style={{
@@ -1107,74 +1161,131 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
             }}
           />
 
-          {/* HUD Elements */}
+          {/* HUD: shell estático (translate no ecrã) + motion só com opacity — evita Framer a pisar -translate-x-1/2 no centro. */}
           {(config.showClock || config.showDate || config.showBattery || config.showWeather) && (
-            <motion.div
-              initial={false}
-              animate={{ opacity: isOpen ? 1 : 0, x: isOpen ? 0 : 20 }}
-              transition={{ duration: isOpen ? 0.22 : 0 }}
-              className={getHUDStyles()}
-            >
-              {/* Clock & Date */}
-              {(config.showClock || config.showDate) && (
-                <div className="flex flex-col">
-                  {config.showClock && (
-                    <div className="text-5xl font-[350] tracking-tight tabular-nums leading-none drop-shadow-2xl" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-                      {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
-                    </div>
-                  )}
-                  {config.showDate && (
-                    <div className="text-sm font-bold tracking-[0.2em] text-white/60 uppercase mt-1 drop-shadow-md">
-                      {currentTime.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Status Info (Battery/Weather) */}
-              {(config.showBattery || config.showWeather) && (
-                <div className="flex items-center gap-6 text-white/80">
-                  {config.showBattery && batteryLevel !== null && (
-                    <div className="flex items-center gap-2">
-                      <div className="relative w-6 h-3 border border-white/40 rounded-sm p-0.5">
+            <div className={hudShellClass}>
+              <motion.div
+                initial={false}
+                animate={{
+                  opacity: isOpen ? 1 : 0,
+                  y: isOpen ? 0 : hudRegion.startsWith('bottom') ? 10 : -10,
+                }}
+                transition={{ duration: isOpen ? 0.26 : 0.14, ease: [0.22, 1, 0.36, 1] }}
+                className={hudInnerClass}
+              >
+                <div className="w-full min-w-0 rounded-2xl border border-white/[0.09] bg-black/25 px-5 py-4 shadow-[0_20px_60px_rgba(0,0,0,0.4)] backdrop-blur-xl supports-[backdrop-filter]:bg-black/[0.14] sm:px-6 sm:py-5">
+                  {(config.showClock || config.showDate) && (
+                    <div
+                      className={
+                        hudRegion === 'top-center'
+                          ? 'flex flex-col items-center gap-1'
+                          : hudRegion === 'top-right' || hudRegion === 'bottom-right'
+                            ? 'flex flex-col items-end gap-1'
+                            : 'flex flex-col items-start gap-1'
+                      }
+                    >
+                      {config.showClock && (
                         <div
-                          className="h-full bg-white rounded-[1px] transition-all duration-500"
-                          style={{ width: `${batteryLevel}%`, backgroundColor: batteryLevel < 20 ? '#ef4444' : 'white' }}
-                        />
-                      </div>
-                      <span className="text-xs font-bold font-mono">{batteryLevel}%</span>
+                          className="text-[clamp(2.25rem,5vw,3.25rem)] font-light tabular-nums leading-none tracking-[-0.02em] text-white drop-shadow-[0_2px_24px_rgba(0,0,0,0.45)]"
+                          style={{ fontFamily: 'Space Grotesk, ui-sans-serif, system-ui, sans-serif' }}
+                        >
+                          {currentTime.toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: false,
+                          })}
+                        </div>
+                      )}
+                      {config.showDate && (
+                        <p
+                          className={`max-w-[52ch] text-[0.8125rem] font-medium leading-snug tracking-wide text-white/55 sm:text-sm ${
+                            hudRegion === 'top-center'
+                              ? 'text-center'
+                              : hudRegion === 'top-right' || hudRegion === 'bottom-right'
+                                ? 'text-right'
+                                : 'text-left'
+                          }`}
+                        >
+                          {currentTime.toLocaleDateString([], {
+                            weekday: 'long',
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </p>
+                      )}
                     </div>
                   )}
-                  {config.showWeather && !config.performanceMode && weather && (
-                    <div className="flex items-center gap-2">
-                      {/* Simple Weather Icon placeholder */}
-                      <div className="text-lg">☁️</div>
-                      <div className="flex flex-col leading-none">
-                        <span className="text-sm font-bold">{weather.temp}°</span>
-                      </div>
+
+                  {(config.showBattery || config.showWeather) && (
+                    <div
+                      className={`mt-3 border-t border-white/[0.07] pt-3 text-white/85 ${hudStatusRowClass} ${
+                        config.showClock || config.showDate ? '' : 'mt-0 border-t-0 pt-0'
+                      }`}
+                    >
+                      {config.showBattery && batteryLevel !== null && (
+                        <div className="flex items-center gap-2.5">
+                          <div
+                            className="relative h-3.5 w-8 shrink-0 rounded-full border border-white/[0.22] bg-white/[0.06] p-[3px]"
+                            aria-hidden
+                          >
+                            <div
+                              className="h-full max-w-full rounded-full bg-white transition-[width] duration-500 ease-out"
+                              style={{
+                                width: `${batteryLevel}%`,
+                                backgroundColor: batteryLevel < 20 ? '#f87171' : undefined,
+                              }}
+                            />
+                          </div>
+                          <span className="text-[11px] font-semibold tabular-nums tracking-wide text-white/75">
+                            {batteryLevel}%
+                          </span>
+                        </div>
+                      )}
+                      {config.showWeather && !config.performanceMode && weather && (
+                        <div className="flex items-center gap-2">
+                          <Cloud className="h-4 w-4 shrink-0 text-white/45" strokeWidth={1.75} aria-hidden />
+                          <div className="flex flex-col leading-none">
+                            <span className="text-sm font-semibold tabular-nums tracking-tight text-white/90">
+                              {weather.temp}°
+                            </span>
+                            {weather.condition && weather.condition !== '---' && (
+                              <span className="mt-0.5 max-w-[10rem] truncate text-[10px] font-medium uppercase tracking-wider text-white/40">
+                                {weather.condition}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-              )}
-            </motion.div>
+              </motion.div>
+            </div>
           )}
 
           {/* Workspace Indicator */}
           {currentWorkspace && (
             <motion.div
               initial={false}
-              animate={{ opacity: isOpen ? 1 : 0, x: isOpen ? 0 : -20 }}
-              className="fixed top-8 left-8 z-[10] pointer-events-none"
+              animate={{ opacity: isOpen ? 1 : 0 }}
+              transition={{ duration: isOpen ? 0.24 : 0.12 }}
+              className={workspaceShellClass}
             >
-              <div className="flex items-center gap-2 px-4 py-2 bg-black/40 backdrop-blur-md border border-white/10 rounded-full">
-                <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-xs font-bold text-white">
+              <div
+                className={`flex max-w-[min(88vw,280px)] items-center gap-2.5 rounded-2xl border border-white/[0.1] bg-black/30 px-3.5 py-2.5 shadow-lg backdrop-blur-xl supports-[backdrop-filter]:bg-black/20 sm:gap-3 sm:px-4 sm:py-3 ${
+                  hudRegion === 'top-left' ? 'flex-row-reverse' : ''
+                }`}
+              >
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/[0.12] text-xs font-bold text-white ring-1 ring-white/[0.06] sm:h-8 sm:w-8">
                   {currentWorkspace.hotkey}
                 </div>
-                <div className="flex flex-col">
-                  <div className="text-sm font-medium text-white/80 tracking-wide">
-                    {currentWorkspace.name.toUpperCase()}
+                <div
+                  className={`min-w-0 flex-1 ${hudRegion === 'top-left' ? 'text-right' : 'text-left'}`}
+                >
+                  <div className="truncate text-xs font-semibold uppercase tracking-wide text-white/90 sm:text-[13px]">
+                    {currentWorkspace.name}
                   </div>
-                  <div className="text-[9px] font-bold text-white/20 uppercase tracking-widest mt-0.5">
+                  <div className="mt-0.5 text-[9px] font-semibold uppercase tracking-widest text-white/35">
                     {apps.length} {t('workspaces.active_modules')}
                   </div>
                 </div>

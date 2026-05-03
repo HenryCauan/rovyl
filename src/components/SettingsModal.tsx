@@ -21,6 +21,7 @@ import { IconPicker } from './IconPicker';
 import { getTranslation, LANGUAGES } from '../translations';
 import { Tooltip } from './Tooltip';
 import { websiteIconFieldsFromUrl } from '../siteFavicon';
+import { normalizeWindowsExecutablePickerPath } from '../utils/windowsLaunchCommand';
 
 
 const TerminalCommandEditor = ({ commands, config, onChange, onAdd, onRemove, compact = false }) => {
@@ -3563,7 +3564,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 const nativeIconData = await extractIconFromPath(filePath);
 
                 handleAppUpdates({
-                    command: filePath,
+                    command: normalizeWindowsExecutablePickerPath(filePath),
                     iconName: bestIcon,
                     iconSource: 'native', // Always prefer native
                     ...(nativeIconData || {})

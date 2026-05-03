@@ -14,6 +14,7 @@ const path = require("path");
 const { exec, spawn, execFile } = require("child_process");
 const os = require("os");
 const fs = require("fs");
+const win32Launch = require("./win32-launch");
 const crypto = require("crypto");
 const { GlobalKeyboardListener } = require("node-global-key-listener");
 const http = require("http");
@@ -312,6 +313,25 @@ let nativeWindowSizeMode = "windowed";
 let lastWindowHitShapeKey = "";
 
 /**
+ * `updateWindowSize` não pode aplicar `setBounds` com a janela minimizada; guardamos o último pedido
+ * e aplicamos no `restore` para a ilha/`small` voltarem a sincronizar com o HWND.
+ */
+let pendingWindowSize = null;
+
+function flushPendingWindowSizeIfNeeded() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    if (mainWindow.isMinimized()) return;
+  } catch (e) {
+    return;
+  }
+  if (!pendingWindowSize) return;
+  const p = pendingWindowSize;
+  pendingWindowSize = null;
+  updateWindowSize(p.mode, p.anchorScreenPoint);
+}
+
+/**
  * `show-window` e restauros de foco não podem forçar `setIgnoreMouseEvents(false)` em modo `small`:
  * isso fazia o overlay a tamanho do monitor capturar o rato (invisível).
  */
@@ -549,6 +569,12 @@ function attachWindowUserRestoreGuards(window) {
         diagLog("[Window] Recovered from passive hide (restore).");
         return;
       }
+      /**
+       * Minimize→atalho radial: `updateWindowSize('fullscreen')` só encola em `pendingWindowSize`.
+       * O handler seguinte faz flush em `setImmediate`; se enviarmos `window-native-display-restored` antes,
+       * o renderer aplica `setWindowSize('windowed')` com modo nativo ainda obsoleto e o menu fica no rect do painel.
+       */
+      flushPendingWindowSizeIfNeeded();
       if (
         nativeWindowSizeMode !== "small" &&
         window.isVisible() &&
@@ -639,6 +665,35 @@ function setupMainWindow(window) {
   // DISABLED FOR DEBUG: window.setIgnoreMouseEvents(true, { forward: true });
 
   attachWindowUserRestoreGuards(window);
+
+  /** Sincroniza ilha/painel no renderer: minimizado ≠ painel “visível” (React mantém dashboard aberto). */
+  const sendMainWindowMinimizedState = () => {
+    if (window.isDestroyed() || !window.webContents || window.webContents.isDestroyed()) return;
+    try {
+      window.webContents.send("main-window-minimized", {
+        minimized: window.isMinimized(),
+      });
+    } catch (e) {
+      /* ignore */
+    }
+  };
+  window.on("minimize", sendMainWindowMinimizedState);
+  window.on("restore", () => {
+    if (window.isDestroyed() || !window.webContents || window.webContents.isDestroyed()) return;
+    const win = window;
+    /** Deixa o renderer processar `open-dashboard` / IPC antes de aplicar o pending (bandeja → windowed). */
+    setImmediate(() => {
+      try {
+        if (win.isDestroyed()) return;
+        if (!win.isMinimized()) {
+          flushPendingWindowSizeIfNeeded();
+        }
+      } catch (e) {
+        /* ignore */
+      }
+      sendMainWindowMinimizedState();
+    });
+  });
 }
 
 function showMenuAtCursor(source = "shortcut") {
@@ -769,7 +824,18 @@ function boundsApproxEqual(a, b, eps = 2) {
  * @param {{ x: number, y: number } | undefined} anchorScreenPoint — screen coordinates (e.g. cursor). Picks the monitor with getDisplayNearestPoint so multi-monitor matches the radial overlay.
  */
 function updateWindowSize(mode, anchorScreenPoint) {
-  if (!mainWindow) return;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  /** Enquanto minimizado não aplicamos `setBounds`; fila e aplicamos no `restore` (flush). */
+  try {
+    if (mainWindow.isMinimized()) {
+      pendingWindowSize = { mode, anchorScreenPoint };
+      return;
+    }
+  } catch (e) {
+    return;
+  }
+
+  pendingWindowSize = null;
 
   const previousMode = nativeWindowSizeMode;
   nativeWindowSizeMode = mode;
@@ -809,6 +875,8 @@ function updateWindowSize(mode, anchorScreenPoint) {
     if (mainWindow.isFullScreen()) {
       mainWindow.setFullScreen(false);
     }
+    /** Ilha tinha o HWND encolhido — repor estado do hit-shape para o próximo modo não herdar rect fantasma. */
+    lastWindowHitShapeKey = "__empty__";
     mainWindow.setResizable(true);
     resetLastWindowedBoundsIfIslandCorrupted();
     isUpdatingBounds = true;
@@ -823,6 +891,27 @@ function updateWindowSize(mode, anchorScreenPoint) {
       }
     } catch (e) {
       /* ignore */
+    }
+    /** Ilha em `small` → rect windowed: o DWM reutiliza a textura e o relógio parece “deslizar” até ao painel. */
+    if (previousMode === "small") {
+      try {
+        setImmediate(() => {
+          try {
+            if (
+              mainWindow &&
+              !mainWindow.isDestroyed() &&
+              mainWindow.webContents &&
+              typeof mainWindow.webContents.invalidate === "function"
+            ) {
+              mainWindow.webContents.invalidate();
+            }
+          } catch (e) {
+            /* ignore */
+          }
+        });
+      } catch (e) {
+        /* ignore */
+      }
     }
   } else if (mode === "small") {
     lastWindowHitShapeKey = "__empty__";
@@ -1062,12 +1151,22 @@ app.whenReady().then(async () => {
   const saveFullConfigToDisk = (config) => {
     const configPath = path.join(app.getPath("userData"), "config-v2.json");
     const tempPath = configPath + ".tmp";
+    let toWrite = config;
     try {
       if (!fs.existsSync(path.dirname(configPath))) {
         fs.mkdirSync(path.dirname(configPath), { recursive: true });
       }
 
-      fs.writeFileSync(tempPath, JSON.stringify(config, null, 2), "utf-8");
+      if (process.platform === "win32" && config && typeof config === "object") {
+        try {
+          toWrite = JSON.parse(JSON.stringify(config));
+          win32Launch.normalizePersistedPayloadWin32(toWrite);
+        } catch (e) {
+          diagLog(`[Persist] win32 command normalize (clone) failed: ${e.message}`);
+        }
+      }
+
+      fs.writeFileSync(tempPath, JSON.stringify(toWrite, null, 2), "utf-8");
 
       if (fs.existsSync(tempPath) && fs.statSync(tempPath).size > 0) {
         fs.renameSync(tempPath, configPath);
@@ -1096,7 +1195,17 @@ app.whenReady().then(async () => {
     try {
       if (fs.existsSync(configPath)) {
         const data = fs.readFileSync(configPath, "utf-8");
-        return JSON.parse(data);
+        const parsed = JSON.parse(data);
+        if (process.platform === "win32" && parsed && typeof parsed === "object") {
+          try {
+            const copy = JSON.parse(JSON.stringify(parsed));
+            win32Launch.normalizePersistedPayloadWin32(copy);
+            return copy;
+          } catch (e) {
+            diagLog(`[Persist] get-full-config win32 normalize: ${e.message}`);
+          }
+        }
+        return parsed;
       }
     } catch (e) {
       console.error("Failed to load full config:", e);
@@ -1412,6 +1521,8 @@ app.whenReady().then(async () => {
           // Clearing windowBuriedPassive before restoring input would skip attachWindowUserRestoreGuards().
           clearSkipTaskbarHideTimer();
           windowBuriedPassive = false;
+          /** Evita aplicar `small` pendente após minimizar — senão o radial/dashboard ficam no rect antigo. */
+          pendingWindowSize = null;
           mainWindow.setSkipTaskbar(false);
           mainWindow.setVisibleOnAllWorkspaces(false);
           mainWindow.setIgnoreMouseEvents(false);
@@ -1424,6 +1535,16 @@ app.whenReady().then(async () => {
           // Smooth Entry Trick: Mask the initial white flash/compositor stutter
           mainWindow.setOpacity(0);
           mainWindow.show();
+
+          /** Garante HWND `windowed` no monitor — o pending `small` do minimize não pode deixar o radial no rect do dashboard. */
+          setImmediate(() => {
+            try {
+              if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isMinimized()) return;
+              updateWindowSize("windowed");
+            } catch (e) {
+              /* ignore */
+            }
+          });
 
           setTimeout(() => {
             if (mainWindow && !mainWindow.isDestroyed()) {
@@ -2247,32 +2368,6 @@ const escapeCommand = (cmd) => {
   return cmd;
 };
 
-/**
- * Split the tail of a Windows command line into argv tokens (quoted runs and space-separated words).
- * Used after the executable token so flags like -n and folder paths are separate argv entries.
- */
-function parseWin32CommandLineArgs(rest) {
-  const args = [];
-  const s = (rest || "").trim();
-  let i = 0;
-  while (i < s.length) {
-    while (i < s.length && /\s/.test(s[i])) i++;
-    if (i >= s.length) break;
-    if (s[i] === '"') {
-      let j = i + 1;
-      while (j < s.length && s[j] !== '"') j++;
-      args.push(s.slice(i + 1, j));
-      i = j + 1;
-    } else {
-      let j = i;
-      while (j < s.length && !/\s/.test(s[j])) j++;
-      args.push(s.slice(i, j));
-      i = j;
-    }
-  }
-  return args;
-}
-
 // IPC: Recebe comando do React para executar app
 ipcMain.on("execute-command", async (event, command, commandType, options = {}) => {
   if (!command || typeof command !== "string" || command.trim() === "") {
@@ -2292,6 +2387,17 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
   let resolvedCommand = resolveShellPath(trimmedCommand);
   resolvedCommand = normalizeAumidIdeCommands(resolvedCommand);
   resolvedCommand = addIdeNewWindowFlag(resolvedCommand);
+  if (process.platform === "win32") {
+    try {
+      const canon = win32Launch.canonicalizeWin32LaunchCommand(resolvedCommand);
+      if (canon !== resolvedCommand) {
+        diagLog(`[Exec] Canonicalized launch line: "${resolvedCommand}" → "${canon}"`);
+        resolvedCommand = canon;
+      }
+    } catch (e) {
+      diagLog(`[Exec] Canonicalize skipped: ${e.message}`);
+    }
+  }
 
   console.log(`\n========================================`);
   console.log(`EXEC_START: Attempting to launch`);
@@ -2494,15 +2600,25 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
           });
           break;
 
-        case "exec_direct":
+        case "exec_direct": {
           const terminal = getPreferredTerminal();
-          if (terminal === "wt.exe") {
-            // Windows Terminal needs special flags to stay as a single window or specific profile
+          if (process.platform === "win32") {
+            const { exe, args } = win32Launch.splitWin32SpawnExeAndArgs(String(cmd).trim());
+            const tail =
+              args.length > 0
+                ? `${win32Launch.quoteWin32CmdToken(exe)} ${args.map(win32Launch.quoteWin32CmdToken).join(" ")}`
+                : win32Launch.quoteWin32CmdToken(exe);
+            if (terminal === "wt.exe") {
+              execCmd = `wt.exe -d . cmd /c ${tail}`;
+            } else {
+              execCmd = `${terminal} /c ${tail}`;
+            }
+          } else if (terminal === "wt.exe") {
             execCmd = `wt.exe -d . cmd /c ${cmd}`;
           } else {
             execCmd = `${terminal} /c ${cmd}`;
           }
-          
+
           diagLog(`  → [${method}] Running: ${execCmd}`);
           exec(execCmd, (err, stdout, stderr) => {
             if (err) {
@@ -2514,22 +2630,13 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
             }
           });
           break;
+        }
         case "exec_silent_spawn":
           return new Promise((resolve, reject) => {
             try {
-              let spawnPath = cmd;
-              let spawnArgs = [];
-              if (cmd.includes(" ") && !cmd.startsWith('"')) {
-                const firstSpace = cmd.indexOf(" ");
-                spawnPath = cmd.substring(0, firstSpace);
-                spawnArgs = parseWin32CommandLineArgs(cmd.substring(firstSpace + 1));
-              } else if (cmd.startsWith('"')) {
-                const secondQuote = cmd.indexOf('"', 1);
-                if (secondQuote > 0) {
-                  spawnPath = cmd.substring(1, secondQuote);
-                  spawnArgs = parseWin32CommandLineArgs(cmd.substring(secondQuote + 1));
-                }
-              }
+              const { exe: spawnPath, args: spawnArgs } = win32Launch.splitWin32SpawnExeAndArgs(
+                String(cmd || "").trim(),
+              );
 
               diagLog(`  → [${method}] Spawning: ${spawnPath} ${spawnArgs.join(" ")}`);
               const looksLikeWinExe =
@@ -2756,11 +2863,11 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
         methodsToTry = ["exec_explorer_shell", "exec_start", "exec_direct"];
         diagLog(`[Exec] Shell app (AUMID) detected: prioritizing explorer shell.`);
       } else if (isShell && finalCommand.includes(" ")) {
-        // Mixed case: AUMID with args. Try direct CLI first (in case it's actually path to exe)
-        methodsToTry = ["exec_direct", "exec_start", "exec_explorer_shell"];
-        diagLog(`[Exec] Shell app with args: trying direct execution first.`);
+        methodsToTry = ["exec_start", "exec_direct", "exec_explorer_shell"];
+        diagLog(`[Exec] Shell app with args: trying start / quoted paths first.`);
       } else {
-        methodsToTry = ["exec_direct", "exec_start", "shell.openPath"];
+        /** `exec_direct` passava o caminho inteiro ao cmd sem partir bem em espaços — preferir start/openPath. */
+        methodsToTry = ["exec_start", "shell.openPath", "exec_direct"];
       }
     }
     // GUID/AUMID detection (Shell Namespace / UWP apps)
@@ -2881,6 +2988,11 @@ ipcMain.on("show-window", () => {
 ipcMain.handle("invalidate-paint", () => {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
   try {
+    if (mainWindow.isMinimized()) return false;
+  } catch (e) {
+    return false;
+  }
+  try {
     if (typeof mainWindow.webContents.invalidate === "function") {
       mainWindow.webContents.invalidate();
       return true;
@@ -2889,6 +3001,16 @@ ipcMain.handle("invalidate-paint", () => {
     /* ignore */
   }
   return false;
+});
+
+/** Área de conteúdo Web em coordenadas de ecrã — `window.screenX/Y` no renderer podem atrasar após windowed→small (ilha deslocada). */
+ipcMain.handle("get-main-window-content-bounds", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return null;
+  try {
+    return mainWindow.getContentBounds();
+  } catch (e) {
+    return null;
+  }
 });
 
 ipcMain.on("set-window-opacity", (event, opacity) => {
@@ -3044,7 +3166,38 @@ ipcMain.handle("apply-window-size", (event, mode, anchorScreenPoint) => {
 /** Re-run `small` overlay (forward mouse) — refreshes Windows hit-testing after fullscreen → HUD-only. */
 ipcMain.handle("reapply-small-overlay", () => {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
-  const point = screen.getCursorScreenPoint();
+  try {
+    if (mainWindow.isMinimized()) return false;
+  } catch (e) {
+    return false;
+  }
+  const cur = mainWindow.getBounds();
+  /** Centro do HWND — não usar o cursor: com vários monitores o rato pode estar noutro ecrã e “puxar” a ilha. */
+  const point = {
+    x: Math.round(cur.x + cur.width / 2),
+    y: Math.round(cur.y + cur.height / 2),
+  };
+  const disp = screen.getDisplayNearestPoint(point);
+  const targetB = disp.bounds;
+  /**
+   * O renderer chama isto várias vezes (ilha idle, fechar pomodoro, etc.). Repetir `updateWindowSize('small')`
+   * com `setBounds` + show/focus no mesmo estado faz o DWM piscar e o rect “fantasma” atrás da ilha.
+   * Só forçamos o caminho pesado quando o HWND ainda está encolhido (ilha) ou o modo não é `small`.
+   */
+  const forwardHitEmpty =
+    lastWindowHitShapeKey === "__empty__" || lastWindowHitShapeKey === "";
+  if (
+    nativeWindowSizeMode === "small" &&
+    boundsApproxEqual(cur, targetB) &&
+    forwardHitEmpty
+  ) {
+    try {
+      mainWindow.setIgnoreMouseEvents(true, { forward: true });
+    } catch (e) {
+      /* ignore */
+    }
+    return true;
+  }
   updateWindowSize("small", point);
   try {
     mainWindow.show();
@@ -3063,6 +3216,11 @@ ipcMain.handle("reapply-small-overlay", () => {
  */
 ipcMain.handle("set-window-hit-shape", (event, rects, opts = {}) => {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
+  try {
+    if (mainWindow.isMinimized()) return false;
+  } catch (e) {
+    return false;
+  }
   const coordinateSpace =
     opts && opts.coordinateSpace === "screen" ? "screen" : "client";
 
@@ -3081,13 +3239,25 @@ ipcMain.handle("set-window-hit-shape", (event, rects, opts = {}) => {
        * Só em modo `small` o rato deve reencaminhar por defeito. Em fullscreen (radial), limpar a
        * ilha compacta desmonta o HUD e envia [] — não podemos aplicar forward aqui senão o menu radial
        * fica “invisível” ao clique e parece um retângulo minúsculo atrás da ilha.
+       *
+       * `setImmediate`: o renderer pode enviar `set-window-size` `windowed` no mesmo tick (abrir dashboard).
+       * Se expandirmos já para o monitor inteiro antes, o DWM mostra um retângulo a piscar. Adiar o expand.
        */
       try {
         if (nativeWindowSizeMode === "fullscreen" || nativeWindowSizeMode === "windowed") {
           mainWindow.setIgnoreMouseEvents(false);
         } else {
-          applySmallModeFullMonitorBounds(undefined);
-          mainWindow.setIgnoreMouseEvents(true, { forward: true });
+          setImmediate(() => {
+            try {
+              if (!mainWindow || mainWindow.isDestroyed()) return;
+              if (mainWindow.isMinimized()) return;
+              if (nativeWindowSizeMode !== "small") return;
+              applySmallModeFullMonitorBounds(undefined);
+              mainWindow.setIgnoreMouseEvents(true, { forward: true });
+            } catch (e) {
+              /* ignore */
+            }
+          });
         }
       } catch (e) {
         /* ignore */

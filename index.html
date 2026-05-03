@@ -121,6 +121,8 @@
       #root {
         width: 100vw;
         height: 100vh;
+        background-color: transparent;
+        /* Evita retângulo sólido no arranque (CEF) antes do 1.º invalidate — ilha só com sombra “correta” após radial. */
         /* Sombras do HUD (ilha) ficam fora da caixa; body continua overflow:hidden para não criar barras de scroll. */
         overflow: visible;
       }

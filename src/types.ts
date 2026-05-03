@@ -225,6 +225,10 @@ export interface ElectronAPI {
   onOpenSettings: (callback: () => void) => () => void;
   /** Fired when the OS hid the window to tray (not a real quit). */
   onWindowHidToTray: (callback: () => void) => () => void;
+  /** Minimize/restore da janela principal — painel pode ficar em estado React mas ilha deve voltar ao minimizar. */
+  onMainWindowMinimized?: (
+    callback: (payload: { minimized: boolean }) => void,
+  ) => () => void;
   onWindowNativeDisplayRestored: (
     callback: (payload: {
       mode: "small" | "fullscreen" | "windowed";
@@ -251,6 +255,13 @@ export interface ElectronAPI {
   setWindowOpacity: (opacity: number) => void;
   /** Schedules a full Chromium repaint — helps transparent frameless windows on Windows after show/resize. */
   invalidatePaint?: () => Promise<boolean>;
+  /** Área do webview em ecrã — preferir a `screenX`/`screenY` ao calcular hit-shape após resize. */
+  getMainWindowContentBounds?: () => Promise<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>;
   setGameMode: (config: GameModeConfig) => void;
   getFileIcon: (path: string) => Promise<string | null>;
   minimizeWindow: () => void;

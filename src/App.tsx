@@ -102,9 +102,27 @@ const findAppRecursive = (items: AppItem[], id: string): AppItem | undefined => 
   return undefined;
 };
 
+/**
+ * Preferir ao cursor como âncora em `setWindowSize('fullscreen'|'small')`: o processo principal usa
+ * `getDisplayNearestPoint` — com vários monitores o cursor pode estar noutro ecrã enquanto o HWND
+ * (radial / ilha) já cobre o monitor certo.
+ */
+function windowCenterScreenPoint(): { x: number; y: number } {
+  const w = window.outerWidth || window.innerWidth || 1;
+  const h = window.outerHeight || window.innerHeight || 1;
+  return {
+    x: window.screenX + Math.round(w / 2),
+    y: window.screenY + Math.round(h / 2),
+  };
+}
+
 export default function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  /** Esconde dashboard/definições antes do `await applyWindowSize('fullscreen')` — sem isto, ao restaurar da bandeja aparece um frame da última UI. */
+  const [radialOpenAwaitingFullscreen, setRadialOpenAwaitingFullscreen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const isDashboardOpenRef = useRef(false);
+  const isSettingsOpenRef = useRef(false);
 
   // Standalone Settings Window Mode - REMOVED
   // const isSettingsWindow = window.location.hash === '#settings' || window.location.search.includes('window=settings');
@@ -128,6 +146,26 @@ export default function App() {
 
   // Dashboard/Welcome Screen State
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
+  /**
+   * Após minimizar com Welcome/definições, o SO repõe o HWND ao aplicar `small` e o evento `restore` faria o painel
+   * voltar a parecer “aberto” em loop. Este flag mantém o chrome do painel recolhido até reabrir / fechar painel.
+   */
+  const [panelChromeDismissedForIsland, setPanelChromeDismissedForIsland] = useState(false);
+  const panelSurfaceOpen = useMemo(
+    () => (isDashboardOpen || isSettingsOpen) && !panelChromeDismissedForIsland,
+    [isDashboardOpen, isSettingsOpen, panelChromeDismissedForIsland],
+  );
+
+  useEffect(() => {
+    isDashboardOpenRef.current = isDashboardOpen;
+    isSettingsOpenRef.current = isSettingsOpen;
+  }, [isDashboardOpen, isSettingsOpen]);
+
+  useEffect(() => {
+    if (!isDashboardOpen && !isSettingsOpen) {
+      setPanelChromeDismissedForIsland(false);
+    }
+  }, [isDashboardOpen, isSettingsOpen]);
 
   const [windowState, setWindowState] = useState<'maximized' | 'windowed'>('windowed');
   const [isLoaded, setIsLoaded] = useState(false);
@@ -162,34 +200,72 @@ export default function App() {
   const isDesktopModeRef = useRef(false);
   isDesktopModeRef.current = isDesktopMode;
 
+  /** Após minimizar o painel, o primeiro `setWindowHitShape` pode usar `screenX/screenY` ainda do modo janela — o HWND encolhe ao sítio errado. Reforça overlay `small` no tick seguinte. (Deve ficar abaixo de `isDesktopMode` — senão ReferenceError quebra o render.) */
+  const prevPanelChromeDismissedRef = useRef(false);
+  useEffect(() => {
+    const edge =
+      panelChromeDismissedForIsland && !prevPanelChromeDismissedRef.current;
+    prevPanelChromeDismissedRef.current = panelChromeDismissedForIsland;
+    if (!edge || !isDesktopMode) return;
+    const t = window.setTimeout(() => {
+      void window.electron?.reapplySmallOverlay?.();
+      void window.electron?.invalidatePaint?.();
+    }, 100);
+    return () => clearTimeout(t);
+  }, [isDesktopMode, panelChromeDismissedForIsland]);
+
   /** Declared before handlers that resize the window — keeps IPC + React in sync. */
   const lastWindowState = useRef<'fullscreen' | 'windowed' | 'small' | null>(null);
+  /** Após restaurar da minimização (dashboard→ilha), remonta o HUD para recalcular hit-shape e evitar o “salto” visual. */
+  const [islandHudRemountKey, setIslandHudRemountKey] = useState(0);
+  const pendingMinimizeIslandRemountRef = useRef(false);
+  /**
+   * Um commit antes de `setWindowSize('windowed')`: esconde a ilha no mesmo frame em que o painel abre no React,
+   * para o DWM não redesenhar o relógio a “voar” para o rect da janela (o HWND muda antes do paint sem isto).
+   */
+  const [hideIslandForWindowedPanelTransition, setHideIslandForWindowedPanelTransition] = useState(false);
 
-  /** Garante HWND em `windowed` quando o painel/definições estão abertos (após o React atualizar o estado). */
+  /** Garante HWND em `windowed` quando o painel/definições estão visíveis (não minimizados). */
   useLayoutEffect(() => {
     if (!isDesktopMode || !window.electron?.setWindowSize) return;
-    if (!isDashboardOpen && !isSettingsOpen) return;
+    if (!panelSurfaceOpen) return;
+    if (radialOpenAwaitingFullscreen) return;
     try {
       window.electron.setWindowSize('windowed');
       window.electron.showWindow();
       lastWindowState.current = 'windowed';
     } catch {
       /* ignore */
+    } finally {
+      queueMicrotask(() => setHideIslandForWindowedPanelTransition(false));
     }
-  }, [isDesktopMode, isDashboardOpen, isSettingsOpen]);
+  }, [isDesktopMode, panelSurfaceOpen, radialOpenAwaitingFullscreen]);
+
+  useEffect(() => {
+    if (!panelSurfaceOpen) {
+      setHideIslandForWindowedPanelTransition(false);
+    }
+  }, [panelSurfaceOpen]);
 
   useLayoutEffect(() => {
     if (!isDesktopMode || !window.electron?.setWindowSize) {
       setElectronSmallOverlayReady(false);
       return;
     }
-    /** Painel / definições usam `windowed` — não forçar `small` aqui (evita sobrescrever o primeiro arranque). */
-    if (isDashboardOpen || isSettingsOpen) {
+    /**
+     * Com o radial aberto, `panelSurfaceOpen` fica falso (dashboard fechado no mesmo commit).
+     * Sem este guard, aplicávamos `small` aqui e anulávamos o `fullscreen` do `openMenu` — o menu ficava no rect windowed.
+     */
+    if (isMenuOpen || radialOpenAwaitingFullscreen) {
       setElectronSmallOverlayReady(true);
       return;
     }
-    const ax = window.screen.availLeft + Math.floor(window.screen.availWidth / 2);
-    const ay = window.screen.availTop + Math.floor(window.screen.availHeight / 2);
+    /** Painel / definições visíveis em `windowed` — não forçar `small` aqui (evita sobrescrever o primeiro arranque). */
+    if (panelSurfaceOpen) {
+      setElectronSmallOverlayReady(true);
+      return;
+    }
+    const { x: ax, y: ay } = windowCenterScreenPoint();
     window.electron.setWindowSize('small', { x: ax, y: ay });
     lastWindowState.current = 'small';
     let id2 = 0;
@@ -203,7 +279,7 @@ export default function App() {
       cancelAnimationFrame(id2);
       setElectronSmallOverlayReady(false);
     };
-  }, [isDesktopMode, isDashboardOpen, isSettingsOpen]);
+  }, [isDesktopMode, panelSurfaceOpen, isMenuOpen, radialOpenAwaitingFullscreen]);
 
   const [isAppReady, setIsAppReady] = useState(true); // Defaults to true so initial loading works normally
 
@@ -229,17 +305,35 @@ export default function App() {
     pomodoro.config,
     stopwatchHudSnap,
     isDesktopMode,
-    isMenuOpen,
+    isMenuOpen || radialOpenAwaitingFullscreen,
     config.deskIslandClockWhileIdle !== false,
     anyFullscreenWidgetOpen,
     isDashboardOpen || isSettingsOpen,
   );
 
+  const prevTimerHudActiveRef = useRef(timerHudActive);
+  /**
+   * A ilha encolhe o HWND; já não enviamos `setWindowHitShape([])` ao desmontar (evita flash no main).
+   * Quando o HUD compacto desliga sem ir para dashboard/radial, voltamos a aplicar overlay `small` em ecrã inteiro.
+   */
+  useLayoutEffect(() => {
+    if (!isDesktopMode || !window.electron?.reapplySmallOverlay) {
+      prevTimerHudActiveRef.current = timerHudActive;
+      return;
+    }
+    const was = prevTimerHudActiveRef.current;
+    if (was && !timerHudActive && !panelSurfaceOpen && !isMenuOpen && !radialOpenAwaitingFullscreen) {
+      void window.electron.reapplySmallOverlay();
+    }
+    prevTimerHudActiveRef.current = timerHudActive;
+  }, [isDesktopMode, timerHudActive, panelSurfaceOpen, isMenuOpen, radialOpenAwaitingFullscreen]);
+
   useEffect(() => {
     const wasOpen = prevIsMenuOpenRef.current;
     if (wasOpen && !isMenuOpen) {
       setIslandHoldAfterRadialClose(true);
-      const t = window.setTimeout(() => setIslandHoldAfterRadialClose(false), 320);
+      /** Alinhar à transição da ilha (~200ms) + 1 frame — evita aparecer antes do overlay `small` estabilizar. */
+      const t = window.setTimeout(() => setIslandHoldAfterRadialClose(false), 380);
       prevIsMenuOpenRef.current = false;
       return () => clearTimeout(t);
     }
@@ -292,21 +386,19 @@ export default function App() {
 
   /** Used by post-launch setTimeout — must never read stale React state or opening the dashboard after launching an app wrongly calls setWindowSize('small') (ignoreMouseEvents → "frozen" UI). */
   const electronShrinkGateRef = useRef({
-    isSettingsOpen: false,
     isNotesOpen: false,
     isPomodoroOpen: false,
-    isDashboardOpen: false,
     pomodoroEndOverlay: false as boolean,
+    panelSurfaceOpen: false,
   });
   useEffect(() => {
     electronShrinkGateRef.current = {
-      isSettingsOpen,
       isNotesOpen,
       isPomodoroOpen,
-      isDashboardOpen,
       pomodoroEndOverlay: !!pomodoroEndOverlay,
+      panelSurfaceOpen,
     };
-  }, [isSettingsOpen, isNotesOpen, isPomodoroOpen, isDashboardOpen, pomodoroEndOverlay]);
+  }, [isNotesOpen, isPomodoroOpen, pomodoroEndOverlay, panelSurfaceOpen]);
 
   // Sync Settings with Backend
   useEffect(() => {
@@ -528,11 +620,16 @@ export default function App() {
         discoveryDoneEffective = true;
       }
 
+      /** Main só com widgets Zenith (ex.: Notes) ainda não passou pelo scan do Menu Iniciar — não é “vazio” nem usa IDs do demo embutido. */
+      const mainAwaitingStartMenuBootstrap =
+        !mainCustom &&
+        nextConfig.mainStartMenuDiscoveryDone !== true;
+
       const shouldTryStartMenuIpc =
         canDiscover &&
         !discoveryDoneEffective &&
         !legacyOnboardingDone &&
-        (hasDemoFingerprint || mainIsEmpty);
+        (hasDemoFingerprint || mainIsEmpty || mainAwaitingStartMenuBootstrap);
 
       const stripMainToZenithOnly = () => {
         const mi = nextConfig.workspaces.findIndex(
@@ -790,14 +887,14 @@ export default function App() {
     if (!alarmRinging || alarmRinging.isPreview) return;
     if (!isDesktopMode || !window.electron) return;
     window.electron.showWindow();
-    window.electron.setWindowSize('fullscreen');
+    window.electron.setWindowSize('fullscreen', windowCenterScreenPoint());
   }, [alarmRinging, isDesktopMode]);
 
   useEffect(() => {
     if (!pomodoroEndOverlay) return;
     if (!isDesktopMode || !window.electron) return;
     window.electron.showWindow();
-    window.electron.setWindowSize('fullscreen');
+    window.electron.setWindowSize('fullscreen', windowCenterScreenPoint());
   }, [pomodoroEndOverlay, isDesktopMode]);
 
   useEffect(() => {
@@ -835,6 +932,8 @@ export default function App() {
         };
         flushSync(() => {
           setUser(newUser);
+          setHideIslandForWindowedPanelTransition(true);
+          setPanelChromeDismissedForIsland(false);
           setIsDashboardOpen(true);
         });
       });
@@ -871,6 +970,8 @@ export default function App() {
       setIsPomodoroOpen(false);
       setAlarmRinging(null);
       setPomodoroEndOverlay(null);
+      setPanelChromeDismissedForIsland(false);
+      setRadialOpenAwaitingFullscreen(false);
     };
   });
 
@@ -883,8 +984,11 @@ export default function App() {
 
   useEffect(() => {
     if (window.electron && isDesktopMode) {
+      /** Inclui dashboard/definições “lógicos” mesmo minimizados — evita `hideWindow` a achar que não há UI ativa. */
       const isAnyInteractive =
         isMenuOpen ||
+        radialOpenAwaitingFullscreen ||
+        isDashboardOpen ||
         isSettingsOpen ||
         isNotesOpen ||
         isAlarmWidgetOpen ||
@@ -892,11 +996,38 @@ export default function App() {
         isPomodoroOpen ||
         !!alarmRinging ||
         !!pomodoroEndOverlay ||
-        isDashboardOpen ||
         timerHudActive;
+
+      const visibilityChanged = lastVisibility.current !== isAnyInteractive;
+
+      /**
+       * Com o radial aberto, não aplicar `windowed`/`small` aqui (ordem com fecho do dashboard deixava
+       * `lastWindowState` ou o HWND desalinhados — o menu aparecia no tamanho do painel).
+       */
+      if (isMenuOpen || radialOpenAwaitingFullscreen) {
+        if (lastWindowState.current !== 'fullscreen') {
+          window.electron.setWindowSize('fullscreen', windowCenterScreenPoint());
+          lastWindowState.current = 'fullscreen';
+        }
+        if (visibilityChanged) {
+          if (isAnyInteractive) {
+            if (hideTimeout.current) {
+              clearTimeout(hideTimeout.current);
+              hideTimeout.current = null;
+            }
+            window.electron.showWindow();
+          } else {
+            hideTimeout.current = setTimeout(() => {
+              window.electron.hideWindow();
+            }, 300);
+          }
+          lastVisibility.current = isAnyInteractive;
+        }
+        return;
+      }
+
       /** Overlay passivo `small` (ecrã inteiro + forward); widgets fullscreen usam `applyWindowSize`. */
       const targetMode: 'fullscreen' | 'windowed' | 'small' = (
-        isMenuOpen ||
         isNotesOpen ||
         isAlarmWidgetOpen ||
         isStopwatchOpen ||
@@ -905,12 +1036,11 @@ export default function App() {
         !!pomodoroEndOverlay
       )
         ? 'fullscreen'
-        : (isDashboardOpen || isSettingsOpen)
+        : panelSurfaceOpen
           ? 'windowed'
           : 'small';
 
       const modeChanged = lastWindowState.current !== targetMode;
-      const visibilityChanged = lastVisibility.current !== isAnyInteractive;
 
       let modeResizeHandled = false;
 
@@ -918,15 +1048,18 @@ export default function App() {
       //    Always resize directly — never use hideWindow() here. The old "dip" path hit transitions
       //    like small → windowed (after closing the radial menu) and null → windowed, caused
       //    intermittent fullscreen / no-click bugs on the next open-settings.
+      const modeAnchor =
+        targetMode === 'windowed' ? undefined : windowCenterScreenPoint();
+
       if (modeChanged && lastVisibility.current && isAnyInteractive && targetMode !== 'small') {
-        window.electron.setWindowSize(targetMode);
+        window.electron.setWindowSize(targetMode, modeAnchor);
         lastWindowState.current = targetMode;
         modeResizeHandled = true;
       }
 
       // 2. Standard mode update (non-flicker-prone or hidden)
       if (modeChanged && !modeResizeHandled) {
-        window.electron.setWindowSize(targetMode);
+        window.electron.setWindowSize(targetMode, modeAnchor);
         lastWindowState.current = targetMode;
       }
 
@@ -948,6 +1081,8 @@ export default function App() {
     }
   }, [
     isMenuOpen,
+    radialOpenAwaitingFullscreen,
+    isDashboardOpen,
     isSettingsOpen,
     isNotesOpen,
     isAlarmWidgetOpen,
@@ -955,9 +1090,9 @@ export default function App() {
     isPomodoroOpen,
     alarmRinging,
     pomodoroEndOverlay,
-    isDashboardOpen,
     isDesktopMode,
     timerHudActive,
+    panelSurfaceOpen,
   ]);
 
   useEffect(() => {
@@ -985,9 +1120,9 @@ export default function App() {
       isDesktopMode &&
       electronSmallOverlayReady &&
       timerHudActive &&
-      !isDashboardOpen &&
-      !isSettingsOpen &&
-      !isMenuOpen;
+      !panelSurfaceOpen &&
+      !isMenuOpen &&
+      !radialOpenAwaitingFullscreen;
     const wasIdle = prevIdleIslandHudRef.current;
     prevIdleIslandHudRef.current = wantsIdleIslandHud;
     if (!wantsIdleIslandHud) return;
@@ -1002,12 +1137,12 @@ export default function App() {
     isDesktopMode,
     electronSmallOverlayReady,
     timerHudActive,
-    isDashboardOpen,
-    isSettingsOpen,
+    panelSurfaceOpen,
     isMenuOpen,
+    radialOpenAwaitingFullscreen,
   ]);
 
-  const openMenu = (
+  const openMenu = async (
     x: number,
     y: number,
     source: 'mmb' | 'shortcut' = 'shortcut',
@@ -1038,19 +1173,29 @@ export default function App() {
           y: window.screenY + window.innerHeight / 2,
         });
 
-    // Synchronous setWindowSize + flushSync before any await.
-    // Awaiting applyWindowSize first left the menu stuck behind passive hide-window (ignoreMouseEvents / opacity 0)
-    // if invoke stalled — isMenuOpen never flipped and the radial never mounted.
+    flushSync(() => setRadialOpenAwaitingFullscreen(true));
+
+    try {
+    /** `applyWindowSize` (invoke) garante que o main aplicou fullscreen antes do flushSync — evita 1.º paint ainda em rect windowed. */
     if (isDesktopModeRef.current && window.electron) {
       try {
-        window.electron.setWindowSize('fullscreen', anchorForFullscreen);
+        if (window.electron.applyWindowSize) {
+          await window.electron.applyWindowSize('fullscreen', anchorForFullscreen);
+        } else {
+          window.electron.setWindowSize('fullscreen', anchorForFullscreen);
+        }
       } catch {
-        /* ignore */
+        try {
+          window.electron.setWindowSize('fullscreen', anchorForFullscreen);
+        } catch {
+          /* ignore */
+        }
       }
       lastWindowState.current = 'fullscreen';
     }
 
     flushSync(() => {
+      setRadialOpenAwaitingFullscreen(false);
       setIsSettingsOpen(false);
       setIsMenuOpen(true);
       setIsDashboardOpen(false);
@@ -1095,8 +1240,10 @@ export default function App() {
 
     // Do not dip window opacity to 0 here — show-window already sets opacity 1 in main. A 0 → rAF → 1
     // sequence left the BrowserWindow stuck invisible on some systems (clicks still hit; radial UI gone).
-    // Não chamar applyWindowSize aqui: setWindowSize(fullscreen) já corre de forma síncrona em cima; um segundo
-    // updateWindowSize(fullscreen) repetia bounds/DWM sem necessidade (pior com ilha small→radial).
+    } catch (e) {
+      flushSync(() => setRadialOpenAwaitingFullscreen(false));
+      throw e;
+    }
   };
 
   const openMenuRef = useRef(openMenu);
@@ -1123,6 +1270,16 @@ export default function App() {
   useLayoutEffect(() => {
     if (!isMenuOpen || !isDesktopMode) return;
     syncMenuPositionFromAnchor();
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        syncMenuPositionFromAnchor();
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
   }, [isMenuOpen, isDesktopMode, syncMenuPositionFromAnchor]);
 
   useEffect(() => {
@@ -1169,23 +1326,27 @@ export default function App() {
       flushSync(() => {
         setIsDesktopMode(true);
         if (!hasRunBefore) {
+          setHideIslandForWindowedPanelTransition(true);
           setIsDashboardOpen(true);
         }
       });
     } else {
       flushSync(() => {
         if (!hasRunBefore) {
+          setHideIslandForWindowedPanelTransition(true);
           setIsDashboardOpen(true);
         }
       });
     }
 
     const cleanupMenu = window.electron?.onOpenMenu((data: { x: number, y: number, source?: 'mmb' | 'shortcut' }) => {
-      openMenuRef.current(data.x, data.y, data.source ?? 'shortcut', 'screen');
+      void openMenuRef.current(data.x, data.y, data.source ?? 'shortcut', 'screen');
     });
 
     const cleanupDashboard = window.electron?.onOpenDashboard(() => {
       flushSync(() => {
+        setHideIslandForWindowedPanelTransition(true);
+        setPanelChromeDismissedForIsland(false);
         setIsSettingsOpen(false);
         setIsDashboardOpen(true);
       });
@@ -1194,6 +1355,8 @@ export default function App() {
 
     const cleanupSettings = window.electron?.onOpenSettings(() => {
       flushSync(() => {
+        setHideIslandForWindowedPanelTransition(true);
+        setPanelChromeDismissedForIsland(false);
         setIsMenuOpen(false);
         setIsSettingsOpen(true);
         setIsDashboardOpen(true);
@@ -1227,13 +1390,27 @@ export default function App() {
       syncAfterMainWindowHidRef.current();
     });
 
+    const cleanupMainWindowMinimized = window.electron?.onMainWindowMinimized?.(({ minimized }) => {
+      if (
+        minimized &&
+        (isDashboardOpenRef.current || isSettingsOpenRef.current)
+      ) {
+        setPanelChromeDismissedForIsland(true);
+        pendingMinimizeIslandRemountRef.current = true;
+      } else if (!minimized && pendingMinimizeIslandRemountRef.current) {
+        pendingMinimizeIslandRemountRef.current = false;
+        setIslandHudRemountKey((k) => k + 1);
+      }
+    });
+
     const cleanupNativeDisplayRestored =
       window.electron?.onWindowNativeDisplayRestored?.((payload: {
         mode: 'small' | 'fullscreen' | 'windowed';
       }) => {
         const m = payload?.mode;
         if (m !== 'fullscreen' && m !== 'windowed' && m !== 'small') return;
-        window.electron?.setWindowSize(m);
+        const anchor = m === 'windowed' ? undefined : windowCenterScreenPoint();
+        window.electron?.setWindowSize(m, anchor);
         window.electron?.showWindow();
         lastWindowState.current = m;
       });
@@ -1250,6 +1427,7 @@ export default function App() {
       cleanupMouseUp?.();
       cleanupExecutionError?.();
       cleanupWindowHidToTray?.();
+      cleanupMainWindowMinimized?.();
       cleanupNativeDisplayRestored?.();
     };
   }, []);
@@ -1336,6 +1514,8 @@ export default function App() {
   const handleOpenSettings = () => {
     flushSync(() => {
       if (isMenuOpen) setIsMenuOpen(false);
+      setHideIslandForWindowedPanelTransition(true);
+      setPanelChromeDismissedForIsland(false);
       setIsSettingsOpen(true);
       setIsDashboardOpen(true);
     });
@@ -1344,7 +1524,7 @@ export default function App() {
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button === 1) { // Botão do meio
       e.preventDefault();
-      openMenu(e.clientX, e.clientY, 'mmb', 'client');
+      void openMenu(e.clientX, e.clientY, 'mmb', 'client');
     }
   };
 
@@ -1355,6 +1535,7 @@ export default function App() {
     }
     if (
       !isMenuOpen &&
+      !radialOpenAwaitingFullscreen &&
       !isSettingsOpen &&
       !isNotesOpen &&
       !isPomodoroOpen &&
@@ -1399,10 +1580,10 @@ export default function App() {
       return;
     }
 
-    if (command === 'internal:notes') { if (isDesktopMode) window.electron?.setWindowSize('fullscreen'); setIsNotesOpen(true); return; }
-    if (command === 'internal:alarm') { if (isDesktopMode) window.electron?.setWindowSize('fullscreen'); setIsAlarmWidgetOpen(true); return; }
-    if (command === 'internal:stopwatch') { if (isDesktopMode) window.electron?.setWindowSize('fullscreen'); setIsStopwatchOpen(true); return; }
-    if (command === 'internal:pomodoro') { if (isDesktopMode) window.electron?.setWindowSize('fullscreen'); setIsPomodoroOpen(true); return; }
+    if (command === 'internal:notes') { if (isDesktopMode) window.electron?.setWindowSize('fullscreen', windowCenterScreenPoint()); setIsNotesOpen(true); return; }
+    if (command === 'internal:alarm') { if (isDesktopMode) window.electron?.setWindowSize('fullscreen', windowCenterScreenPoint()); setIsAlarmWidgetOpen(true); return; }
+    if (command === 'internal:stopwatch') { if (isDesktopMode) window.electron?.setWindowSize('fullscreen', windowCenterScreenPoint()); setIsStopwatchOpen(true); return; }
+    if (command === 'internal:pomodoro') { if (isDesktopMode) window.electron?.setWindowSize('fullscreen', windowCenterScreenPoint()); setIsPomodoroOpen(true); return; }
 
     if (itemForToast) {
       setLastLaunched(itemForToast);
@@ -1418,13 +1599,12 @@ export default function App() {
       setTimeout(() => {
         const g = electronShrinkGateRef.current;
         if (
-          !g.isSettingsOpen &&
           !g.isNotesOpen &&
           !g.isPomodoroOpen &&
-          !g.isDashboardOpen &&
-          !g.pomodoroEndOverlay
+          !g.pomodoroEndOverlay &&
+          !g.panelSurfaceOpen
         ) {
-          window.electron?.setWindowSize('small');
+          window.electron?.setWindowSize('small', windowCenterScreenPoint());
           // Unified visibility effect will handle hiding automatically based on state
         }
       }, 1000);
@@ -1436,13 +1616,22 @@ export default function App() {
 
   const handleMenuClose = useCallback((selectedId: string | null, selectedApp?: AppItem | null) => {
     setIsMenuOpen(false);
+    setRadialOpenAwaitingFullscreen(false);
     isHolding.current = false;
 
     const cfg = configRef.current;
     const currentWorkspaceApps = cfg.workspaces[cfg.activeWorkspaceIndex]?.apps || apps;
 
-    if (!selectedId && isDesktopMode && !isSettingsOpen && !isNotesOpen && !isPomodoroOpen && !alarmRinging && !pomodoroEndOverlay && !isDashboardOpen) {
-      window.electron?.setWindowSize('small');
+    if (
+      !selectedId &&
+      isDesktopMode &&
+      !panelSurfaceOpen &&
+      !isNotesOpen &&
+      !isPomodoroOpen &&
+      !alarmRinging &&
+      !pomodoroEndOverlay
+    ) {
+      window.electron?.setWindowSize('small', windowCenterScreenPoint());
       return;
     }
 
@@ -1460,8 +1649,15 @@ export default function App() {
       const centerConfig = cfg.centerButton;
 
       if (centerConfig.type === 'cancel') {
-        if (isDesktopMode && !isSettingsOpen && !isNotesOpen && !isPomodoroOpen && !alarmRinging && !pomodoroEndOverlay && !isDashboardOpen) {
-          window.electron?.setWindowSize('small');
+        if (
+          isDesktopMode &&
+          !panelSurfaceOpen &&
+          !isNotesOpen &&
+          !isPomodoroOpen &&
+          !alarmRinging &&
+          !pomodoroEndOverlay
+        ) {
+          window.electron?.setWindowSize('small', windowCenterScreenPoint());
         }
         return;
       }
@@ -1496,7 +1692,7 @@ export default function App() {
         console.warn("Could not find app with ID in active workspace:", selectedId);
       }
     }
-  }, [apps, isDesktopMode, isSettingsOpen, isNotesOpen, isPomodoroOpen, alarmRinging, pomodoroEndOverlay, isDashboardOpen]);
+  }, [apps, isDesktopMode, panelSurfaceOpen, isNotesOpen, isPomodoroOpen, alarmRinging, pomodoroEndOverlay]);
 
 
 
@@ -1530,6 +1726,8 @@ export default function App() {
     flushSync(() => {
       setUser(null);
       setIsSettingsOpen(false);
+      setHideIslandForWindowedPanelTransition(true);
+      setPanelChromeDismissedForIsland(false);
       setIsDashboardOpen(true);
     });
     if (isDesktopMode) window.electron?.showWindow();
@@ -1578,7 +1776,16 @@ export default function App() {
   );
 
   // Check if any modal is open
-  const isAnyModalOpen = isSettingsOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || alarmRinging || pomodoroEndOverlay || isMenuOpen || isDashboardOpen;
+  const isAnyModalOpen =
+    panelSurfaceOpen ||
+    isNotesOpen ||
+    isAlarmWidgetOpen ||
+    isStopwatchOpen ||
+    isPomodoroOpen ||
+    alarmRinging ||
+    pomodoroEndOverlay ||
+    isMenuOpen ||
+    radialOpenAwaitingFullscreen;
 
   return (
     <div
@@ -1603,15 +1810,15 @@ export default function App() {
       {/* When radial opens: hide this layer instantly (no opacity transition) — otherwise the 300ms fade shows a flash of the last settings/dashboard frame */}
       <div className={`
         absolute inset-0 overflow-hidden
-        ${isMenuOpen
+        ${isMenuOpen || radialOpenAwaitingFullscreen
           ? 'opacity-0 pointer-events-none invisible !transition-none'
-          : `${(isDashboardOpen || isSettingsOpen) ? '!transition-none' : 'transition-all duration-300'} ${(isDashboardOpen || isSettingsOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || alarmRinging || pomodoroEndOverlay) ? 'opacity-100 visible' : 'opacity-0 pointer-events-none invisible'}`
+          : `${panelSurfaceOpen ? '!transition-none' : 'transition-all duration-300'} ${(panelSurfaceOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || alarmRinging || pomodoroEndOverlay) ? 'opacity-100 visible' : 'opacity-0 pointer-events-none invisible'}`
         }
-        ${!isMenuOpen && (isDashboardOpen || isSettingsOpen) ? 'bg-[#0A0A0A]' : ''}
-        ${!isMenuOpen && (isDashboardOpen || isSettingsOpen) ? 'border border-white/10 rounded-xl shadow-[0_0_50px_rgba(0,0,0,0.5)]' : ''}
+        ${!isMenuOpen && !radialOpenAwaitingFullscreen && panelSurfaceOpen ? 'bg-[#0A0A0A]' : ''}
+        ${!isMenuOpen && !radialOpenAwaitingFullscreen && panelSurfaceOpen ? 'border border-white/10 rounded-xl shadow-[0_0_50px_rgba(0,0,0,0.5)]' : ''}
       `}>
         {/* CUSTOM TITLE BAR OVERLAY (for drag region + app name) */}
-        {(isDashboardOpen || isSettingsOpen) && !isMenuOpen && (
+        {panelSurfaceOpen && !isMenuOpen && !radialOpenAwaitingFullscreen && (
           <div
             className="absolute top-0 left-0 right-0 h-[38px] z-[999] flex items-center justify-between px-4 bg-[#0A0A0A]/80 backdrop-blur-xl border-b border-white/[0.05]"
             style={{ WebkitAppRegion: 'drag' } as any}
@@ -1656,9 +1863,9 @@ export default function App() {
         {/* DELETED: Removed redundant background to allow RadialMenu to handle it exclusively */}
 
         {/* WELCOME SCREEN / DASHBOARD CONTENT AREA */}
-        {!isMenuOpen && (
+        {!isMenuOpen && !radialOpenAwaitingFullscreen && (
           <AnimatePresence mode="wait">
-            {isDashboardOpen && !isSettingsOpen && !isNotesOpen && !isAlarmWidgetOpen && !isStopwatchOpen && !isPomodoroOpen && !alarmRinging && !pomodoroEndOverlay && (
+            {isDashboardOpen && panelSurfaceOpen && !isSettingsOpen && !isNotesOpen && !isAlarmWidgetOpen && !isStopwatchOpen && !isPomodoroOpen && !alarmRinging && !pomodoroEndOverlay && (
               <motion.div
                 key="welcome"
                 initial={{ opacity: 0, x: -20, filter: 'blur(10px)' }}
@@ -1680,7 +1887,7 @@ export default function App() {
               </motion.div>
             )}
 
-            {isSettingsOpen && (
+            {isSettingsOpen && panelSurfaceOpen && (
               <motion.div
                 key="settings-page"
                 initial={{ opacity: 0, x: 20, filter: 'blur(10px)' }}
@@ -1715,7 +1922,9 @@ export default function App() {
                   }}
                   onOpenDashboard={() => {
                     flushSync(() => {
+                      setHideIslandForWindowedPanelTransition(true);
                       setIsSettingsOpen(false);
+                      setPanelChromeDismissedForIsland(false);
                       setIsDashboardOpen(true);
                     });
                     if (isDesktopMode) window.electron?.showWindow();
@@ -1777,6 +1986,14 @@ export default function App() {
 
       </div>
 
+      {/* Durante `applyWindowSize` o painel já está oculto no React — fundo sólido evita flash do wallpaper / última textura do compositor. */}
+      {isDesktopMode && radialOpenAwaitingFullscreen && (
+        <div
+          className="fixed inset-0 z-[53] bg-[#0A0A0A] pointer-events-auto"
+          aria-hidden
+        />
+      )}
+
       {/* ALARM — fora da camada opaca: visível mesmo com janela “passiva” / nada aberto */}
       <AnimatePresence>
         {alarmRinging && (
@@ -1812,11 +2029,14 @@ export default function App() {
       {/* ------------------------------------------------------------------ */}
 
         {!isMenuOpen &&
+          !radialOpenAwaitingFullscreen &&
           !islandHoldAfterRadialClose &&
+          !hideIslandForWindowedPanelTransition &&
           electronSmallOverlayReady &&
           timerHudActive &&
           !anyFullscreenWidgetOpen && (
             <CompactTimerHud
+              key={islandHudRemountKey}
               config={config}
               isDesktopMode={isDesktopMode}
               suppressFloatingClock={isMenuOpen}
@@ -1828,16 +2048,19 @@ export default function App() {
             />
           )}
 
-        <RadialMenu
-          isOpen={isMenuOpen}
-          position={menuPosition}
-          onClose={handleMenuClose}
-          apps={radialApps}
-          config={radialMenuConfig}
-          triggerSource={triggerSource}
-          onWorkspaceSwitch={handleWorkspaceSwitch}
-          currentWorkspace={radialCurrentWorkspace}
-        />
+        {/* Durante `radialOpenAwaitingFullscreen` o menu não pode ficar montado com `isOpen={false}` — o Framer animava “fechar” e depois “abrir”, causando flash de saída/entrada. */}
+        {(!radialOpenAwaitingFullscreen || isMenuOpen) && (
+          <RadialMenu
+            isOpen={isMenuOpen}
+            position={menuPosition}
+            onClose={handleMenuClose}
+            apps={radialApps}
+            config={radialMenuConfig}
+            triggerSource={triggerSource}
+            onWorkspaceSwitch={handleWorkspaceSwitch}
+            currentWorkspace={radialCurrentWorkspace}
+          />
+        )}
 
         <Toast app={lastLaunched} />
         

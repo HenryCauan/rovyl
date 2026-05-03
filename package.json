@@ -10,7 +10,8 @@
     "build": "tsc && vite build",
     "electron": "wait-on tcp:5173 && cross-env NODE_ENV=development node scripts/launch-electron.js",
     "start": "concurrently -k \"npm run dev\" \"npm run electron\"",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder",
+    "test:win32-launch": "node --test backend/win32-launch.test.cjs"
   },
   "dependencies": {
     "active-win": "^8.2.1",
@@ -57,7 +58,8 @@
         "nsis",
         "portable"
       ],
-      "icon": "public/icon.png"
+      "icon": "public/icon.png",
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,

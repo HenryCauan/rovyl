@@ -36,6 +36,12 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.on("window-hid-to-tray", listener);
     return () => ipcRenderer.removeListener("window-hid-to-tray", listener);
   },
+  onMainWindowMinimized: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("main-window-minimized", listener);
+    return () =>
+      ipcRenderer.removeListener("main-window-minimized", listener);
+  },
   /** After minimize→restore (Windows transparent window): main process reapplies bounds + hit-testing. */
   onWindowNativeDisplayRestored: (callback) => {
     const listener = (event, payload) => callback(payload);
@@ -52,6 +58,8 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.invoke("set-window-hit-shape", rects, opts || {}),
   setWindowOpacity: (opacity) => ipcRenderer.send("set-window-opacity", opacity),
   invalidatePaint: () => ipcRenderer.invoke("invalidate-paint"),
+  getMainWindowContentBounds: () =>
+    ipcRenderer.invoke("get-main-window-content-bounds"),
   setGameMode: (config) => ipcRenderer.send("set-game-mode", config),
   setLoginItemSettings: (settings) =>
     ipcRenderer.send("set-login-item-settings", settings),

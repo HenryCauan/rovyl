@@ -250,7 +250,7 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   globalShortcut: "Alt+Z",
   workspaces: DEFAULT_WORKSPACES,
   activeWorkspaceIndex: 0,
-  workspaceSwitchMode: 'hotkeys',
+  workspaceSwitchMode: 'picker',
   enableMouseTrigger: true,
   language: "pt",
   performanceMode: false,
