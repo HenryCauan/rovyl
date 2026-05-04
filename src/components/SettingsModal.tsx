@@ -20,7 +20,7 @@ import { ZenithLogo } from './ZenithLogo';
 import { IconPicker } from './IconPicker';
 import { getTranslation, LANGUAGES } from '../translations';
 import { Tooltip } from './Tooltip';
-import { websiteIconFieldsFromUrl } from '../siteFavicon';
+import { resolveWebsiteIconFields, websiteIconFieldsFromUrl } from '../siteFavicon';
 import { normalizeWindowsExecutablePickerPath } from '../utils/windowsLaunchCommand';
 
 
@@ -3345,6 +3345,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const [isHoveringSidebar, setIsHoveringSidebar] = useState(false);
     const isSidebarExpanded = (isSidebarPinned || isHoveringSidebar);
     const [isCompact, setIsCompact] = useState(window.innerWidth < 768); // Breakpoint for main settings modal
+    /** Descarta respostas antigas ao mudar o URL várias vezes seguidas. */
+    const urlFaviconReqSeqRef = useRef(0);
 
     // --- BACKUP & RESTORE STATE ---
     const [isExporting, setIsExporting] = useState(false);
@@ -3766,7 +3768,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         // Handle URL type
         if (appData.type === 'url') {
             const urlIcon =
-                websiteIconFieldsFromUrl(appData.path) ??
+                (await resolveWebsiteIconFields(appData.path)) ??
                 ({ iconName: 'Globe' as const, iconSource: 'lucide' as const, customIconUrl: undefined });
             if (appSelectorMode === 'center') {
                 setConfig(prev => ({
@@ -4138,16 +4140,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         }
         let updatedApp = { ...editingApp.app, [field]: value };
 
-        // Auto-fetch high-quality favicon for URLs (same helper as adding a URL from the app picker)
+        // Auto-fetch favicon for URLs (data URL via main process quando Electron está disponível)
         if (field === 'command' && editingApp.app.commandType === 'url' && value.trim()) {
             if (editingApp.app.customIconUrl?.startsWith('file:') && window.electron?.removeManagedCustomIcon) {
                 void window.electron.removeManagedCustomIcon(editingApp.app.customIconUrl);
             }
-            const iconFields = websiteIconFieldsFromUrl(value.trim());
+            const cmd = value.trim();
+            const iconFields = websiteIconFieldsFromUrl(cmd);
             updatedApp = {
                 ...updatedApp,
                 ...(iconFields ?? { iconName: 'Globe', iconSource: 'lucide', customIconUrl: undefined }),
             };
+            handleAppUpdates(updatedApp);
+            const reqId = ++urlFaviconReqSeqRef.current;
+            void resolveWebsiteIconFields(cmd).then((resolved) => {
+                if (!resolved?.customIconUrl || reqId !== urlFaviconReqSeqRef.current) return;
+                handleAppUpdates({
+                    customIconUrl: resolved.customIconUrl,
+                    iconSource: resolved.iconSource,
+                    iconName: resolved.iconName,
+                });
+            });
+            return;
         }
 
         handleAppUpdates(updatedApp);

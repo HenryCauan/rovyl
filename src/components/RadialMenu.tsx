@@ -147,6 +147,10 @@ const RadialMenuItem = React.memo(({
   onClick,
 }: RadialMenuItemProps) => {
   const Icon = getIcon(app.iconName);
+  const [remoteIconFailed, setRemoteIconFailed] = React.useState(false);
+  React.useEffect(() => {
+    setRemoteIconFailed(false);
+  }, [app.customIconUrl]);
   const sliceAngle = 360 / totalApps;
   const angleDeg = (index * sliceAngle) - 90;
   const angleRad = angleDeg * (Math.PI / 180);
@@ -236,14 +240,15 @@ const RadialMenuItem = React.memo(({
           >
             {/* Icon Container: Show either native icon OR vector icon, not both */}
             <div className="w-full h-full flex items-center justify-center relative">
-              {app.customIconUrl ? (
-                /* Native Icon (Automatically normalized) */
+              {app.customIconUrl && !remoteIconFailed ? (
+                /* Native / remote favicon */
                 <SmartIcon
                   src={app.customIconUrl!}
                   alt={app.label}
                   className="object-contain relative z-10"
                   size={actualIconSize}
                   referenceScale={0.88}
+                  onError={() => setRemoteIconFailed(true)}
                 />
               ) : (
                 /* Vector Icon (Only when no custom icon) */

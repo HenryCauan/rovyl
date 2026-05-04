@@ -8,6 +8,7 @@ interface SmartIconProps {
   referenceScale?: number; // kept for API compatibility, not used
   /** Scale factor applied to the icon within its container (0-1). Default 0.82 */
   displayScale?: number;
+  onError?: React.ReactEventHandler<HTMLImageElement>;
 }
 
 /**
@@ -22,6 +23,7 @@ export const SmartIcon: React.FC<SmartIconProps> = ({
   alt = "",
   className = "",
   displayScale = 0.70,
+  onError,
 }) => {
   const pct = `${displayScale * 100}%`;
   return (
@@ -29,6 +31,7 @@ export const SmartIcon: React.FC<SmartIconProps> = ({
       src={src}
       alt={alt}
       className={className}
+      onError={onError}
       style={{
         width: pct,
         height: pct,

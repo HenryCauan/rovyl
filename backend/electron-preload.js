@@ -72,6 +72,8 @@ contextBridge.exposeInMainWorld("electron", {
   setLoginItemSettings: (settings) =>
     ipcRenderer.send("set-login-item-settings", settings),
   getFileIcon: (path) => ipcRenderer.invoke("get-file-icon", path),
+  getWebsiteFaviconDataUrl: (pageUrl) =>
+    ipcRenderer.invoke("get-website-favicon-data-url", pageUrl),
   onWindowState: (callback) => {
     const listener = (event, state) => callback(state);
     ipcRenderer.on("window-state", listener);

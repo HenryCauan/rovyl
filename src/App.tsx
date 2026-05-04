@@ -32,8 +32,18 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useStopwatchHudSnapshot } from './stopwatchHudStore';
 import { compactTimerHudShouldShow } from './utils/compactTimerHudVisibility';
 import { CompactTimerHud } from './components/CompactTimerHud';
+import { isLikelyWebUrl, resolveWebsiteIconFields } from './siteFavicon';
 
 const LS_MAIN_DISCOVERY_DONE = 'zenith_main_discovery_done';
+
+/** Favicons remotos não devem ser apagados pelo cache-bust de ícones de .exe nem healing via getFileIcon. */
+function isRemoteIconUrl(u: string | undefined): boolean {
+  return /^https?:\/\//i.test(String(u ?? '').trim());
+}
+
+function isWebShortcutItem(item: AppItem): boolean {
+  return item.commandType === 'url' || isLikelyWebUrl(item.command);
+}
 
 /** Legacy first-run flag — used only to avoid double-running in odd edge cases; repair no longer skips on this alone. */
 const LS_ZENITH_INITIALIZED_LEGACY = 'zenith_initialized';
@@ -425,12 +435,17 @@ export default function App() {
     const storedVersion = localStorage.getItem('zenith_icon_normalization_version');
     if (storedVersion === ICON_NORMALIZATION_VERSION) return; // Already using new format
 
-    // Version mismatch: clear all stored customIconUrl so healing re-fetches them
+    // Version mismatch: clear stored exe icons so healing re-fetches them (skip URL favicons).
     setConfig(prev => {
       const clearIcons = (items: AppItem[]): AppItem[] =>
         items.map(item => ({
           ...item,
-          customIconUrl: item.iconSource === 'native' ? undefined : item.customIconUrl,
+          customIconUrl:
+            item.iconSource === 'native' &&
+            !isWebShortcutItem(item) &&
+            !isRemoteIconUrl(item.customIconUrl)
+              ? undefined
+              : item.customIconUrl,
           children: item.children ? clearIcons(item.children) : undefined,
         }));
       return {
@@ -458,13 +473,25 @@ export default function App() {
 
   // ICON HEALING: Automatically re-fetch missing native icons
   useEffect(() => {
-    if (!window.electron?.getFileIcon) return;
+    if (!window.electron?.getFileIcon && !window.electron?.getWebsiteFaviconDataUrl) return;
 
     const findMissingIcons = (items: AppItem[]): AppItem[] => {
       let missing: AppItem[] = [];
       const traverse = (list: AppItem[]) => {
         list.forEach(item => {
-          if (item.iconSource === 'native' && !item.customIconUrl && item.command) {
+          const web = isWebShortcutItem(item);
+          const iconStr = String(item.customIconUrl ?? '').trim();
+          if (web && item.command?.trim()) {
+            // Falta ícone ou só URL remota (renderer não mostra → migrar para data URL)
+            if (!iconStr || isRemoteIconUrl(item.customIconUrl)) {
+              missing.push(item);
+            }
+          } else if (
+            item.iconSource === 'native' &&
+            !item.customIconUrl &&
+            item.command &&
+            !web
+          ) {
             missing.push(item);
           }
           if (item.children) traverse(item.children);
@@ -490,9 +517,35 @@ export default function App() {
           const done = await Promise.all(
             chunk.map(async (item) => {
               let newItem = { ...item };
-              if (item.iconSource === 'native' && !item.customIconUrl && item.command) {
+              const web = isWebShortcutItem(item);
+              const iconStr = String(item.customIconUrl ?? '').trim();
+              const webNeedsIcon =
+                web &&
+                item.command?.trim() &&
+                (!iconStr || isRemoteIconUrl(item.customIconUrl));
+              if (webNeedsIcon) {
+                const iconFields = await resolveWebsiteIconFields(
+                  item.command!.trim(),
+                );
+                const url = iconFields?.customIconUrl;
+                if (url?.startsWith('data:')) {
+                  newItem = { ...newItem, ...iconFields };
+                  hasUpdates = true;
+                } else if (!iconStr && url) {
+                  newItem = { ...newItem, ...iconFields };
+                  hasUpdates = true;
+                }
+              } else if (
+                item.iconSource === 'native' &&
+                !item.customIconUrl &&
+                item.command &&
+                !web &&
+                window.electron?.getFileIcon
+              ) {
                 try {
-                  const iconUrl = await window.electron!.getFileIcon(item.command);
+                  const iconUrl = await window.electron.getFileIcon(
+                    item.command,
+                  );
                   if (iconUrl) {
                     newItem.customIconUrl = iconUrl;
                     hasUpdates = true;

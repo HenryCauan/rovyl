@@ -3928,6 +3928,136 @@ const saveIconCache = () => {
 // Start periodic save to prevent data loss on crash
 setInterval(saveIconCache, 60000); // Every minute
 
+/** In-memory favicon data URLs — hostname lowercased */
+const faviconDataUrlCache = new Map();
+
+function sniffImageMimeFromBuffer(buf) {
+  if (!buf || buf.length < 4) return "image/png";
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47)
+    return "image/png";
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return "image/gif";
+  if (
+    buf[0] === 0x00 &&
+    buf[1] === 0x00 &&
+    buf[2] === 0x01 &&
+    buf[3] === 0x00
+  )
+    return "image/x-icon";
+  if (
+    buf[0] === 0x00 &&
+    buf[1] === 0x00 &&
+    buf[2] === 0x02 &&
+    buf[3] === 0x00
+  )
+    return "image/x-icon";
+  return "image/png";
+}
+
+function fetchUrlBodyBuffer(targetUrl, maxBytes = 524288, redirectDepth = 0) {
+  return new Promise((resolve) => {
+    if (redirectDepth > 8) return resolve(null);
+    let lib;
+    try {
+      const u = new URL(targetUrl);
+      lib = u.protocol === "http:" ? http : https;
+    } catch {
+      return resolve(null);
+    }
+    const req = lib.get(
+      targetUrl,
+      {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (compatible; ZenithRadialMenu/1.0; +https://github.com)",
+          Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        },
+        timeout: 12000,
+      },
+      (res) => {
+        if (
+          res.statusCode >= 300 &&
+          res.statusCode < 400 &&
+          res.headers.location
+        ) {
+          let next;
+          try {
+            next = new URL(res.headers.location, targetUrl).href;
+          } catch {
+            res.resume();
+            return resolve(null);
+          }
+          res.resume();
+          fetchUrlBodyBuffer(next, maxBytes, redirectDepth + 1).then(resolve);
+          return;
+        }
+        if (res.statusCode !== 200) {
+          res.resume();
+          return resolve(null);
+        }
+        const chunks = [];
+        let len = 0;
+        res.on("data", (d) => {
+          len += d.length;
+          if (len > maxBytes) {
+            req.destroy();
+            resolve(null);
+          } else chunks.push(d);
+        });
+        res.on("end", () => {
+          if (!chunks.length) resolve(null);
+          else resolve(Buffer.concat(chunks));
+        });
+      },
+    );
+    req.on("error", () => resolve(null));
+    req.on("timeout", () => {
+      req.destroy();
+      resolve(null);
+    });
+  });
+}
+
+/** Evita <img src=https://…> no renderer (muitas vezes bloqueado); devolve data URL. */
+ipcMain.handle("get-website-favicon-data-url", async (_event, pageUrl) => {
+  try {
+    let hostname;
+    try {
+      let s = String(pageUrl || "").trim();
+      if (!s) return null;
+      if (!/^https?:\/\//i.test(s)) s = `https://${s}`;
+      hostname = new URL(s).hostname;
+    } catch {
+      return null;
+    }
+    if (!hostname) return null;
+    const hostKey = hostname.toLowerCase();
+    if (faviconDataUrlCache.has(hostKey)) {
+      return faviconDataUrlCache.get(hostKey);
+    }
+
+    const candidates = [
+      `https://www.google.com/s2/favicons?domain=${encodeURIComponent(hostname)}&sz=128`,
+      `https://icons.duckduckgo.com/ip3/${encodeURIComponent(hostname)}.ico`,
+    ];
+
+    for (const u of candidates) {
+      const buf = await fetchUrlBodyBuffer(u);
+      if (!buf || buf.length < 16) continue;
+      const mime = sniffImageMimeFromBuffer(buf);
+      const dataUrl = `data:${mime};base64,${buf.toString("base64")}`;
+      faviconDataUrlCache.set(hostKey, dataUrl);
+      diagLog(`[Favicon] ${hostname} ok (${mime}, ${buf.length}b)`);
+      return dataUrl;
+    }
+    diagLog(`[Favicon] no image for ${hostname}`);
+    return null;
+  } catch (e) {
+    diagLog(`[Favicon] error: ${e.message}`);
+    return null;
+  }
+});
+
 ipcMain.handle("get-file-icon", async (event, filePath) => {
   try {
     if (!filePath || typeof filePath !== "string") {

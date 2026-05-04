@@ -266,6 +266,8 @@ export interface ElectronAPI {
   } | null>;
   setGameMode: (config: GameModeConfig) => void;
   getFileIcon: (path: string) => Promise<string | null>;
+  /** Favicon obtido no main (data URL) — o renderer costuma falhar com <img https://…>. */
+  getWebsiteFaviconDataUrl?: (pageUrl: string) => Promise<string | null>;
   minimizeWindow: () => void;
   toggleMaximize: () => void;
   quitApp: () => void;
