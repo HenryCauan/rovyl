@@ -261,12 +261,33 @@ try {
 
 let settingsWindow = null;
 
-// Game Mode Configuration Storage
+// Game Mode Configuration Storage (merged from renderer; keep defaults for missing keys)
 let gameModeConfig = {
   enabled: false,
-  blockFullscreen: true,
+  mode: "list",
   blockedApps: "",
 };
+
+function mergeGameModeConfig(gm) {
+  if (!gm || typeof gm !== "object") return;
+  let blocked = "";
+  if (typeof gm.blockedApps === "string") blocked = gm.blockedApps;
+  else if (Array.isArray(gm.blockedApps)) {
+    blocked = gm.blockedApps.map((s) => String(s).trim()).filter(Boolean).join(", ");
+  }
+  gameModeConfig = {
+    enabled: !!gm.enabled,
+    mode: gm.mode === "all" ? "all" : "list",
+    blockedApps: blocked,
+  };
+}
+
+/** Full persistence blob is `{ config: UIConfig, ... }`; older saves may be flat. */
+function extractUiConfigFromPersistenceBlob(blob) {
+  if (!blob || typeof blob !== "object") return null;
+  if (blob.config && typeof blob.config === "object") return blob.config;
+  return blob;
+}
 
 // Window Management Persistence
 let lastWindowedBounds = { width: 1280, height: 800, x: 100, y: 100 };
@@ -1050,66 +1071,327 @@ function openSettingsFromMainProcess() {
   mainWindow.webContents.send("open-settings");
 }
 
-// Function to check if a specific process is running (Basic implementation)
-let cachedProcessOutput = "";
-let lastProcessCheckTime = 0;
-const PROCESS_CACHE_TTL = 2000; // 2 seconds
+/** Lazy — native binding may fail on some installs; fail-open (allow radial). */
+function getActiveWinModule() {
+  try {
+    return require("active-win");
+  } catch (e) {
+    diagLog(`[GameMode] active-win require failed: ${e.message}`);
+    return null;
+  }
+}
 
-const isProcessRunning = (processNames) => {
-  return new Promise((resolve) => {
-    const platform = process.platform;
-    const now = Date.now();
-
-    // Skip heavy CMD call if we checked recently
-    if (now - lastProcessCheckTime < PROCESS_CACHE_TTL && cachedProcessOutput) {
-      const targets = processNames.toLowerCase().split(",").map(s => s.trim()).filter(s => s.length > 0);
-      const isRunning = targets.some((target) => cachedProcessOutput.includes(target));
-      return resolve(isRunning);
+/**
+ * Rect da janela cobre o monitor inteiro (fullscreen real), não maximizado típico (workArea).
+ */
+function isBoundsFullscreenMonitor(bounds, ownerExePathLower) {
+  if (!bounds || typeof bounds.width !== "number") return false;
+  try {
+    const myExe = path.resolve(app.getPath("exe")).toLowerCase();
+    const op = (ownerExePathLower || "").trim();
+    if (op) {
+      const resolved = path.resolve(op).toLowerCase();
+      if (myExe && resolved === myExe) return false;
     }
+  } catch (_) {
+    /* ignore */
+  }
 
-    const targets = processNames
-      .toLowerCase()
-      .split(",")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
+  const shellBase = path.basename(ownerExePathLower || "").toLowerCase();
+  if (shellBase === "explorer.exe") return false;
 
-    if (targets.length === 0) {
-      resolve(false);
-      return;
+  const { x, y, width, height } = bounds;
+  if (width < 320 || height < 240) return false;
+
+  const cx = Math.round(x + width / 2);
+  const cy = Math.round(y + height / 2);
+  let display;
+  try {
+    display = screen.getDisplayNearestPoint({ x: cx, y: cy });
+  } catch (_) {
+    return false;
+  }
+
+  const db = display.bounds;
+  const wa = display.workArea;
+  const slack = 10;
+
+  const matchesWorkArea =
+    Math.abs(x - wa.x) <= slack &&
+    Math.abs(y - wa.y) <= slack &&
+    Math.abs(width - wa.width) <= slack &&
+    Math.abs(height - wa.height) <= slack;
+  if (matchesWorkArea) return false;
+
+  const coversFullDisplay =
+    x <= db.x + slack &&
+    y <= db.y + slack &&
+    x + width >= db.x + db.width - slack &&
+    y + height >= db.y + db.height - slack;
+
+  return coversFullDisplay;
+}
+
+function isForegroundWindowFullscreen(win) {
+  if (!win || !win.bounds) return false;
+  const op = (win.owner && win.owner.path) || "";
+  return isBoundsFullscreenMonitor(win.bounds, op);
+}
+
+/**
+ * Lista plana de especificações de correspondência.
+ * Cada segmento CSV pode ser: `token` ou `alt1|alt2::rótulo` (rótulo só para UI; alts são OR).
+ */
+function parseBlockedAppTokens(csv) {
+  const out = [];
+  const segments = String(csv || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  for (const segment of segments) {
+    const lower = segment.toLowerCase();
+    const matchPart = lower.includes("::")
+      ? lower.split("::")[0].trim()
+      : lower;
+    for (const alt of matchPart.split("|")) {
+      const a = alt.trim();
+      if (a) out.push(a);
     }
+  }
+  return out;
+}
 
-    const cmd = platform === "win32" ? "tasklist /FO CSV" : "ps -ax -o comm";
+/** Mínimo de caracteres no "stem" para bater no título/cmd (evita ruído). */
+const GAME_MODE_TITLE_STEM_MIN = 5;
 
-    exec(cmd, (err, stdout, stderr) => {
-      if (err) {
-        resolve(false);
-        return;
+/** Palavra isolada (evita "zen" em "frozen"). */
+function hayContainsTokenWord(hay, word) {
+  if (!word || word.length < 3) return false;
+  const esc = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^a-z0-9])${esc}([^a-z0-9]|$)`, "i").test(hay);
+}
+
+/** Segmentos úteis a partir de tokens antigos tipo "openai.chatgpt - desktop_xxx" ou caminhos WindowsApps. */
+function expandGameModeTokenFragments(tok) {
+  const t = String(tok).toLowerCase().trim();
+  const out = new Set();
+  if (!t) return [];
+  out.add(t);
+  const noExe = t.replace(/\.exe$/i, "");
+  out.add(noExe);
+  const head = noExe.split(/\s+/)[0];
+  for (const part of head.split(/[^a-z0-9]+/i)) {
+    if (part.length >= 4) out.add(part);
+  }
+  const dotParts = head.split(".").filter((p) => /^[a-z0-9]+$/i.test(p));
+  if (dotParts.length) {
+    out.add(dotParts[dotParts.length - 1]);
+  }
+  return [...out];
+}
+
+/**
+ * App em primeiro plano corresponde à lista — exe, título, CommandLine e fragmentos do token (Store/PWA).
+ */
+function tokensMatchForeground(exePathLower, titleLower, cmdlineLower, tokens) {
+  if (!tokens.length) return false;
+  const normExe = String(exePathLower || "")
+    .replace(/\//g, "\\")
+    .toLowerCase();
+  const title = String(titleLower || "").toLowerCase();
+  const cmd = String(cmdlineLower || "").toLowerCase();
+  const hay = `${title}\n${cmd}\n${normExe}`;
+  for (const tok of tokens) {
+    const frags = expandGameModeTokenFragments(tok);
+    for (const frag of frags) {
+      const withExe = frag.endsWith(".exe") ? frag : `${frag}.exe`;
+      const stem = frag.replace(/\.exe$/i, "");
+      if (normExe) {
+        const base = path.basename(normExe).toLowerCase();
+        if (base === withExe || base === frag || base === `${stem}.exe`) return true;
+        if (normExe.endsWith("\\" + withExe)) return true;
+        if (normExe.includes("\\" + withExe + "\\")) return true;
+        if (stem.length >= 4 && normExe.includes(stem)) return true;
       }
+      if (stem === "chatgpt") {
+        if (
+          hay.includes("chatgpt") ||
+          hay.includes("openai.com") ||
+          hay.includes("chat.openai")
+        ) {
+          return true;
+        }
+      }
+      if (stem.length >= GAME_MODE_TITLE_STEM_MIN && hay.includes(stem)) return true;
+      if (
+        stem.length >= 3 &&
+        stem.length < GAME_MODE_TITLE_STEM_MIN &&
+        /^[a-z]+$/.test(stem) &&
+        hayContainsTokenWord(hay, stem)
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
-      cachedProcessOutput = stdout.toLowerCase();
-      lastProcessCheckTime = Date.now();
-      
-      const isRunning = targets.some((target) => cachedProcessOutput.includes(target));
-      resolve(isRunning);
-    });
+function parseForegroundPsOutput(stdout) {
+  let raw = String(stdout || "").replace(/^\uFEFF/, "").trimEnd();
+  if (!raw) return { exe: null, title: "", cmdline: "", bounds: null };
+  const lines = raw.split(/\r?\n/).map((l) => l.trim());
+  const exe = (lines[0] || "").toLowerCase() || null;
+  const title = (lines[1] || "").toLowerCase();
+  const cmdline = (lines[2] || "").toLowerCase();
+  let bounds = null;
+  if (lines[3]) {
+    const parts = lines[3].split(",").map((x) => parseInt(x.trim(), 10));
+    if (
+      parts.length >= 4 &&
+      parts.every((n) => typeof n === "number" && !Number.isNaN(n))
+    ) {
+      bounds = { x: parts[0], y: parts[1], width: parts[2], height: parts[3] };
+    }
+  }
+  return { exe, title, cmdline, bounds };
+}
+
+function getWindowsPowerShellExe() {
+  const root = process.env.SystemRoot || process.env.windir;
+  if (root) {
+    const full = path.join(
+      root,
+      "System32",
+      "WindowsPowerShell",
+      "v1.0",
+      "powershell.exe",
+    );
+    try {
+      if (fs.existsSync(full)) return full;
+    } catch (_) {}
+  }
+  return "powershell.exe";
+}
+
+function getForegroundContextWindows() {
+  return new Promise((resolve) => {
+    const scriptPath = getAssetPath("get-foreground-exe.ps1");
+    try {
+      if (!fs.existsSync(scriptPath)) {
+        diagLog(`[GameMode] missing script ${scriptPath}`);
+        return resolve({ exe: null, title: "", cmdline: "", bounds: null });
+      }
+    } catch (e) {
+      diagLog(`[GameMode] stat script: ${e.message}`);
+      return resolve({ exe: null, title: "", cmdline: "", bounds: null });
+    }
+
+    const ps = getWindowsPowerShellExe();
+    execFile(
+      ps,
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        scriptPath,
+      ],
+      { encoding: "utf8", timeout: 8000, windowsHide: true },
+      (err, stdout, stderr) => {
+        if (err) {
+          diagLog(
+            `[GameMode] get-foreground-exe.ps1 err=${err.message} stderr=${String(stderr || "").slice(0, 200)}`,
+          );
+          return resolve({ exe: null, title: "", cmdline: "", bounds: null });
+        }
+        resolve(parseForegroundPsOutput(stdout));
+      },
+    );
   });
-};
+}
 
-// Main function to decide if we should open
+function isZenithOwnExePath(exeLower) {
+  if (!exeLower) return false;
+  try {
+    const my = path.resolve(app.getPath("exe")).toLowerCase();
+    return path.resolve(exeLower).toLowerCase() === my;
+  } catch (_) {
+    return false;
+  }
+}
+
+/** active-win: exe + título (sem command line nativo). */
+function foregroundMatchesBlockedList(win, tokens) {
+  if (!win || !tokens.length) return false;
+  const ownerPath = ((win.owner && win.owner.path) || "")
+    .toLowerCase()
+    .replace(/\//g, "\\");
+  const wtitle = ((win.title && String(win.title)) || "").toLowerCase();
+  return tokensMatchForeground(ownerPath, wtitle, "", tokens);
+}
+
+// Main function to decide if we should open (atalho global + botão do meio)
 const shouldOpenMenu = async () => {
   if (!gameModeConfig.enabled) return true;
 
-  // 1. Check Fullscreen (Placeholder logic - requires native dependency 'active-win' for accurate results)
-  // For this simulated environment, we skip the actual fullscreen check or user has to add native logic.
-  // if (gameModeConfig.blockFullscreen) { /* check active-win */ }
+  const mode = gameModeConfig.mode === "all" ? "all" : "list";
+  const tokens = parseBlockedAppTokens(gameModeConfig.blockedApps);
 
-  // 2. Check Blocked Apps
-  if (gameModeConfig.blockedApps && gameModeConfig.blockedApps.length > 0) {
-    const isRunning = await isProcessRunning(gameModeConfig.blockedApps);
-    if (isRunning) {
-      console.log("Zenith blocked: Game/Focus mode active.");
+  let activeResult = null;
+  const aw = getActiveWinModule();
+  if (aw) {
+    try {
+      activeResult = await aw();
+    } catch (e) {
+      diagLog(`[GameMode] active-win() failed: ${e.message}`);
+    }
+  }
+
+  let fgCtx = { exe: null, title: "", cmdline: "", bounds: null };
+  if (process.platform === "win32") {
+    fgCtx = await getForegroundContextWindows();
+  }
+
+  if (mode === "all") {
+    if (activeResult && isForegroundWindowFullscreen(activeResult)) {
+      diagLog("[GameMode] Blocked: foreground fullscreen (mode=all)");
       return false;
     }
+    if (
+      process.platform === "win32" &&
+      fgCtx.bounds &&
+      fgCtx.exe &&
+      !isZenithOwnExePath(fgCtx.exe) &&
+      isBoundsFullscreenMonitor(fgCtx.bounds, fgCtx.exe)
+    ) {
+      diagLog("[GameMode] Blocked: foreground fullscreen (mode=all, PS)");
+      return false;
+    }
+    return true;
+  }
+
+  // mode === "list": só bloquear se app da lista em primeiro plano E fullscreen
+  if (tokens.length === 0) return true;
+
+  const listedPs =
+    process.platform === "win32" &&
+    fgCtx.exe &&
+    !isZenithOwnExePath(fgCtx.exe) &&
+    tokensMatchForeground(fgCtx.exe, fgCtx.title, fgCtx.cmdline, tokens);
+  const fullscreenPs =
+    !!fgCtx.bounds &&
+    !!fgCtx.exe &&
+    isBoundsFullscreenMonitor(fgCtx.bounds, fgCtx.exe);
+
+  const listedAw = !!(activeResult && foregroundMatchesBlockedList(activeResult, tokens));
+  const fullscreenAw = !!(activeResult && isForegroundWindowFullscreen(activeResult));
+
+  if ((listedPs && fullscreenPs) || (listedAw && fullscreenAw)) {
+    diagLog(
+      `[GameMode] Blocked: listed app fullscreen (ps=${!!(listedPs && fullscreenPs)} aw=${!!(listedAw && fullscreenAw)})`,
+    );
+    return false;
   }
 
   return true;
@@ -1188,6 +1470,16 @@ app.whenReady().then(async () => {
       if (typeof fc.enableMouseTrigger === "boolean") {
         cachedRadialFlags.enableMouseTrigger = fc.enableMouseTrigger;
       }
+      const ui = extractUiConfigFromPersistenceBlob(fc);
+      if (ui) {
+        if (typeof ui.performanceMode === "boolean") {
+          cachedRadialFlags.performanceMode = ui.performanceMode;
+        }
+        if (typeof ui.enableMouseTrigger === "boolean") {
+          cachedRadialFlags.enableMouseTrigger = ui.enableMouseTrigger;
+        }
+        mergeGameModeConfig(ui.gameMode);
+      }
     }
   } catch (_) {}
 
@@ -1261,28 +1553,48 @@ app.whenReady().then(async () => {
     return null;
   });
 
-  ipcMain.on("save-full-config", (_event, config) => {
-    saveFullConfigToDisk(config);
-    if (config && typeof config === "object") {
-      if (typeof config.performanceMode === "boolean") {
-        cachedRadialFlags.performanceMode = config.performanceMode;
+  ipcMain.on("save-full-config", (_event, payload) => {
+    saveFullConfigToDisk(payload);
+    if (payload && typeof payload === "object") {
+      if (typeof payload.performanceMode === "boolean") {
+        cachedRadialFlags.performanceMode = payload.performanceMode;
       }
-      if (typeof config.enableMouseTrigger === "boolean") {
-        cachedRadialFlags.enableMouseTrigger = config.enableMouseTrigger;
+      if (typeof payload.enableMouseTrigger === "boolean") {
+        cachedRadialFlags.enableMouseTrigger = payload.enableMouseTrigger;
+      }
+      const ui = extractUiConfigFromPersistenceBlob(payload);
+      if (ui) {
+        if (typeof ui.performanceMode === "boolean") {
+          cachedRadialFlags.performanceMode = ui.performanceMode;
+        }
+        if (typeof ui.enableMouseTrigger === "boolean") {
+          cachedRadialFlags.enableMouseTrigger = ui.enableMouseTrigger;
+        }
+        mergeGameModeConfig(ui.gameMode);
       }
       syncMouseHookState();
     }
   });
 
   /** Synchronous IPC so the renderer can flush to disk before process exit (notes, etc.). */
-  ipcMain.on("save-full-config-sync", (_event, config) => {
-    saveFullConfigToDisk(config);
-    if (config && typeof config === "object") {
-      if (typeof config.performanceMode === "boolean") {
-        cachedRadialFlags.performanceMode = config.performanceMode;
+  ipcMain.on("save-full-config-sync", (_event, payload) => {
+    saveFullConfigToDisk(payload);
+    if (payload && typeof payload === "object") {
+      if (typeof payload.performanceMode === "boolean") {
+        cachedRadialFlags.performanceMode = payload.performanceMode;
       }
-      if (typeof config.enableMouseTrigger === "boolean") {
-        cachedRadialFlags.enableMouseTrigger = config.enableMouseTrigger;
+      if (typeof payload.enableMouseTrigger === "boolean") {
+        cachedRadialFlags.enableMouseTrigger = payload.enableMouseTrigger;
+      }
+      const ui = extractUiConfigFromPersistenceBlob(payload);
+      if (ui) {
+        if (typeof ui.performanceMode === "boolean") {
+          cachedRadialFlags.performanceMode = ui.performanceMode;
+        }
+        if (typeof ui.enableMouseTrigger === "boolean") {
+          cachedRadialFlags.enableMouseTrigger = ui.enableMouseTrigger;
+        }
+        mergeGameModeConfig(ui.gameMode);
       }
       syncMouseHookState();
     }
@@ -2214,9 +2526,11 @@ app.whenReady().then(async () => {
               mmbMenuDebounceTimer = null;
             }
             mmbFirstDownAt = now;
-            mmbMenuDebounceTimer = setTimeout(() => {
+            mmbMenuDebounceTimer = setTimeout(async () => {
               mmbMenuDebounceTimer = null;
               mmbFirstDownAt = 0;
+              const allowed = await shouldOpenMenu();
+              if (!allowed) return;
               showMenuAtCursor("mmb");
             }, MMB_MENU_DEBOUNCE_MS);
           }
@@ -2269,9 +2583,9 @@ app.whenReady().then(async () => {
   }
 });
 
-// IPC: Recebe atualização de configuração do Game Mode
-ipcMain.on("set-game-mode", (event, config) => {
-  gameModeConfig = config;
+// IPC: Renderer atualiza modo jogo (também hidratamos de config-v2.json no arranque / save-full-config)
+ipcMain.on("set-game-mode", (_event, gm) => {
+  mergeGameModeConfig(gm);
 });
 
 // Helper function to escape command strings for Windows
@@ -3443,7 +3757,11 @@ ipcMain.on("quit-app", () => {
 
     // Clear internal caches
     iconCache.clear();
-    gameModeConfig = { enabled: false, blockFullscreen: true, blockedApps: "" };
+    gameModeConfig = {
+      enabled: false,
+      mode: "list",
+      blockedApps: "",
+    };
 
     diagLog("[Reset] Configuration reset completed. Restarting...");
 

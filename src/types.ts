@@ -125,8 +125,7 @@ export interface Coordinates {
 
 export interface GameModeConfig {
   enabled: boolean;
-  mode: "all" | "list"; // New: 'all' to block on any fullscreen, 'list' for specific apps
-  blockFullscreen: boolean;
+  mode: "all" | "list"; // 'all' = qualquer app fullscreen; 'list' = só apps da lista em fullscreen
   blockedApps: string;
 }
 

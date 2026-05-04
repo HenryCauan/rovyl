@@ -243,8 +243,7 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   clockPosition: "top-center",
   gameMode: {
     enabled: false,
-    mode: "list", // Default to list mode
-    blockFullscreen: true,
+    mode: "list",
     blockedApps: "csgo.exe, valorant.exe, dota2.exe, overwatch.exe",
   },
   globalShortcut: "Alt+Z",

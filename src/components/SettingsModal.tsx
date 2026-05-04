@@ -2505,24 +2505,112 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
     );
 });
 
-/** Process token for game-mode blocking (substring match vs tasklist on Windows). */
+/** Token para modo jogo: último segmento antes de espaço vira nome.exe (Store: openai.chatgpt - desktop_… → chatgpt.exe). */
 function exeTokenForGameModeBlock(rawPath: string): string | null {
     const path = rawPath.trim();
     if (!path || /^https?:\/\//i.test(path)) return null;
     const normalized = path.replace(/\\/g, '/');
     const parts = normalized.split('/');
     const base = parts[parts.length - 1] || path;
-    const b = base.trim().toLowerCase();
+    let b = base.trim().toLowerCase();
     if (!b) return null;
     if (b.endsWith('.exe') || b.endsWith('.msc')) return b;
+    // IDs tipo package (OpenAI.ChatGPT_8wekyb3d8bbwe / "openai.chatgpt - desktop_…")
+    const head = b.split(/\s+/)[0];
+    const dotParts = head.split('.').filter((p) => /^[a-z0-9]+$/i.test(p));
+    const lastSeg = dotParts.length ? dotParts[dotParts.length - 1] : '';
+    if (lastSeg && lastSeg.length >= 3 && head.includes('.')) {
+        return `${lastSeg}.exe`;
+    }
     if (b.includes('.')) return b;
     return `${b}.exe`;
+}
+
+function sanitizeGameModePickerLabel(name: string): string {
+    return name.replace(/\s+/g, ' ').trim();
+}
+
+/** .exe com nome opaco (hash / Unicode tipo instaladores Store/PWA). */
+function opaqueExeBasename(base: string): boolean {
+    const stem = base.replace(/\.exe$/i, '').trim();
+    if (!stem) return false;
+    if (/[^\x00-\x7F]/.test(stem)) return true;
+    const hexish = /^[a-f0-9._-]+$/i.test(stem) && stem.replace(/[^a-f0-9]/gi, '').length >= 10;
+    if (hexish) return true;
+    if (stem.length >= 14 && /\d{3,}/.test(stem)) return true;
+    return false;
+}
+
+/** Palavras e junção para bater no título quando o .exe não é legível (ex.: Zen Browser). */
+function stemsFromPickerDisplayName(name: string): string[] {
+    const words = name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+    const out = new Set<string>();
+    for (const w of words) {
+        if (w.length >= 3) out.add(w);
+    }
+    const joined = words.join('');
+    if (joined.length >= 5) out.add(joined);
+    return [...out];
+}
+
+/**
+ * Segmento CSV: `match1|match2::Nome visível`. Backend ignora `::` e usa OR entre matches.
+ * Apps com .exe ilegível também recebem stems do nome escolhido no picker (zen, zenbrowser, …).
+ */
+function buildGameModeBlockedCsvSegment(app: { name: string; path: string }): string | null {
+    const label = sanitizeGameModePickerLabel(app.name);
+    const tokenFromPath = exeTokenForGameModeBlock(app.path);
+    if (!tokenFromPath) return null;
+
+    const normalized = app.path.trim().replace(/\\/g, '/');
+    const pathParts = normalized.split('/');
+    const baseRaw = (pathParts[pathParts.length - 1] || app.path).trim().toLowerCase();
+
+    const specs = new Set<string>();
+    specs.add(tokenFromPath.toLowerCase());
+
+    const looksOpaque =
+        opaqueExeBasename(baseRaw) ||
+        opaqueExeBasename(tokenFromPath) ||
+        opaqueExeBasename(tokenFromPath.replace(/\s+/g, ''));
+
+    if (looksOpaque && label) {
+        for (const s of stemsFromPickerDisplayName(label)) {
+            specs.add(s);
+            if (/^[a-z]{3,}$/i.test(s)) specs.add(`${s}.exe`);
+        }
+    }
+
+    const matchPart = [...specs].join('|');
+    if (!label) return matchPart;
+    return `${matchPart}::${label}`;
+}
+
+type BlockedGameModeRow = { raw: string; label: string };
+
+function parseBlockedGameModeRows(csv: string): BlockedGameModeRow[] {
+    return (csv || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((raw) => {
+            const idx = raw.indexOf('::');
+            if (idx === -1) return { raw, label: raw };
+            const matchHint = raw.slice(0, idx).trim();
+            const label = raw.slice(idx + 2).trim() || matchHint;
+            return { raw, label };
+        });
 }
 
 const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig: (c: any) => void }) => {
     const [gameBlockPickerOpen, setGameBlockPickerOpen] = useState(false);
 
-    const blockedTokens = useMemo(
+    const blockedRows = useMemo(
+        () => parseBlockedGameModeRows(config.gameMode?.blockedApps || ''),
+        [config.gameMode?.blockedApps],
+    );
+
+    const blockedRawSegments = useMemo(
         () =>
             (config.gameMode?.blockedApps || '')
                 .split(',')
@@ -2531,30 +2619,30 @@ const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setCo
         [config.gameMode?.blockedApps],
     );
 
-    const setBlockedAppsList = (tokens: string[]) => {
+    const setBlockedAppsList = (segments: string[]) => {
         setConfig({
             ...config,
-            gameMode: { ...config.gameMode, blockedApps: tokens.join(', ') },
+            gameMode: { ...config.gameMode, blockedApps: segments.join(', ') },
         });
     };
 
-    const addBlockedToken = (token: string) => {
-        const t = token.toLowerCase();
-        if (!t) return;
-        if (blockedTokens.some((x) => x.toLowerCase() === t)) return;
-        setBlockedAppsList([...blockedTokens, t]);
+    const addBlockedSegment = (segment: string) => {
+        const s = segment.trim();
+        if (!s) return;
+        if (blockedRawSegments.some((x) => x.toLowerCase() === s.toLowerCase())) return;
+        setBlockedAppsList([...blockedRawSegments, s]);
     };
 
-    const removeBlockedToken = (token: string) => {
-        setBlockedAppsList(blockedTokens.filter((x) => x !== token));
+    const removeBlockedSegment = (rawSegment: string) => {
+        setBlockedAppsList(blockedRawSegments.filter((x) => x !== rawSegment));
     };
 
     const onBlockedAppSelected = (app: { name: string; path: string; type?: 'app' | 'url' | 'folder' }) => {
         setGameBlockPickerOpen(false);
         if (app.type === 'url' || app.type === 'folder') return;
-        const token = exeTokenForGameModeBlock(app.path);
-        if (!token) return;
-        addBlockedToken(token);
+        const segment = buildGameModeBlockedCsvSegment(app);
+        if (!segment) return;
+        addBlockedSegment(segment);
     };
 
     return (
@@ -2649,66 +2737,55 @@ const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setCo
                                             animate={{ opacity: 1, height: 'auto' }}
                                             className="space-y-4 pt-6 border-t border-white/5"
                                         >
-                                            <div className="flex items-center justify-between">
-                                                <label className="text-[10px] font-semibold text-white/20 uppercase tracking-[0.15em] ml-1">{getTranslation(config, 'gamemode.blocking_rules')}</label>
-                                                <button
-                                                    onClick={() => setConfig({ ...config, gameMode: { ...config.gameMode, blockFullscreen: !config.gameMode?.blockFullscreen } })}
-                                                    className={`text-[10px] font-semibold uppercase tracking-widest px-4 py-2 rounded-lg transition-all border ${config.gameMode?.blockFullscreen ? 'bg-white/10 border-white/20 text-white' : 'bg-transparent border-white/5 text-white/20'}`}
-                                                >
-                                                    {getTranslation(config, 'gamemode.detect_fullscreen')}: {config.gameMode?.blockFullscreen ? getTranslation(config, 'gamemode.on') : getTranslation(config, 'gamemode.off')}
-                                                </button>
-                                            </div>
-
-                                            {!config.gameMode?.blockFullscreen && (
-                                                <motion.div
-                                                    initial={{ opacity: 0, height: 0 }}
-                                                    animate={{ opacity: 1, height: 'auto' }}
-                                                    className="mt-6 pt-6 border-t border-white/5 space-y-3"
-                                                >
-                                                    <label className="text-[10px] font-semibold text-white/20 uppercase tracking-[0.2em] block ml-1">{getTranslation(config, 'gamemode.process_list')}</label>
-                                                    <p className="text-[11px] text-white/30 leading-relaxed ml-1 mb-3">
-                                                        {getTranslation(config, 'gamemode.block_list_hint')}
-                                                    </p>
-                                                    <div className="flex flex-wrap gap-2 min-h-[2.25rem] items-start">
-                                                        {blockedTokens.length === 0 ? (
-                                                            <span className="text-xs text-white/25 py-1">{getTranslation(config, 'gamemode.no_blocked_apps')}</span>
-                                                        ) : (
-                                                            blockedTokens.map((token) => (
-                                                                <span
-                                                                    key={token}
-                                                                    className="inline-flex items-center gap-1 pl-3 pr-1 py-1.5 rounded-lg bg-black/50 border border-white/10 text-[11px] font-mono text-white/85"
+                                            <motion.div
+                                                initial={{ opacity: 0, height: 0 }}
+                                                animate={{ opacity: 1, height: 'auto' }}
+                                                className="space-y-3"
+                                            >
+                                                <label className="text-[10px] font-semibold text-white/20 uppercase tracking-[0.2em] block ml-1">{getTranslation(config, 'gamemode.process_list')}</label>
+                                                <p className="text-[11px] text-white/30 leading-relaxed ml-1 mb-3">
+                                                    {getTranslation(config, 'gamemode.block_list_hint_list_only')}
+                                                </p>
+                                                <div className="flex flex-wrap gap-2 min-h-[2.25rem] items-start">
+                                                    {blockedRows.length === 0 ? (
+                                                        <span className="text-xs text-white/25 py-1">{getTranslation(config, 'gamemode.no_blocked_apps')}</span>
+                                                    ) : (
+                                                        blockedRows.map((row) => (
+                                                            <span
+                                                                key={row.raw}
+                                                                title={row.raw}
+                                                                className="inline-flex items-center gap-1 pl-3 pr-1 py-1.5 rounded-lg bg-black/50 border border-white/10 text-[11px] font-medium text-white/85 tracking-tight max-w-[min(100%,14rem)]"
+                                                            >
+                                                                <span className="truncate">{row.label}</span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => removeBlockedSegment(row.raw)}
+                                                                    className="p-1 rounded-md hover:bg-white/10 text-white/40 hover:text-white transition-colors shrink-0"
+                                                                    aria-label={getTranslation(config, 'action.remove') || 'Remove'}
                                                                 >
-                                                                    {token}
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => removeBlockedToken(token)}
-                                                                        className="p-1 rounded-md hover:bg-white/10 text-white/40 hover:text-white transition-colors"
-                                                                        aria-label={getTranslation(config, 'action.remove') || 'Remove'}
-                                                                    >
-                                                                        <X size={12} />
-                                                                    </button>
-                                                                </span>
-                                                            ))
-                                                        )}
-                                                    </div>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setGameBlockPickerOpen(true)}
-                                                        className="mt-2 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.12] border border-white/10 text-[12px] font-semibold text-white/90 transition-colors"
-                                                    >
-                                                        <Plus size={16} strokeWidth={2.5} />
-                                                        {getTranslation(config, 'gamemode.add_blocked_app')}
-                                                    </button>
-                                                    <AppSelector
-                                                        isOpen={gameBlockPickerOpen}
-                                                        onClose={() => setGameBlockPickerOpen(false)}
-                                                        onAppSelect={onBlockedAppSelected}
-                                                        appsOnly
-                                                        title={getTranslation(config, 'gamemode.pick_app_title')}
-                                                        subtitle={getTranslation(config, 'gamemode.pick_app_subtitle')}
-                                                    />
-                                                </motion.div>
-                                            )}
+                                                                    <X size={12} />
+                                                                </button>
+                                                            </span>
+                                                        ))
+                                                    )}
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setGameBlockPickerOpen(true)}
+                                                    className="mt-2 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.12] border border-white/10 text-[12px] font-semibold text-white/90 transition-colors"
+                                                >
+                                                    <Plus size={16} strokeWidth={2.5} />
+                                                    {getTranslation(config, 'gamemode.add_blocked_app')}
+                                                </button>
+                                                <AppSelector
+                                                    isOpen={gameBlockPickerOpen}
+                                                    onClose={() => setGameBlockPickerOpen(false)}
+                                                    onAppSelect={onBlockedAppSelected}
+                                                    appsOnly
+                                                    title={getTranslation(config, 'gamemode.pick_app_title_fullscreen')}
+                                                    subtitle={getTranslation(config, 'gamemode.pick_app_subtitle')}
+                                                />
+                                            </motion.div>
                                         </motion.div>
                                     )}
                                 </div>

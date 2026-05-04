@@ -7,7 +7,7 @@
   "description": "Menu Radial Zenith",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && node scripts/verify-radial-windowing.mjs",
+    "build": "tsc && vite build && node scripts/verify-radial-windowing.mjs && node scripts/generate-win-icon.mjs",
     "electron": "wait-on tcp:5173 && cross-env NODE_ENV=development node scripts/launch-electron.js",
     "start": "concurrently -k \"npm run dev\" \"npm run electron\"",
     "dist": "npm run build && electron-builder",
@@ -32,6 +32,7 @@
     "cross-env": "^7.0.3",
     "electron": "^28.3.3",
     "electron-builder": "^24.9.1",
+    "png-to-ico": "^3.0.1",
     "typescript": "^5.2.2",
     "vite": "^5.0.0",
     "wait-on": "^7.1.0"
@@ -49,7 +50,8 @@
     "asarUnpack": [
       "backend/*.ps1",
       "resources/bin/**/*",
-      "node_modules/sql.js/dist/sql-wasm.wasm"
+      "node_modules/sql.js/dist/sql-wasm.wasm",
+      "node_modules/active-win/**/*"
     ],
     "directories": {
       "output": "build-out"
@@ -59,7 +61,7 @@
         "nsis",
         "portable"
       ],
-      "icon": "public/icon.png",
+      "icon": "build/icon.ico",
       "signAndEditExecutable": false
     },
     "nsis": {

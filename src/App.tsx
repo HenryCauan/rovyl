@@ -603,7 +603,15 @@ export default function App() {
 
       if (finalData) {
         if (finalData.apps) nextApps = finalData.apps;
-        if (finalData.config) nextConfig = finalData.config;
+        if (finalData.config) {
+          nextConfig = {
+            ...finalData.config,
+            gameMode: {
+              ...DEFAULT_UI_CONFIG.gameMode,
+              ...(finalData.config.gameMode || {}),
+            },
+          };
+        }
       }
 
       const mainWs = nextConfig.workspaces.find(
@@ -759,6 +767,17 @@ export default function App() {
       }
     };
   }, []);
+
+  /** Modo jogo vive no main (`shouldOpenMenu`); antes só mandávamos IPC na montagem — antes do config carregar do disco. */
+  useEffect(() => {
+    if (!window.electron?.setGameMode || !isLoaded) return;
+    window.electron.setGameMode(config.gameMode ?? DEFAULT_UI_CONFIG.gameMode);
+  }, [
+    isLoaded,
+    config.gameMode?.enabled,
+    config.gameMode?.mode,
+    config.gameMode?.blockedApps,
+  ]);
 
   // 2. UNIFIED SAVE EFFECT: Sync to Main Process and LocalStorage (disk + LS mirror survives reboot)
   useEffect(() => {
@@ -1343,7 +1362,6 @@ export default function App() {
   useEffect(() => {
     const hasRunBefore = localStorage.getItem('zenith_first_run_complete');
     if (window.electron) {
-      if (configRef.current.gameMode) window.electron.setGameMode(configRef.current.gameMode);
       flushSync(() => {
         setIsDesktopMode(true);
         if (!hasRunBefore) {

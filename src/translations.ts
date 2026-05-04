@@ -466,7 +466,9 @@ export const translations: Record<Language, Record<string, string>> = {
     "gamemode.add_blocked_app": "Adicionar aplicativo",
     "gamemode.no_blocked_apps": "Nenhum app selecionado.",
     "gamemode.block_list_hint": "Escolha apps instalados (mesma lista dos atalhos). Enquanto o processo estiver aberto, o menu radial não aparece.",
+    "gamemode.block_list_hint_list_only": "O radial não abre quando um destes apps está em primeiro plano em fullscreen. Em browsers, o .exe é o do navegador; o nome do site entra pelo título ou URL — use o seletor (ex.: ChatGPT → chatgpt.exe).",
     "gamemode.pick_app_title": "Bloquear enquanto estiver aberto",
+    "gamemode.pick_app_title_fullscreen": "Escolher app (fullscreen)",
     "gamemode.pick_app_subtitle": "Selecione um executável na lista",
 
     "appSelection.title": "Adicionar ao Espaço",
@@ -995,7 +997,9 @@ export const translations: Record<Language, Record<string, string>> = {
     "gamemode.add_blocked_app": "Add application",
     "gamemode.no_blocked_apps": "No apps selected yet.",
     "gamemode.block_list_hint": "Pick from installed apps (same as shortcuts). While that process is running, the radial menu stays hidden.",
+    "gamemode.block_list_hint_list_only": "The radial stays hidden when a listed app is focused and fullscreen. In browsers the process is the browser .exe; the site is matched via window title or URL — pick e.g. ChatGPT from the list to add chatgpt.exe.",
     "gamemode.pick_app_title": "Block while running",
+    "gamemode.pick_app_title_fullscreen": "Pick app (fullscreen)",
     "gamemode.pick_app_subtitle": "Choose an executable from the list",
 
     "appSelection.title": "Add to Workspace",
