@@ -131,6 +131,15 @@ contextBridge.exposeInMainWorld("electron", {
     }
   },
   getFullConfig: () => ipcRenderer.invoke("get-full-config"),
+  getConfigPersistenceMeta: () =>
+    ipcRenderer.invoke("get-config-persistence-meta"),
+  onBeforeQuitFlush: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on("zenith-before-quit-flush", listener);
+    return () =>
+      ipcRenderer.removeListener("zenith-before-quit-flush", listener);
+  },
+  ackQuitFlush: () => ipcRenderer.send("zenith-quit-flush-ack"),
   exportConfig: () => ipcRenderer.invoke("export-config"),
   importConfig: () => ipcRenderer.invoke("import-config"),
   getAppRecents: (appName, appCommand) =>

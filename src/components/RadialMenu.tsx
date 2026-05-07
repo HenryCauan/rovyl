@@ -177,7 +177,7 @@ const RadialMenuItem = React.memo(({
   }, [app.command, app.label, app.iconSource, app.customIconUrl]);
 
   // Fast stagger: max 50ms total across all items for near-instant bloom (skip stagger in performance mode)
-  const maxDelay = 0.05;
+  const maxDelay = 0.032;
   const staggerDelay = performanceMode
     ? 0
     : Math.min((index / Math.max(totalApps, 1)) * maxDelay, maxDelay);
@@ -197,12 +197,12 @@ const RadialMenuItem = React.memo(({
       exit={{ scale: 0, opacity: 0, transition: { duration: 0.1 } }}
       transition={
         performanceMode
-          ? { duration: 0.12, ease: 'easeOut', delay: isOpen ? staggerDelay : 0 }
+          ? { duration: 0.1, ease: 'easeOut', delay: isOpen ? staggerDelay : 0 }
           : {
               type: 'spring',
-              stiffness: 400,
-              damping: 25,
-              mass: 0.8,
+              stiffness: 520,
+              damping: 28,
+              mass: 0.72,
               delay: isOpen ? staggerDelay : 0,
             }
       }
@@ -229,13 +229,11 @@ const RadialMenuItem = React.memo(({
             className={`
               w-full h-full rounded-2xl flex items-center justify-center overflow-hidden
               transition-colors duration-200 relative
-              ${isActive ? 'shadow-[0_0_25px_rgba(255,255,255,0.15)]' : ''}
             `}
             style={{
               backgroundColor: isActive ? accentColor : `rgba(${18 + Math.round(backdropOpacity * 12)}, ${18 + Math.round(backdropOpacity * 12)}, ${20 + Math.round(backdropOpacity * 12)}, 0.85)`,
               border: isActive ? `1px solid ${accentColor}` : `1px solid rgba(255,255,255,${0.08 + backdropOpacity * 0.06})`,
               color: isActive ? '#000' : '#fff',
-              boxShadow: !isActive ? `0 2px 12px rgba(0,0,0,0.3)` : undefined
             }}
           >
             {/* Icon Container: Show either native icon OR vector icon, not both */}
@@ -1130,16 +1128,10 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
         ? 'flex flex-wrap items-center justify-end gap-x-5 gap-y-2 w-full'
         : 'flex flex-wrap items-center justify-start gap-x-5 gap-y-2 w-full';
 
-  /** Without acrylic/blur (performance mode), the radial overlay used to fade to transparent at the edges — too much of the desktop showed through. Stronger full-screen dimming while respecting `backdropOpacity`. */
+  /** Fundo uniforme — gradientes radiais antigos criavam um “anel” mais claro à volta do menu. */
   const bo = config.backdropOpacity;
-  const perf = config.performanceMode;
-  const perfRadialEdge = perf ? Math.min(0.92, 0.2 + bo * 0.72) : 0;
-  const overlayFullscreen = perf
-    ? `radial-gradient(circle at center, rgba(0, 0, 0, ${0.05 + bo * 0.3 + 0.1 + bo * 0.08}) 0%, rgba(0, 0, 0, ${0.2 + bo * 0.5 + 0.14 + bo * 0.1}) 100%)`
-    : `radial-gradient(circle at center, rgba(0, 0, 0, ${0.05 + bo * 0.3}) 0%, rgba(0, 0, 0, ${0.2 + bo * 0.5}) 100%)`;
-  const overlayRadial = perf
-    ? `radial-gradient(circle at ${position.x}px ${position.y}px, rgba(0, 0, 0, ${0.18 + bo * 0.82}) 0%, rgba(0, 0, 0, ${0.08 + bo * 0.38}) ${config.menuRadius * 2.0}px, rgba(0, 0, 0, ${perfRadialEdge}) 100%)`
-    : `radial-gradient(circle at ${position.x}px ${position.y}px, rgba(0, 0, 0, ${0.15 + bo * 0.8}) 0%, rgba(0, 0, 0, ${0.05 + bo * 0.35}) ${config.menuRadius * 2.0}px, rgba(0, 0, 0, 0) 100%)`;
+  const overlayAlpha = Math.min(0.88, 0.3 + bo * 0.58);
+  const overlayDim = `rgba(0, 0, 0, ${overlayAlpha})`;
 
   return (
     <motion.div
@@ -1157,33 +1149,16 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       }}
     >
         <>
-          {/* Layer 1: Acrylic Desktop Blur (only CSS can't blur the desktop in Electron) */}
-          {config.backdropBlur > 0 && !config.performanceMode && (
-            <motion.div
-              key="blur-vignette"
-              initial={false}
-              animate={{ opacity: isOpen ? 1 : 0 }}
-              className="fixed inset-0 z-[1] pointer-events-none"
-              style={{
-                // Vignette mask: transparent in the center so the Acrylic blur is visible,
-                // dark at the edges to hide the white border that native Acrylic creates.
-                background: config.menuBackgroundStyle === 'fullscreen'
-                  ? `radial-gradient(circle at center, transparent 0%, rgba(0,0,0,0.55) 60%, rgba(0,0,0,0.85) 100%)`
-                  : `radial-gradient(circle at ${position.x}px ${position.y}px, transparent 0%, transparent ${config.menuRadius * 1.2}px, rgba(0,0,0,0.65) ${config.menuRadius * 3}px, rgba(0,0,0,0.9) 100%)`,
-              }}
-            />
-          )}
-
-          {/* Layer 2: Color/Gradient Overlay (Opacity controlled by Slider) — Airier */}
+          {/* Escurecimento único (sem máscara radial — evita halo / “luz” à volta do radial) */}
           <motion.div
             initial={false}
             animate={{ opacity: isOpen ? 1 : 0 }}
-            transition={{ duration: isOpen ? 0.25 : 0.12, ease: 'easeOut' }}
+            transition={{ duration: isOpen ? 0.18 : 0.1, ease: 'easeOut' }}
             className="fixed inset-0 z-[2]"
             style={{
               pointerEvents: isOpen ? 'auto' : 'none',
-              background: config.menuBackgroundStyle === 'fullscreen' ? overlayFullscreen : overlayRadial,
-              willChange: 'opacity'
+              background: overlayDim,
+              willChange: 'opacity',
             }}
           />
 
@@ -1323,8 +1298,8 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
           <motion.div
             ref={menuRef}
             initial={false}
-            animate={{ opacity: isOpen ? 1 : 0, scale: isOpen ? 1 : 0.8 }}
-            transition={{ type: 'spring', damping: 24, stiffness: 350, mass: 0.8 }}
+            animate={{ opacity: isOpen ? 1 : 0, scale: isOpen ? 1 : 0.92 }}
+            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
             style={{
               left: Math.round(position.x),
               top: Math.round(position.y),
@@ -1345,7 +1320,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
                 transition-all duration-300 pointer-events-auto cursor-pointer
                 ${isCenterActive
                   ? 'text-black border-2'
-                  : 'bg-[#0D0D0D] border border-white/10 text-white/50 shadow-lg'
+                  : 'bg-[#0D0D0D] border border-white/10 text-white/50'
                 }
               `}
               style={{
@@ -1353,17 +1328,16 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
                 height: `${Math.round(actualIconSize * 1.2)}px`,
                 backgroundColor: isCenterActive ? config.accentColor : undefined,
                 borderColor: isCenterActive ? config.accentColor : undefined,
-                boxShadow: isCenterActive ? `0 0 50px ${config.accentColor}66` : undefined,
                 willChange: 'transform, opacity, background-color'
               }}
               initial={{ x: '-50%', y: '-50%', scale: 1, opacity: 1 }}
               animate={{
-                scale: isCenterActive ? 1.12 : 1,
+                scale: isCenterActive ? 1.06 : 1,
                 opacity: 1,
                 x: '-50%',
                 y: '-50%'
               }}
-              transition={{ type: 'spring', damping: 20, stiffness: 250, mass: 0.8 }}
+              transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
               onMouseDown={(e) => e.stopPropagation()}
               onMouseUp={(e) => e.stopPropagation()}
               onClick={(e) => {

@@ -136,6 +136,8 @@ export interface Workspace {
   hotkey: number; // 1-9
   enabled: boolean;
   color?: string; // Optional project/workspace color
+  /** Ícone Lucide na roda inicial quando `workspaceSwitchMode === 'picker'`. Omite → Layers. */
+  pickerIconName?: string;
 }
 
 export interface UIConfig {
@@ -216,6 +218,8 @@ export interface ElectronAPI {
       x: number;
       y: number;
       source?: "mmb" | "shortcut";
+      /** True quando o main já aplicou fullscreen — evita segundo `applyWindowSize` no renderer. */
+      preSizedByMain?: boolean;
     }) => void,
   ) => () => void;
   /** Antes de abrir o radial a partir do main — cobrir frame antigo (ex.: dashboard ao restaurar). */
@@ -317,6 +321,14 @@ export interface ElectronAPI {
   /** Synchronous save to disk (Electron); use before exit so notes persist across reboot. */
   saveFullConfigSync?: (config: any) => void;
   getFullConfig: () => Promise<any>;
+  /** Sizes of config-v2.json (+ .bak) on disk — used to avoid overwriting real data when load fails. */
+  getConfigPersistenceMeta?: () => Promise<{
+    primaryBytes: number;
+    backupBytes: number;
+  }>;
+  /** Main is quitting — flush persistence synchronously then call ackQuitFlush. */
+  onBeforeQuitFlush?: (callback: () => void) => () => void;
+  ackQuitFlush?: () => void;
   getAppRecents: (appName: string, appCommand?: string) => Promise<AppItem[]>;
   setWorkspaceShortcutsState: (
     isOpen: boolean,

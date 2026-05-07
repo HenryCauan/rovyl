@@ -34,7 +34,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "tabs.workspaces": "Espaços",
     "tabs.interface": "Interface",
     "tabs.hud": "HUD",
-    "tabs.gamemode": "Jogo",
+    "tabs.gamemode": "Foco",
     "tabs.user": "Perfil",
 
     "sidebar.core": "Núcleo",
@@ -45,7 +45,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "sidebar.visuals": "Visual",
     "sidebar.system": "Sistema",
     "sidebar.hud": "Elementos HUD",
-    "sidebar.gamemode": "Modo Jogo",
+    "sidebar.gamemode": "Proteção de foco",
     "sidebar.profile": "Perfil",
     "sidebar.dashboard": "Painel",
     "sidebar.config_folder": "Pasta de Configuração",
@@ -67,8 +67,9 @@ export const translations: Record<Language, Record<string, string>> = {
     "settings.interface_desc": "Personalize sua interação com o Zenith.",
     "settings.hud_title": "Elementos HUD",
     "settings.hud_desc": "Configure as informações fixas na tela.",
-    "settings.gamemode_title": "Modo Jogo",
-    "settings.gamemode_desc": "Foco total durante suas partidas.",
+    "settings.gamemode_title": "Proteção de foco",
+    "settings.gamemode_desc":
+      "Impede que o menu radial e overlays do Zenith apareçam quando estás concentrado em jogos ou apps em ecrã inteiro — sem interrupções visuais no momento errado.",
     "settings.user_title": "Perfil de Usuário",
     "settings.user_desc": "Gerencie sua identidade digital.",
 
@@ -141,10 +142,20 @@ export const translations: Record<Language, Record<string, string>> = {
     "workspaces.switch_mode": "Alternância de espaços no menu radial",
     "workspaces.switch_mode_hotkeys": "Teclas 1–9",
     "workspaces.switch_mode_hotkeys_hint":
-      "Com o menu aberto, use os números ou a roda do rato para mudar de espaço.",
+      "Com o menu radial aberto, mudas de espaço de forma imediata com as teclas 1–9 ou com a roda do rato; em seguida aparecem os atalhos desse espaço.",
     "workspaces.switch_mode_picker": "Escolher espaço na roda",
     "workspaces.switch_mode_picker_hint":
-      "Ao abrir o menu, escolha primeiro o espaço; depois aparecem os atalhos. O botão central volta à lista de espaços (como nas pastas).",
+      "Com o menu radial aberto, escolhes primeiro o espaço na primeira volta da roda; na volta seguinte surgem os atalhos. O botão central regressa à lista de espaços (semelhante a uma pasta).",
+    "workspaces.switch_mode_short": "Troca de espaço",
+    "workspaces.switch_mode_compact_hint":
+      "A alteração aplica-se logo. Recolhe este painel pelo controlo acima quando terminares.",
+    "workspaces.picker_wheel_icon": "Ícone no seletor da roda",
+    "workspaces.picker_wheel_icon_hint":
+      "Ícone exibido no primeiro anel do menu radial quando o modo «Escolher espaço na roda» está ativado.",
+    "workspaces.picker_wheel_icon_open": "Definir ícone",
+    "workspaces.picker_wheel_icon_modal_title": "Ícone do espaço na roda",
+    "workspaces.picker_wheel_icon_modal_description":
+      "Selecione o símbolo que identifica este espaço na roda. Cada espaço pode ter um ícone próprio para reconhecimento imediato.",
     "workspaces.root_cluster": "Cluster Raiz",
     "workspaces.back_to_workspaces": "Voltar para Espaços",
     "workspaces.confirm_delete": "Excluir permanentemente este espaço?",
@@ -452,24 +463,34 @@ export const translations: Record<Language, Record<string, string>> = {
     "hud.island_label_pom": "POM",
     "hud.island_label_stop": "STW",
 
-    "gamemode.operational_logic": "Lógica Operacional",
-    "gamemode.stealth_mode": "Modo Stealth",
-    "gamemode.isolation_strategy": "Estratégia de Isolamento",
-    "gamemode.always_absolute": "Sempre Absoluto",
+    "gamemode.operational_logic": "Controlo principal",
+    "gamemode.stealth_mode": "Ocultar Zenith durante foco em ecrã inteiro",
+    "gamemode.primary_caption":
+      "Quando ativo, o menu radial não é mostrado sobre aplicações em fullscreen — para não sobrepor jogos, vídeo ou apresentações.",
+    "gamemode.isolation_strategy": "Âmbito da proteção",
+    "gamemode.scope_intro":
+      "Define se o Zenith se mantém discreto para qualquer app em fullscreen ou apenas quando uma aplicação da tua lista está em primeiro plano.",
+    "gamemode.always_absolute": "Qualquer app em fullscreen",
+    "gamemode.mode_all_summary":
+      "Regra simples: sempre que uma janela estiver em ecrã inteiro, o radial permanece oculto.",
     "gamemode.safety_buffer": "Buffer de Segurança",
-    "gamemode.targeted_list": "Lista direcionada",
+    "gamemode.targeted_list": "Apenas apps escolhidos",
+    "gamemode.mode_list_summary":
+      "O radial só fica oculto quando uma das apps desta lista está em primeiro plano e em fullscreen.",
     "gamemode.blocking_rules": "Regras de bloqueio",
     "gamemode.detect_fullscreen": "Detectar tela cheia",
     "gamemode.on": "Sim",
     "gamemode.off": "Não",
-    "gamemode.process_list": "Jogos e apps alvo",
-    "gamemode.add_blocked_app": "Adicionar aplicativo",
-    "gamemode.no_blocked_apps": "Nenhum app selecionado.",
-    "gamemode.block_list_hint": "Escolha apps instalados (mesma lista dos atalhos). Enquanto o processo estiver aberto, o menu radial não aparece.",
-    "gamemode.block_list_hint_list_only": "O radial não abre quando um destes apps está em primeiro plano em fullscreen. Em browsers, o .exe é o do navegador; o nome do site entra pelo título ou URL — use o seletor (ex.: ChatGPT → chatgpt.exe).",
+    "gamemode.process_list": "Lista de aplicações",
+    "gamemode.add_blocked_app": "Adicionar à lista",
+    "gamemode.no_blocked_apps": "Nenhuma aplicação na lista.",
+    "gamemode.block_list_hint":
+      "Escolhe apps instaladas (a mesma biblioteca dos atalhos). Enquanto o processo estiver em execução com as condições definidas, o radial não aparece.",
+    "gamemode.block_list_hint_list_only":
+      "O radial mantém-se oculto quando uma destas aplicações está em primeiro plano e em ecrã inteiro. Em navegadores, o processo é o .exe do browser; o site corresponde pelo título ou URL — escolhe no seletor (ex.: ChatGPT → chatgpt.exe).",
     "gamemode.pick_app_title": "Bloquear enquanto estiver aberto",
-    "gamemode.pick_app_title_fullscreen": "Escolher app (fullscreen)",
-    "gamemode.pick_app_subtitle": "Selecione um executável na lista",
+    "gamemode.pick_app_title_fullscreen": "Escolher aplicação",
+    "gamemode.pick_app_subtitle": "Lista de apps instaladas",
 
     "appSelection.title": "Adicionar ao Espaço",
     "appSelection.description": "Selecione o tipo de entrada",
@@ -505,6 +526,10 @@ export const translations: Record<Language, Record<string, string>> = {
     "editingApp.installed_apps_label": "Apps",
     "editingApp.native_icon": "Ícone do Sistema",
     "editingApp.icon_library": "Biblioteca de Ícones",
+    "iconPicker.search_placeholder": "Buscar ícone…",
+    "iconPicker.no_results": "Nenhum ícone encontrado.",
+    "iconPicker.english_keywords_hint":
+      "Dica: palavras em inglês (work, time, home…) também mostram ícones relacionados pelo significado.",
     "editingApp.preview": "Pré-visualização",
     "editingApp.no_name": "Sem Nome",
     "editingApp.menu_pos": "Posição no Menu",
@@ -571,7 +596,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "tabs.workspaces": "Workspaces",
     "tabs.interface": "Interface",
     "tabs.hud": "HUD",
-    "tabs.gamemode": "Game",
+    "tabs.gamemode": "Focus",
     "tabs.user": "Profile",
 
     "sidebar.core": "Core",
@@ -582,7 +607,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "sidebar.visuals": "Visuals",
     "sidebar.system": "System",
     "sidebar.hud": "HUD Elements",
-    "sidebar.gamemode": "Game Mode",
+    "sidebar.gamemode": "Focus protection",
     "sidebar.profile": "Profile",
     "sidebar.dashboard": "Dashboard",
     "sidebar.config_folder": "Config Folder",
@@ -604,8 +629,9 @@ export const translations: Record<Language, Record<string, string>> = {
     "settings.interface_desc": "Customize your interaction with Zenith.",
     "settings.hud_title": "HUD Elements",
     "settings.hud_desc": "Configure the info shown on screen.",
-    "settings.gamemode_title": "Game Mode",
-    "settings.gamemode_desc": "Full focus during gaming sessions.",
+    "settings.gamemode_title": "Focus protection",
+    "settings.gamemode_desc":
+      "Prevents the radial menu and Zenith overlays from appearing while you are immersed in fullscreen games, video, or presentations — clear screen, no mistimed pop-ups.",
     "settings.user_title": "User Profile",
     "settings.user_desc": "Manage your digital identity.",
 
@@ -678,10 +704,20 @@ export const translations: Record<Language, Record<string, string>> = {
     "workspaces.switch_mode": "Workspace switching in the radial menu",
     "workspaces.switch_mode_hotkeys": "Number keys 1–9",
     "workspaces.switch_mode_hotkeys_hint":
-      "With the menu open, use number keys or the mouse wheel to change workspace.",
+      "While the radial menu is open, switch workspaces instantly with keys 1–9 or the mouse wheel; that workspace’s shortcuts appear right after.",
     "workspaces.switch_mode_picker": "Pick workspace on the wheel",
     "workspaces.switch_mode_picker_hint":
-      "When you open the menu, pick a workspace first; shortcuts appear next. The center button goes back to the workspace list (like folders).",
+      "While the radial menu is open, select the workspace on the first ring first; shortcuts appear on the next ring. The center control returns to the workspace list (similar to a folder).",
+    "workspaces.switch_mode_short": "Workspace switch",
+    "workspaces.switch_mode_compact_hint":
+      "Changes apply immediately. Collapse this panel using the control above when you’re done.",
+    "workspaces.picker_wheel_icon": "Wheel picker icon",
+    "workspaces.picker_wheel_icon_hint":
+      "Displayed on the first ring of the radial menu when “Pick workspace on the wheel” is enabled.",
+    "workspaces.picker_wheel_icon_open": "Set icon",
+    "workspaces.picker_wheel_icon_modal_title": "Workspace icon on the wheel",
+    "workspaces.picker_wheel_icon_modal_description":
+      "Choose the symbol that represents this workspace on the wheel. Each workspace can use its own icon for quick recognition.",
     "workspaces.root_cluster": "Root Cluster",
     "workspaces.back_to_workspaces": "Back to Workspaces",
     "workspaces.confirm_delete": "Permanently delete this workspace?",
@@ -983,24 +1019,34 @@ export const translations: Record<Language, Record<string, string>> = {
     "hud.island_label_pom": "POM",
     "hud.island_label_stop": "STW",
 
-    "gamemode.operational_logic": "Operational Logic",
-    "gamemode.stealth_mode": "Stealth Mode",
-    "gamemode.isolation_strategy": "Isolation Strategy",
-    "gamemode.always_absolute": "Always Absolute",
+    "gamemode.operational_logic": "Main control",
+    "gamemode.stealth_mode": "Hide Zenith while focused in fullscreen",
+    "gamemode.primary_caption":
+      "When enabled, the radial menu is not shown over exclusive fullscreen — so games, video, and slide decks stay visually uninterrupted.",
+    "gamemode.isolation_strategy": "Protection scope",
+    "gamemode.scope_intro":
+      "Choose whether Zenith stays out of the way for every fullscreen app, or only when a specific app you list is focused and fullscreen.",
+    "gamemode.always_absolute": "Any fullscreen application",
+    "gamemode.mode_all_summary":
+      "Simple rule: whenever a window is in exclusive fullscreen, the radial stays hidden.",
     "gamemode.safety_buffer": "Safety Buffer",
-    "gamemode.targeted_list": "Targeted list",
+    "gamemode.targeted_list": "Selected apps only",
+    "gamemode.mode_list_summary":
+      "The radial stays hidden only when a listed app is in the foreground and fullscreen.",
     "gamemode.blocking_rules": "Blocking rules",
     "gamemode.detect_fullscreen": "Detect fullscreen",
     "gamemode.on": "On",
     "gamemode.off": "Off",
-    "gamemode.process_list": "Target games / apps",
-    "gamemode.add_blocked_app": "Add application",
-    "gamemode.no_blocked_apps": "No apps selected yet.",
-    "gamemode.block_list_hint": "Pick from installed apps (same as shortcuts). While that process is running, the radial menu stays hidden.",
-    "gamemode.block_list_hint_list_only": "The radial stays hidden when a listed app is focused and fullscreen. In browsers the process is the browser .exe; the site is matched via window title or URL — pick e.g. ChatGPT from the list to add chatgpt.exe.",
+    "gamemode.process_list": "Monitored applications",
+    "gamemode.add_blocked_app": "Add to list",
+    "gamemode.no_blocked_apps": "No applications in the list yet.",
+    "gamemode.block_list_hint":
+      "Choose from installed apps (same library as shortcuts). While the process runs under the conditions you set, the radial does not appear.",
+    "gamemode.block_list_hint_list_only":
+      "The radial stays hidden when a listed app is focused and fullscreen. In browsers the process is the browser .exe; the site is matched via window title or URL — pick e.g. ChatGPT to add chatgpt.exe.",
     "gamemode.pick_app_title": "Block while running",
-    "gamemode.pick_app_title_fullscreen": "Pick app (fullscreen)",
-    "gamemode.pick_app_subtitle": "Choose an executable from the list",
+    "gamemode.pick_app_title_fullscreen": "Choose application",
+    "gamemode.pick_app_subtitle": "Installed apps list",
 
     "appSelection.title": "Add to Workspace",
     "appSelection.description": "Select entry type",
@@ -1036,6 +1082,10 @@ export const translations: Record<Language, Record<string, string>> = {
     "editingApp.installed_apps_label": "Apps",
     "editingApp.native_icon": "System Icon",
     "editingApp.icon_library": "Icon Library",
+    "iconPicker.search_placeholder": "Search icons…",
+    "iconPicker.no_results": "No icons found.",
+    "iconPicker.english_keywords_hint":
+      "Tip: English words (work, time, home…) also surface related icons by meaning, not only by name.",
     "editingApp.preview": "Preview",
     "editingApp.no_name": "No Name",
     "editingApp.menu_pos": "Menu Position",
@@ -1104,6 +1154,12 @@ export const translations: Record<Language, Record<string, string>> = {
     "action.add_shortcut": "Añadir Atajo",
     "action.create_group": "Crear Grupo",
     "action.dismiss": "Cerrar",
+    "tabs.gamemode": "Enfoque",
+    "sidebar.gamemode": "Protección de enfoque",
+    "iconPicker.search_placeholder": "Buscar icono…",
+    "iconPicker.no_results": "No se encontraron iconos.",
+    "iconPicker.english_keywords_hint":
+      "Consejo: las palabras en inglés (work, time, home…) muestran iconos relacionados por significado.",
 
     // Settings Headers
     "settings.interface_title": "Interfaz y Control",
@@ -1112,8 +1168,9 @@ export const translations: Record<Language, Record<string, string>> = {
     "settings.hud_title": "Elementos HUD",
     "settings.hud_desc":
       "Configura la información fija en las esquinas de la pantalla.",
-    "settings.gamemode_title": "Modo Juego",
-    "settings.gamemode_desc": "Mantén el enfoque total durante tus partidas.",
+    "settings.gamemode_title": "Protección de enfoque",
+    "settings.gamemode_desc":
+      "Evita que el menú radial y las superposiciones de Zenith aparezcan mientras te concentras en juegos o apps a pantalla completa — sin distracciones fuera de lugar.",
     "settings.user_title": "Perfil de Usuario",
     "settings.user_desc":
       "Gestiona tu identidad digital y sincroniza tus ajustes.",
@@ -1312,10 +1369,20 @@ export const translations: Record<Language, Record<string, string>> = {
     "workspaces.switch_mode": "Cambio de espacio en el menú radial",
     "workspaces.switch_mode_hotkeys": "Teclas 1–9",
     "workspaces.switch_mode_hotkeys_hint":
-      "Con el menú abierto, usa números o la rueda para cambiar de espacio.",
+      "Con el menú radial abierto, cambia de espacio al instante con las teclas 1–9 o la rueda del ratón; después aparecen los atajos de ese espacio.",
     "workspaces.switch_mode_picker": "Elegir espacio en la rueda",
     "workspaces.switch_mode_picker_hint":
-      "Al abrir el menú, elige primero el espacio; luego aparecen los atajos. El botón central vuelve a la lista (como carpetas).",
+      "Con el menú radial abierto, elige primero el espacio en la primera vuelta de la rueda; en la siguiente aparecen los atajos. El centro vuelve a la lista de espacios (como una carpeta).",
+    "workspaces.switch_mode_short": "Cambio de espacio",
+    "workspaces.switch_mode_compact_hint":
+      "El cambio es inmediato. Cierra este panel con el control superior cuando termines.",
+    "workspaces.picker_wheel_icon": "Icono del selector en la rueda",
+    "workspaces.picker_wheel_icon_hint":
+      "Icono mostrado en el primer anillo del menú radial cuando el modo «Elegir espacio en la rueda» está activado.",
+    "workspaces.picker_wheel_icon_open": "Definir icono",
+    "workspaces.picker_wheel_icon_modal_title": "Icono del espacio en la rueda",
+    "workspaces.picker_wheel_icon_modal_description":
+      "Elija el símbolo que identifica este espacio en la rueda. Cada espacio puede tener su propio icono para reconocerlo al instante.",
     "workspaces.root_cluster": "Clúster Raíz",
     "workspaces.back_to_workspaces": "Volver a Espacios",
     "workspaces.confirm_delete": "¿Eliminar este espacio permanentemente?",
@@ -1369,11 +1436,34 @@ export const translations: Record<Language, Record<string, string>> = {
     "hud.island_label_pom": "POM",
     "hud.island_label_stop": "STW",
 
-    "gamemode.operational_logic": "Lógica Operacional",
-    "gamemode.stealth_mode": "Modo Stealth",
-    "gamemode.isolation_strategy": "Estrategia de Aislamiento",
-    "gamemode.always_absolute": "Siempre Absoluto",
+    "gamemode.operational_logic": "Control principal",
+    "gamemode.stealth_mode": "Ocultar Zenith durante el foco a pantalla completa",
+    "gamemode.primary_caption":
+      "Si está activo, el menú radial no se muestra sobre aplicaciones a pantalla completa exclusiva — ideal para juegos, vídeo o presentaciones.",
+    "gamemode.isolation_strategy": "Alcance de la protección",
+    "gamemode.scope_intro":
+      "Elige si Zenith se mantiene discreto para cualquier app a pantalla completa o solo cuando una app de tu lista está en primer plano.",
+    "gamemode.always_absolute": "Cualquier app a pantalla completa",
+    "gamemode.mode_all_summary":
+      "Regla sencilla: cuando una ventana está a pantalla completa exclusiva, el radial permanece oculto.",
     "gamemode.safety_buffer": "Búfer de Seguridad",
+    "gamemode.targeted_list": "Solo apps seleccionadas",
+    "gamemode.mode_list_summary":
+      "El radial solo queda oculto cuando una app de la lista está en primer plano y a pantalla completa.",
+    "gamemode.blocking_rules": "Reglas de bloqueo",
+    "gamemode.detect_fullscreen": "Detectar pantalla completa",
+    "gamemode.on": "Sí",
+    "gamemode.off": "No",
+    "gamemode.process_list": "Aplicaciones supervisadas",
+    "gamemode.add_blocked_app": "Añadir a la lista",
+    "gamemode.no_blocked_apps": "Ninguna aplicación en la lista.",
+    "gamemode.block_list_hint":
+      "Elige entre apps instaladas (la misma biblioteca que los atajos). Mientras el proceso cumpla las condiciones definidas, el radial no aparece.",
+    "gamemode.block_list_hint_list_only":
+      "El radial permanece oculto cuando una app de la lista está enfocada y a pantalla completa. En navegadores el proceso es el .exe del navegador; el sitio se reconoce por el título o la URL — elige en el selector (p. ej. ChatGPT → chatgpt.exe).",
+    "gamemode.pick_app_title": "Bloquear mientras está en ejecución",
+    "gamemode.pick_app_title_fullscreen": "Elegir aplicación",
+    "gamemode.pick_app_subtitle": "Lista de apps instaladas",
 
     "appSelection.title": "Añadir al Espacio",
     "appSelection.description": "Selecciona el tipo de entrada",
@@ -1749,6 +1839,10 @@ export const translations: Record<Language, Record<string, string>> = {
     "editingApp.installed_apps_label": "Apps",
     "editingApp.native_icon": "Icône Système",
     "editingApp.icon_library": "Bibliothèque d'Icônes",
+    "iconPicker.search_placeholder": "Rechercher une icône…",
+    "iconPicker.no_results": "Aucune icône trouvée.",
+    "iconPicker.english_keywords_hint":
+      "Astuce : des mots anglais (work, time, home…) affichent aussi des icônes liées par le sens.",
     "editingApp.preview": "Aperçu",
     "editingApp.no_name": "Sans Nom",
     "editingApp.menu_pos": "Position du Menu",
@@ -2119,6 +2213,10 @@ export const translations: Record<Language, Record<string, string>> = {
     "editingApp.installed_apps_label": "Apps",
     "editingApp.native_icon": "Systemsymbol",
     "editingApp.icon_library": "Symbolbibliothek",
+    "iconPicker.search_placeholder": "Symbole suchen…",
+    "iconPicker.no_results": "Keine Symbole gefunden.",
+    "iconPicker.english_keywords_hint":
+      "Tipp: Englische Begriffe (work, time, home…) zeigen auch passende Symbole nach Bedeutung.",
     "editingApp.preview": "Vorschau",
     "editingApp.no_name": "Kein Name",
     "editingApp.menu_pos": "Menüposition",
@@ -2489,6 +2587,10 @@ export const translations: Record<Language, Record<string, string>> = {
     "editingApp.installed_apps_label": "App",
     "editingApp.native_icon": "Icona di Sistema",
     "editingApp.icon_library": "Libreria Icone",
+    "iconPicker.search_placeholder": "Cerca icona…",
+    "iconPicker.no_results": "Nessuna icona trovata.",
+    "iconPicker.english_keywords_hint":
+      "Suggerimento: parole inglesi (work, time, home…) mostrano anche icone correlate per significato.",
     "editingApp.preview": "Anteprima",
     "editingApp.no_name": "Senza Nome",
     "editingApp.menu_pos": "Posizione Menù",
@@ -2856,6 +2958,10 @@ export const translations: Record<Language, Record<string, string>> = {
     "editingApp.installed_apps_label": "アプリ",
     "editingApp.native_icon": "システムアイコン",
     "editingApp.icon_library": "アイコンライブラリ",
+    "iconPicker.search_placeholder": "アイコンを検索…",
+    "iconPicker.no_results": "該当するアイコンがありません。",
+    "iconPicker.english_keywords_hint":
+      "ヒント: 英語の単語（work、time、home など）でも、名前以外の関連アイコンが表示されます。",
     "editingApp.preview": "プレビュー",
     "editingApp.no_name": "名前なし",
     "editingApp.menu_pos": "メニュー位置",
@@ -3220,6 +3326,10 @@ export const translations: Record<Language, Record<string, string>> = {
     "editingApp.installed_apps_label": "应用",
     "editingApp.native_icon": "系统图标",
     "editingApp.icon_library": "图标库",
+    "iconPicker.search_placeholder": "搜索图标…",
+    "iconPicker.no_results": "未找到图标。",
+    "iconPicker.english_keywords_hint":
+      "提示：输入英文词（如 work、time、home）也可按含义显示相关图标，不限于图标名称。",
     "editingApp.preview": "预览",
     "editingApp.no_name": "无名称",
     "editingApp.menu_pos": "菜单位置",
@@ -3586,6 +3696,10 @@ export const translations: Record<Language, Record<string, string>> = {
     "editingApp.installed_apps_label": "앱",
     "editingApp.native_icon": "시스템 아이콘",
     "editingApp.icon_library": "아이콘 라이브러리",
+    "iconPicker.search_placeholder": "아이콘 검색…",
+    "iconPicker.no_results": "아이콘을 찾을 수 없습니다.",
+    "iconPicker.english_keywords_hint":
+      "팁: 영어 단어(work, time, home 등)로 이름과 무관하게 관련 아이콘을 찾을 수 있습니다.",
     "editingApp.preview": "미리보기",
     "editingApp.no_name": "이름 없음",
     "editingApp.menu_pos": "메뉴 위치",
@@ -3954,6 +4068,10 @@ export const translations: Record<Language, Record<string, string>> = {
     "editingApp.installed_apps_label": "Приложения",
     "editingApp.native_icon": "Системная Иконка",
     "editingApp.icon_library": "Библиотека Иконок",
+    "iconPicker.search_placeholder": "Поиск значков…",
+    "iconPicker.no_results": "Значки не найдены.",
+    "iconPicker.english_keywords_hint":
+      "Подсказка: английские слова (work, time, home…) показывают связанные значки по смыслу.",
     "editingApp.preview": "Предпросмотр",
     "editingApp.no_name": "Без Имени",
     "editingApp.menu_pos": "Позиция в Меню",

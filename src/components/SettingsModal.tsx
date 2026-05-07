@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AppItem, UIConfig, UserProfile } from '../types';
 import { ICON_MAP, getIcon } from '../iconMap';
@@ -14,7 +15,8 @@ import {
     HelpCircle, User, MessageSquare, CreditCard, Globe, Eye, Zap, MousePointer2,
     Hash, Download, ExternalLink, Moon, Sun, ArrowRight, ArrowLeft, TimerReset,
     FolderPlus, FileText, Edit3, Calendar, Battery, CloudRain,
-    Layout, Compass, Laptop, Smartphone, Bell, GripVertical, ChevronLeft, LogOut
+    Layout, Compass, Laptop, Smartphone, Bell, GripVertical, ChevronLeft, LogOut,
+    Layers, ArrowLeftRight, Shield
 } from 'lucide-react';
 import { ZenithLogo } from './ZenithLogo';
 import { IconPicker } from './IconPicker';
@@ -515,6 +517,7 @@ const AppEditorModal = React.memo(({
                                             </div>
                                             <div className="bg-black/30 rounded-xl border border-white/5 p-3 max-h-[280px] overflow-y-auto custom-scrollbar">
                                                 <IconPicker
+                                                    config={config}
                                                     selectedIcon={editingApp.app.iconName}
                                                     onSelect={(name) => handleAppChange('iconName', name)}
                                                 />
@@ -842,6 +845,7 @@ const AppEditorModal = React.memo(({
                                         </div>
                                         <div className="flex-1 overflow-y-auto custom-scrollbar p-3 min-h-0">
                                             <IconPicker
+                                                config={config}
                                                 selectedIcon={editingApp.app.iconName}
                                                 onSelect={(name) => handleAppChange('iconName', name)}
                                             />
@@ -1568,8 +1572,151 @@ const WorkspacesTab = React.memo(({
     removeAppFromWorkspace: (wsIdx: number, appIdx: number, path: number[]) => void,
     handleAddApp: (type: 'app' | 'folder') => void
 }) => {
+    const [workspaceWheelIconModalOpen, setWorkspaceWheelIconModalOpen] = useState(false);
+    const [workspaceSwitchOpen, setWorkspaceSwitchOpen] = useState(false);
+
+    useEffect(() => {
+        setWorkspaceWheelIconModalOpen(false);
+    }, [selectedWorkspaceIndex, workspaceFolderPath]);
+
+    useEffect(() => {
+        if (!workspaceWheelIconModalOpen) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setWorkspaceWheelIconModalOpen(false);
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [workspaceWheelIconModalOpen]);
+
+    const renderWorkspaceWheelIconBlock = () => {
+        if (
+            selectedWorkspaceIndex === null ||
+            workspaceFolderPath.length > 0 ||
+            (config.workspaceSwitchMode ?? 'hotkeys') !== 'picker'
+        ) {
+            return null;
+        }
+        const ws = config.workspaces[selectedWorkspaceIndex];
+        if (!ws) return null;
+        const pickName = ws.pickerIconName || 'Layers';
+        const PreviewIcon = getIcon(pickName);
+        return (
+            <div className="mb-4 flex items-center gap-3 rounded-xl border border-white/[0.07] bg-[#0a0a0a]/90 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                <div
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/[0.1] bg-gradient-to-b from-white/[0.08] to-transparent shadow-inner ring-1 ring-white/[0.05]"
+                    aria-hidden
+                >
+                    <PreviewIcon className="text-white/[0.92]" size={22} strokeWidth={1.5} />
+                </div>
+                <div className="min-w-0 flex-1">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/55">
+                        {getTranslation(config, 'workspaces.picker_wheel_icon')}
+                    </p>
+                    <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-white/38">
+                        {getTranslation(config, 'workspaces.picker_wheel_icon_hint') || ''}
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    onClick={() => setWorkspaceWheelIconModalOpen(true)}
+                    className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-white/[0.12] bg-white/[0.06] px-3.5 py-2 text-xs font-medium tracking-tight text-white/90 transition-colors hover:border-white/22 hover:bg-white/[0.1] active:scale-[0.98]"
+                >
+                    <Edit3 size={15} strokeWidth={1.5} className="text-white/50" aria-hidden />
+                    {getTranslation(config, 'workspaces.picker_wheel_icon_open')}
+                </button>
+            </div>
+        );
+    };
+
+    const workspaceWheelIconModal =
+        typeof document !== 'undefined' &&
+        workspaceWheelIconModalOpen &&
+        selectedWorkspaceIndex !== null &&
+        workspaceFolderPath.length === 0 &&
+        (config.workspaceSwitchMode ?? 'hotkeys') === 'picker' &&
+        config.workspaces[selectedWorkspaceIndex]
+            ? createPortal(
+                  <AnimatePresence>
+                      <motion.div
+                          key="ws-wheel-icon-modal"
+                          role="presentation"
+                          className="fixed inset-0 z-[500] flex items-center justify-center bg-black/80 p-4 backdrop-blur-md sm:p-6"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.18 }}
+                          onClick={() => setWorkspaceWheelIconModalOpen(false)}
+                      >
+                          <motion.div
+                              role="dialog"
+                              aria-modal="true"
+                              aria-labelledby="ws-wheel-icon-modal-title"
+                              initial={{ opacity: 0, scale: 0.96, y: 12 }}
+                              animate={{ opacity: 1, scale: 1, y: 0 }}
+                              exit={{ opacity: 0, scale: 0.98, y: 8 }}
+                              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                              className="relative z-10 flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-white/[0.1] bg-[#0c0c0c] shadow-[0_28px_100px_rgba(0,0,0,0.75)] max-h-[min(620px,90vh)]"
+                              onClick={(e) => e.stopPropagation()}
+                          >
+                              <div className="flex items-start justify-between gap-4 border-b border-white/[0.06] px-5 py-4">
+                                  <div className="min-w-0 space-y-2 pt-0.5">
+                                      <h4
+                                          id="ws-wheel-icon-modal-title"
+                                          className="text-base font-semibold tracking-tight text-white"
+                                      >
+                                          {getTranslation(config, 'workspaces.picker_wheel_icon_modal_title')}
+                                      </h4>
+                                      <p className="text-sm leading-relaxed text-white/45">
+                                          {getTranslation(config, 'workspaces.picker_wheel_icon_modal_description') ||
+                                              ''}
+                                      </p>
+                                  </div>
+                                  <button
+                                      type="button"
+                                      onClick={() => setWorkspaceWheelIconModalOpen(false)}
+                                      className="shrink-0 rounded-lg p-2 text-white/35 transition-colors hover:bg-white/[0.08] hover:text-white"
+                                      aria-label={getTranslation(config, 'action.dismiss')}
+                                  >
+                                      <X size={18} strokeWidth={1.5} />
+                                  </button>
+                              </div>
+                              <div className="min-h-0 flex-1 px-5 pb-2 pt-2">
+                                  <div className="h-[min(360px,48vh)] min-h-[220px]">
+                                      <IconPicker
+                                          config={config}
+                                          selectedIcon={
+                                              config.workspaces[selectedWorkspaceIndex].pickerIconName || 'Layers'
+                                          }
+                                          onSelect={(name) => {
+                                              const nw = [...config.workspaces];
+                                              nw[selectedWorkspaceIndex] = {
+                                                  ...nw[selectedWorkspaceIndex],
+                                                  pickerIconName: name,
+                                              };
+                                              setConfig({ ...config, workspaces: nw });
+                                          }}
+                                      />
+                                  </div>
+                              </div>
+                              <div className="flex justify-end border-t border-white/[0.06] px-5 py-3.5">
+                                  <button
+                                      type="button"
+                                      onClick={() => setWorkspaceWheelIconModalOpen(false)}
+                                      className="rounded-lg bg-white/[0.08] px-4 py-2 text-sm font-medium text-white/90 transition-colors hover:bg-white/[0.14]"
+                                  >
+                                      {getTranslation(config, 'action.dismiss')}
+                                  </button>
+                              </div>
+                          </motion.div>
+                      </motion.div>
+                  </AnimatePresence>,
+                  document.body,
+              )
+            : null;
+
     return (
-        <div className="h-full w-full flex flex-col overflow-hidden relative">
+        <>
+            <div className="h-full w-full flex flex-col overflow-hidden relative">
             <div className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar pt-20`}>
                 <div className="max-w-4xl mx-auto flex flex-col px-6 md:px-10 lg:px-12">
                     <div className={`flex items-center gap-6 ${selectedWorkspaceIndex !== null ? 'mb-6' : 'mb-12'} group/header`}>
@@ -1615,44 +1762,154 @@ const WorkspacesTab = React.memo(({
                                 className="flex flex-col gap-8"
                             >
 
-                                <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 max-w-3xl">
-                                    <div className="text-[10px] font-bold text-white/35 uppercase tracking-widest mb-3">
-                                        {getTranslation(config, 'workspaces.switch_mode') || 'Workspace menu'}
-                                    </div>
-                                    <div className="flex flex-col sm:flex-row gap-3">
-                                        <button
-                                            type="button"
-                                            onClick={() => setConfig({ ...config, workspaceSwitchMode: 'hotkeys' })}
-                                            className={`flex-1 text-left rounded-xl border px-4 py-3 transition-all ${
-                                                (config.workspaceSwitchMode ?? 'hotkeys') === 'hotkeys'
-                                                    ? 'border-white/25 bg-white/[0.06] text-white'
-                                                    : 'border-white/5 bg-transparent text-white/40 hover:border-white/10 hover:text-white/70'
-                                            }`}
-                                        >
-                                            <div className="text-[12px] font-semibold">
-                                                {getTranslation(config, 'workspaces.switch_mode_hotkeys') || '1–9'}
-                                            </div>
-                                            <p className="text-[10px] text-white/35 mt-1 leading-snug">
-                                                {getTranslation(config, 'workspaces.switch_mode_hotkeys_hint') || ''}
+                                <div className="w-full">
+                                    <button
+                                        type="button"
+                                        id="workspace-switch-heading"
+                                        aria-expanded={workspaceSwitchOpen}
+                                        aria-controls="workspace-switch-panel"
+                                        onClick={() => setWorkspaceSwitchOpen(o => !o)}
+                                        className="group/trigger flex w-full items-center gap-3 rounded-2xl border border-white/[0.07] bg-gradient-to-b from-white/[0.06] to-white/[0.02] px-4 py-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-all duration-200 hover:border-white/[0.12] hover:from-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050505]"
+                                    >
+                                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.06] text-white/55 ring-1 ring-white/[0.06] transition-colors group-hover/trigger:bg-white/[0.09] group-hover/trigger:text-white/75">
+                                            <ArrowLeftRight size={17} strokeWidth={1.65} aria-hidden />
+                                        </span>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-[11px] font-medium tracking-wide text-white/42">
+                                                {getTranslation(config, 'workspaces.switch_mode_short')}
                                             </p>
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setConfig({ ...config, workspaceSwitchMode: 'picker' })}
-                                            className={`flex-1 text-left rounded-xl border px-4 py-3 transition-all ${
-                                                config.workspaceSwitchMode === 'picker'
-                                                    ? 'border-white/25 bg-white/[0.06] text-white'
-                                                    : 'border-white/5 bg-transparent text-white/40 hover:border-white/10 hover:text-white/70'
-                                            }`}
-                                        >
-                                            <div className="text-[12px] font-semibold">
-                                                {getTranslation(config, 'workspaces.switch_mode_picker') || 'Picker'}
-                                            </div>
-                                            <p className="text-[10px] text-white/35 mt-1 leading-snug">
-                                                {getTranslation(config, 'workspaces.switch_mode_picker_hint') || ''}
+                                            <p className="mt-0.5 truncate text-[13px] font-semibold tracking-tight text-white/95">
+                                                {(config.workspaceSwitchMode ?? 'hotkeys') === 'hotkeys'
+                                                    ? getTranslation(config, 'workspaces.switch_mode_hotkeys')
+                                                    : getTranslation(config, 'workspaces.switch_mode_picker')}
                                             </p>
-                                        </button>
-                                    </div>
+                                        </div>
+                                        <span
+                                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black/30 text-white/40 ring-1 ring-white/[0.06] transition-all duration-200 group-hover/trigger:bg-black/40 group-hover/trigger:text-white/55 ${workspaceSwitchOpen ? 'bg-black/45 text-white/65' : ''}`}
+                                        >
+                                            <ChevronDown
+                                                size={16}
+                                                strokeWidth={2}
+                                                className={`transition-transform duration-200 ${workspaceSwitchOpen ? 'rotate-180' : ''}`}
+                                                aria-hidden
+                                            />
+                                        </span>
+                                    </button>
+
+                                    <AnimatePresence initial={false}>
+                                        {workspaceSwitchOpen && (
+                                            <motion.div
+                                                id="workspace-switch-panel"
+                                                role="region"
+                                                aria-labelledby="workspace-switch-heading"
+                                                initial={{ opacity: 0, y: -4 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                exit={{ opacity: 0, y: -4 }}
+                                                transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                                            >
+                                                <div className="mt-3 rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4 backdrop-blur-sm">
+                                                    <div
+                                                        className="flex flex-col gap-2.5"
+                                                        role="radiogroup"
+                                                        aria-label={getTranslation(config, 'workspaces.switch_mode')}
+                                                    >
+                                                        <button
+                                                            type="button"
+                                                            role="radio"
+                                                            aria-checked={(config.workspaceSwitchMode ?? 'hotkeys') === 'hotkeys'}
+                                                            onClick={() =>
+                                                                setConfig({ ...config, workspaceSwitchMode: 'hotkeys' })
+                                                            }
+                                                            className={`group/opt relative w-full rounded-xl border px-4 py-3.5 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0a0a] ${
+                                                                (config.workspaceSwitchMode ?? 'hotkeys') === 'hotkeys'
+                                                                    ? 'border-white/20 bg-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
+                                                                    : 'border-white/[0.06] bg-black/20 hover:border-white/12 hover:bg-white/[0.04]'
+                                                            }`}
+                                                        >
+                                                            <div className="flex gap-3">
+                                                                <span
+                                                                    className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ring-1 transition-colors ${
+                                                                        (config.workspaceSwitchMode ?? 'hotkeys') === 'hotkeys'
+                                                                            ? 'bg-white/[0.12] text-white ring-white/15'
+                                                                            : 'bg-white/[0.04] text-white/45 ring-white/[0.06] group-hover/opt:text-white/70'
+                                                                    }`}
+                                                                    aria-hidden
+                                                                >
+                                                                    <Keyboard size={18} strokeWidth={1.5} />
+                                                                </span>
+                                                                <div className="min-w-0 flex-1 pt-0.5">
+                                                                    <div className="flex items-start justify-between gap-2">
+                                                                        <span className="text-sm font-semibold leading-snug text-white">
+                                                                            {getTranslation(config, 'workspaces.switch_mode_hotkeys')}
+                                                                        </span>
+                                                                        {(config.workspaceSwitchMode ?? 'hotkeys') === 'hotkeys' && (
+                                                                            <Check
+                                                                                size={16}
+                                                                                strokeWidth={2.5}
+                                                                                className="mt-0.5 shrink-0 text-emerald-400/95"
+                                                                                aria-hidden
+                                                                            />
+                                                                        )}
+                                                                    </div>
+                                                                    <p className="mt-2 text-[12px] leading-relaxed text-white/48">
+                                                                        {getTranslation(config, 'workspaces.switch_mode_hotkeys_hint')}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                        </button>
+
+                                                        <button
+                                                            type="button"
+                                                            role="radio"
+                                                            aria-checked={config.workspaceSwitchMode === 'picker'}
+                                                            onClick={() =>
+                                                                setConfig({ ...config, workspaceSwitchMode: 'picker' })
+                                                            }
+                                                            className={`group/opt relative w-full rounded-xl border px-4 py-3.5 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0a0a] ${
+                                                                config.workspaceSwitchMode === 'picker'
+                                                                    ? 'border-white/20 bg-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
+                                                                    : 'border-white/[0.06] bg-black/20 hover:border-white/12 hover:bg-white/[0.04]'
+                                                            }`}
+                                                        >
+                                                            <div className="flex gap-3">
+                                                                <span
+                                                                    className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ring-1 transition-colors ${
+                                                                        config.workspaceSwitchMode === 'picker'
+                                                                            ? 'bg-white/[0.12] text-white ring-white/15'
+                                                                            : 'bg-white/[0.04] text-white/45 ring-white/[0.06] group-hover/opt:text-white/70'
+                                                                    }`}
+                                                                    aria-hidden
+                                                                >
+                                                                    <Layers size={18} strokeWidth={1.5} />
+                                                                </span>
+                                                                <div className="min-w-0 flex-1 pt-0.5">
+                                                                    <div className="flex items-start justify-between gap-2">
+                                                                        <span className="text-sm font-semibold leading-snug text-white">
+                                                                            {getTranslation(config, 'workspaces.switch_mode_picker')}
+                                                                        </span>
+                                                                        {config.workspaceSwitchMode === 'picker' && (
+                                                                            <Check
+                                                                                size={16}
+                                                                                strokeWidth={2.5}
+                                                                                className="mt-0.5 shrink-0 text-emerald-400/95"
+                                                                                aria-hidden
+                                                                            />
+                                                                        )}
+                                                                    </div>
+                                                                    <p className="mt-2 text-[12px] leading-relaxed text-white/48">
+                                                                        {getTranslation(config, 'workspaces.switch_mode_picker_hint')}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                        </button>
+                                                    </div>
+                                                    <p className="mt-4 border-t border-white/[0.06] pt-3.5 text-[11px] leading-relaxed text-white/36">
+                                                        {getTranslation(config, 'workspaces.switch_mode_compact_hint')}
+                                                    </p>
+                                                </div>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
                                 </div>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 auto-rows-[200px] pb-12">
@@ -1731,6 +1988,8 @@ const WorkspacesTab = React.memo(({
                                         )}
                                     </div>
                                 )}
+
+                                {renderWorkspaceWheelIconBlock()}
 
                                 {/* App Grid - Refined 2026 */}
                                 <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar bg-black/40 rounded-xl border border-white/5 p-5 pb-4 mb-4 shadow-inner" style={{ maxHeight: 'clamp(260px, 55vh, 640px)' }}>
@@ -1831,6 +2090,8 @@ const WorkspacesTab = React.memo(({
                 </div>
             </div>
         </div>
+            {workspaceWheelIconModal}
+        </>
     );
 });
 
@@ -1860,6 +2121,7 @@ const ShortcutRecorderField: React.FC<{
     const inputRef = useRef<HTMLDivElement>(null);
 
     const startRecording = () => {
+        if (isRecording) return;
         setPendingShortcut(null);
         setIsRecording(true);
         if (window.electron?.startShortcutRecording) {
@@ -1868,7 +2130,6 @@ const ShortcutRecorderField: React.FC<{
         if (window.electron?.pauseGlobalShortcut) {
             window.electron.pauseGlobalShortcut();
         }
-        inputRef.current?.focus();
     };
 
     const stopRecording = (shouldCleanup = true) => {
@@ -1901,20 +2162,33 @@ const ShortcutRecorderField: React.FC<{
             const cleanup = window.electron.onShortcutRecorded((shortcut) => {
                 setPendingShortcut(shortcut);
                 setIsRecording(false);
+                // Para o listener nativo após a 1ª captura; mantém atalhos globais em pausa até confirmar/cancelar.
+                if (window.electron?.stopShortcutRecording) {
+                    window.electron.stopShortcutRecording();
+                }
             });
             return cleanup;
         }
     }, [isRecording]);
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
-        // We still prevent default to avoid some browser behaviors,
-        // but the actual recording is handled by the global listener.
+        if (e.key === 'Escape') {
+            if (pendingShortcut) {
+                setPendingShortcut(null);
+            }
+            stopRecording();
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
         if (isRecording) {
             e.preventDefault();
             e.stopPropagation();
-            if (e.key === 'Escape') {
-                stopRecording();
-            }
+            return;
+        }
+        if ((e.key === 'Enter' || e.key === ' ') && !pendingShortcut && !isRecording) {
+            e.preventDefault();
+            startRecording();
         }
     };
 
@@ -1925,7 +2199,13 @@ const ShortcutRecorderField: React.FC<{
                 <div
                     ref={inputRef}
                     tabIndex={0}
-                    onFocus={startRecording}
+                    role="button"
+                    aria-label={label}
+                    onClick={() => {
+                        if (!pendingShortcut && !isRecording) {
+                            startRecording();
+                        }
+                    }}
                     onBlur={() => !pendingShortcut && stopRecording()}
                     onKeyDown={handleKeyDown}
                     className={`flex-1 min-h-[64px] rounded-xl border flex items-center justify-center font-mono text-sm tracking-widest transition-all duration-300 outline-none cursor-pointer group relative overflow-hidden ${isRecording
@@ -1946,14 +2226,24 @@ const ShortcutRecorderField: React.FC<{
                                 <span className="text-white font-bold text-lg tracking-[0.2em]">{pendingShortcut}</span>
                                 <div className="flex gap-4">
                                     <button
-                                        onClick={(e) => { e.stopPropagation(); handleConfirm(); }}
+                                        type="button"
+                                        onMouseDown={(e) => e.preventDefault()}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleConfirm();
+                                        }}
                                         className="text-[10px] font-black text-green-500 hover:text-green-400 uppercase tracking-widest px-3 py-1.5 bg-green-500/10 rounded-lg border border-green-500/20 transition-all active:scale-95 flex items-center gap-2"
                                     >
                                         <Check size={12} strokeWidth={3} />
                                         {getTranslation(config, 'action.save') || 'CONFIRMAR'}
                                     </button>
                                     <button
-                                        onClick={(e) => { e.stopPropagation(); handleReset(); }}
+                                        type="button"
+                                        onMouseDown={(e) => e.preventDefault()}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleReset();
+                                        }}
                                         className="text-[10px] font-black text-white/40 hover:text-white/60 uppercase tracking-widest px-3 py-1.5 bg-white/5 rounded-lg border border-white/10 transition-all active:scale-95 flex items-center gap-2"
                                     >
                                         <RotateCcw size={12} strokeWidth={3} />
@@ -1985,7 +2275,14 @@ const ShortcutRecorderField: React.FC<{
                     </AnimatePresence>
                 </div>
                 <button
-                    onClick={() => inputRef.current?.focus()}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        if (!isRecording) {
+                            startRecording();
+                        }
+                    }}
                     className={`px-5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 border ${isRecording
                         ? 'bg-red-500 border-red-500 text-white animate-pulse'
                         : 'bg-white text-black border-white hover:shadow-[0_0_20px_rgba(255,255,255,0.2)]'
@@ -2095,7 +2392,10 @@ const InterfaceTab = React.memo((props: {
                                 const newValue = !config.enableMouseTrigger;
                                 setConfig({ ...config, enableMouseTrigger: newValue });
                                 if (window.electron && window.electron.setSettings) {
-                                    window.electron.setSettings({ ...config, enableMouseTrigger: newValue });
+                                    window.electron.setSettings({
+                                        enableMouseTrigger: newValue,
+                                        globalShortcut: config.globalShortcut,
+                                    });
                                 }
                             }}
                             className={`relative w-16 h-10 rounded-2xl transition-all duration-500 p-1.5 shadow-lg ${config.enableMouseTrigger ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
@@ -2645,150 +2945,229 @@ const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setCo
         addBlockedSegment(segment);
     };
 
+    const protectionOn = config.gameMode?.enabled ?? false;
+
     return (
         <motion.div
-            className="pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
+            className="h-full overflow-y-auto pb-24 pt-20 custom-scrollbar"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
             transition={{ duration: 0.3 }}
         >
-            <div className="max-w-4xl mx-auto px-6 md:px-10 lg:px-12">
+            <div className="mx-auto max-w-4xl px-6 md:px-10 lg:px-12">
                 <motion.div
                     className="mb-12"
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.1 }}
                 >
-                    <h3 className="text-xl font-semibold text-white mb-1 tracking-tight">{getTranslation(config, 'settings.gamemode_title')}</h3>
-                    <p className="text-[11px] text-white/30 font-medium tracking-wide leading-relaxed mt-1 max-w-2xl">
+                    <h3 className="text-xl font-semibold text-white mb-1 tracking-tight">
+                        {getTranslation(config, 'settings.gamemode_title')}
+                    </h3>
+                    <p className="mt-1 max-w-2xl text-[11px] font-medium leading-relaxed tracking-wide text-white/30">
                         {getTranslation(config, 'settings.gamemode_desc')}
                     </p>
                 </motion.div>
 
-                <div className="space-y-10">
-                    <motion.div
-                        className={`p-6 rounded-xl border flex items-center justify-between relative overflow-hidden group transition-all duration-700 ${config.gameMode?.enabled
-                            ? 'bg-white/[0.03] border-white/10'
-                            : 'bg-white/[0.01] border-white/5'
-                            }`}
-                        initial={{ opacity: 0, scale: 0.98 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ duration: 0.5, delay: 0.2 }}
+                <div className="flex flex-col space-y-5">
+                    <motion.section
+                        className={`rounded-xl border bg-gradient-to-br from-white/[0.04] to-transparent p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors ${
+                            protectionOn ? 'border-white/[0.10]' : 'border-white/[0.08]'
+                        }`}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.35, delay: 0.1 }}
                     >
-                        <div className="relative z-10">
-                            <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.3em] block ml-0.5 mb-1.5">{getTranslation(config, 'gamemode.operational_logic')}</label>
-                            <h4 className="text-base font-medium text-white/90 tracking-tight">{getTranslation(config, 'gamemode.stealth_mode')}</h4>
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+                            <div className="min-w-0 flex-1 space-y-1">
+                                <p className="text-[8px] font-medium uppercase tracking-[0.25em] text-white/25">
+                                    {getTranslation(config, 'gamemode.operational_logic')}
+                                </p>
+                                <h4 className="text-[13px] font-medium leading-snug text-white">
+                                    {getTranslation(config, 'gamemode.stealth_mode')}
+                                </h4>
+                                <p className="max-w-xl pt-1 text-[11px] leading-relaxed text-white/35">
+                                    {getTranslation(config, 'gamemode.primary_caption')}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                role="switch"
+                                aria-checked={protectionOn}
+                                onClick={() =>
+                                    setConfig({
+                                        ...config,
+                                        gameMode: { ...config.gameMode, enabled: !config.gameMode?.enabled },
+                                    })
+                                }
+                                className={`relative h-10 w-16 shrink-0 rounded-2xl p-1.5 shadow-lg transition-colors duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-2 focus-visible:ring-offset-black ${
+                                    protectionOn
+                                        ? 'bg-white shadow-[0_0_0_1px_rgba(255,255,255,0.12)]'
+                                        : 'border border-white/10 bg-white/[0.05]'
+                                }`}
+                            >
+                                <motion.span
+                                    className={`block h-7 w-7 rounded-[0.8rem] shadow-xl ${
+                                        protectionOn ? 'bg-neutral-950' : 'bg-white/25'
+                                    }`}
+                                    animate={{ x: protectionOn ? 26 : 0 }}
+                                    transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                                />
+                            </button>
                         </div>
-
-                        <button
-                            onClick={() => setConfig({ ...config, gameMode: { ...config.gameMode, enabled: !config.gameMode?.enabled } })}
-                            className={`relative w-14 h-8 rounded-xl transition-all duration-500 p-1.5 ${config.gameMode?.enabled ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
-                        >
-                            <motion.div
-                                className={`w-5 h-5 rounded-lg shadow-xl ${config.gameMode?.enabled ? 'bg-black' : 'bg-white/20'}`}
-                                animate={{ x: config.gameMode?.enabled ? 24 : 0 }}
-                                transition={{ type: "spring", stiffness: 300, damping: 25 }}
-                            />
-                        </button>
-                    </motion.div>
+                    </motion.section>
 
                     <AnimatePresence mode="wait">
-                        {config.gameMode?.enabled && (
+                        {protectionOn && (
                             <motion.div
-                                initial={{ opacity: 0, y: 20 }}
+                                initial={{ opacity: 0, y: 12 }}
                                 animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: 20 }}
-                                transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-                                className="space-y-8"
+                                exit={{ opacity: 0, y: 8 }}
+                                transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+                                className="flex flex-col space-y-5"
                             >
-                                <div className="bg-white/[0.03] border border-white/[0.08] p-5 rounded-xl space-y-5">
-                                    <div>
-                                        <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.3em] block ml-0.5 mb-5">{getTranslation(config, 'gamemode.isolation_strategy')}</label>
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <button
-                                                onClick={() => setConfig({ ...config, gameMode: { ...config.gameMode, mode: 'all' } })}
-                                                className={`py-6 rounded-xl border flex flex-col items-center justify-center gap-4 transition-all duration-500 ${config.gameMode?.mode === 'all'
-                                                    ? 'bg-white text-black border-white shadow-xl translate-y-[-1px]'
-                                                    : 'bg-black/40 border-white/5 text-white/30 hover:border-white/10 hover:text-white/60'}`}
-                                            >
-                                                <Ban size={22} strokeWidth={1} />
-                                                <div className="text-center">
-                                                    <div className="font-medium text-xs uppercase tracking-[0.1em]">{getTranslation(config, 'gamemode.always_absolute')}</div>
-                                                </div>
-                                            </button>
-                                            <button
-                                                onClick={() => setConfig({ ...config, gameMode: { ...config.gameMode, mode: 'list' } })}
-                                                className={`py-6 rounded-xl border flex flex-col items-center justify-center gap-4 transition-all duration-500 ${config.gameMode?.mode === 'list'
-                                                    ? 'bg-white text-black border-white shadow-xl translate-y-[-1px]'
-                                                    : 'bg-black/40 border-white/5 text-white/30 hover:border-white/10 hover:text-white/60'}`}
-                                            >
-                                                <Hash size={22} strokeWidth={1} />
-                                                <div className="text-center">
-                                                    <div className="font-medium text-xs uppercase tracking-[0.1em]">{getTranslation(config, 'gamemode.targeted_list')}</div>
-                                                </div>
-                                            </button>
-                                        </div>
-                                    </div>
+                                <section className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-5">
+                                    <p className="text-[8px] font-medium uppercase tracking-[0.25em] text-white/25">
+                                        {getTranslation(config, 'gamemode.isolation_strategy')}
+                                    </p>
+                                    <p className="mt-1 max-w-2xl text-[11px] font-medium leading-relaxed tracking-wide text-white/30">
+                                        {getTranslation(config, 'gamemode.scope_intro')}
+                                    </p>
 
-                                    {config.gameMode?.mode === 'list' && (
-                                        <motion.div
-                                            initial={{ opacity: 0, height: 0 }}
-                                            animate={{ opacity: 1, height: 'auto' }}
-                                            className="space-y-4 pt-6 border-t border-white/5"
+                                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setConfig({ ...config, gameMode: { ...config.gameMode, mode: 'all' } })
+                                            }
+                                            className={`rounded-xl border px-4 py-3.5 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050505] ${
+                                                config.gameMode?.mode === 'all'
+                                                    ? 'border-white/18 bg-white/[0.07] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]'
+                                                    : 'border-white/[0.06] bg-black/20 hover:border-white/10 hover:bg-white/[0.03]'
+                                            }`}
                                         >
-                                            <motion.div
-                                                initial={{ opacity: 0, height: 0 }}
-                                                animate={{ opacity: 1, height: 'auto' }}
-                                                className="space-y-3"
-                                            >
-                                                <label className="text-[10px] font-semibold text-white/20 uppercase tracking-[0.2em] block ml-1">{getTranslation(config, 'gamemode.process_list')}</label>
-                                                <p className="text-[11px] text-white/30 leading-relaxed ml-1 mb-3">
+                                            <div className="flex items-start gap-3">
+                                                <span
+                                                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ${
+                                                        config.gameMode?.mode === 'all'
+                                                            ? 'bg-white/[0.08] text-white ring-white/12'
+                                                            : 'bg-white/[0.03] text-white/40 ring-white/[0.06]'
+                                                    }`}
+                                                    aria-hidden
+                                                >
+                                                    <Ban size={16} strokeWidth={1.5} />
+                                                </span>
+                                                <div className="min-w-0 space-y-1">
+                                                    <p className="text-[13px] font-medium leading-snug text-white">
+                                                        {getTranslation(config, 'gamemode.always_absolute')}
+                                                    </p>
+                                                    <p className="text-[11px] leading-relaxed text-white/35">
+                                                        {getTranslation(config, 'gamemode.mode_all_summary')}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setConfig({ ...config, gameMode: { ...config.gameMode, mode: 'list' } })
+                                            }
+                                            className={`rounded-xl border px-4 py-3.5 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050505] ${
+                                                config.gameMode?.mode === 'list'
+                                                    ? 'border-white/18 bg-white/[0.07] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]'
+                                                    : 'border-white/[0.06] bg-black/20 hover:border-white/10 hover:bg-white/[0.03]'
+                                            }`}
+                                        >
+                                            <div className="flex items-start gap-3">
+                                                <span
+                                                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ${
+                                                        config.gameMode?.mode === 'list'
+                                                            ? 'bg-white/[0.08] text-white ring-white/12'
+                                                            : 'bg-white/[0.03] text-white/40 ring-white/[0.06]'
+                                                    }`}
+                                                    aria-hidden
+                                                >
+                                                    <Hash size={16} strokeWidth={1.5} />
+                                                </span>
+                                                <div className="min-w-0 space-y-1">
+                                                    <p className="text-[13px] font-medium leading-snug text-white">
+                                                        {getTranslation(config, 'gamemode.targeted_list')}
+                                                    </p>
+                                                    <p className="text-[11px] leading-relaxed text-white/35">
+                                                        {getTranslation(config, 'gamemode.mode_list_summary')}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </button>
+                                    </div>
+                                </section>
+
+                                {config.gameMode?.mode === 'list' && (
+                                    <motion.section
+                                        initial={{ opacity: 0, height: 0 }}
+                                        animate={{ opacity: 1, height: 'auto' }}
+                                        className="overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.03] p-5"
+                                    >
+                                        <div className="space-y-3">
+                                            <div>
+                                                <p className="text-[8px] font-medium uppercase tracking-[0.25em] text-white/25">
+                                                    {getTranslation(config, 'gamemode.process_list')}
+                                                </p>
+                                                <p className="mt-1 text-[11px] leading-relaxed text-white/35">
                                                     {getTranslation(config, 'gamemode.block_list_hint_list_only')}
                                                 </p>
-                                                <div className="flex flex-wrap gap-2 min-h-[2.25rem] items-start">
-                                                    {blockedRows.length === 0 ? (
-                                                        <span className="text-xs text-white/25 py-1">{getTranslation(config, 'gamemode.no_blocked_apps')}</span>
-                                                    ) : (
-                                                        blockedRows.map((row) => (
-                                                            <span
-                                                                key={row.raw}
-                                                                title={row.raw}
-                                                                className="inline-flex items-center gap-1 pl-3 pr-1 py-1.5 rounded-lg bg-black/50 border border-white/10 text-[11px] font-medium text-white/85 tracking-tight max-w-[min(100%,14rem)]"
+                                            </div>
+
+                                            <div className="flex min-h-[2rem] flex-wrap gap-2">
+                                                {blockedRows.length === 0 ? (
+                                                    <span className="py-0.5 text-[11px] text-white/28">
+                                                        {getTranslation(config, 'gamemode.no_blocked_apps')}
+                                                    </span>
+                                                ) : (
+                                                    blockedRows.map((row) => (
+                                                        <span
+                                                            key={row.raw}
+                                                            title={row.raw}
+                                                            className="inline-flex max-w-[min(100%,16rem)] items-center gap-1 rounded-lg border border-white/[0.08] bg-black/35 py-1 pl-2.5 pr-0.5 text-[11px] font-medium tracking-tight text-white/85"
+                                                        >
+                                                            <span className="truncate">{row.label}</span>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => removeBlockedSegment(row.raw)}
+                                                                className="shrink-0 rounded-md p-1 text-white/35 transition-colors hover:bg-white/10 hover:text-white"
+                                                                aria-label={
+                                                                    getTranslation(config, 'action.remove') || 'Remove'
+                                                                }
                                                             >
-                                                                <span className="truncate">{row.label}</span>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => removeBlockedSegment(row.raw)}
-                                                                    className="p-1 rounded-md hover:bg-white/10 text-white/40 hover:text-white transition-colors shrink-0"
-                                                                    aria-label={getTranslation(config, 'action.remove') || 'Remove'}
-                                                                >
-                                                                    <X size={12} />
-                                                                </button>
-                                                            </span>
-                                                        ))
-                                                    )}
-                                                </div>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setGameBlockPickerOpen(true)}
-                                                    className="mt-2 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.12] border border-white/10 text-[12px] font-semibold text-white/90 transition-colors"
-                                                >
-                                                    <Plus size={16} strokeWidth={2.5} />
-                                                    {getTranslation(config, 'gamemode.add_blocked_app')}
-                                                </button>
-                                                <AppSelector
-                                                    isOpen={gameBlockPickerOpen}
-                                                    onClose={() => setGameBlockPickerOpen(false)}
-                                                    onAppSelect={onBlockedAppSelected}
-                                                    appsOnly
-                                                    title={getTranslation(config, 'gamemode.pick_app_title_fullscreen')}
-                                                    subtitle={getTranslation(config, 'gamemode.pick_app_subtitle')}
-                                                />
-                                            </motion.div>
-                                        </motion.div>
-                                    )}
-                                </div>
+                                                                <X size={12} strokeWidth={2} />
+                                                            </button>
+                                                        </span>
+                                                    ))
+                                                )}
+                                            </div>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => setGameBlockPickerOpen(true)}
+                                                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.06] px-3.5 py-2 text-[12px] font-semibold tracking-tight text-white/90 transition-colors hover:border-white/16 hover:bg-white/[0.09]"
+                                            >
+                                                <Plus size={14} strokeWidth={2.25} />
+                                                {getTranslation(config, 'gamemode.add_blocked_app')}
+                                            </button>
+
+                                            <AppSelector
+                                                isOpen={gameBlockPickerOpen}
+                                                onClose={() => setGameBlockPickerOpen(false)}
+                                                onAppSelect={onBlockedAppSelected}
+                                                appsOnly
+                                                title={getTranslation(config, 'gamemode.pick_app_title_fullscreen')}
+                                                subtitle={getTranslation(config, 'gamemode.pick_app_subtitle')}
+                                            />
+                                        </div>
+                                    </motion.section>
+                                )}
                             </motion.div>
                         )}
                     </AnimatePresence>
@@ -3198,7 +3577,7 @@ const SEARCHABLE_SETTINGS: Omit<SearchResult, 'id'>[] = [
     { type: 'setting', label: 'visuals.transparency', description: 'visuals.blur_radius', tab: 'visuals', icon: ImageIcon },
     { type: 'setting', label: 'visuals.visual_rhythm', description: 'visuals.spacing', tab: 'visuals', icon: Layout },
     { type: 'setting', label: 'hud.temporal_module', description: 'hud.time_flow', tab: 'widgets', icon: Clock },
-    { type: 'setting', label: 'gamemode.operational_logic', description: 'gamemode.blocking_rules', tab: 'gamemode', icon: Gamepad2 },
+    { type: 'setting', label: 'settings.gamemode_title', description: 'settings.gamemode_desc', tab: 'gamemode', icon: Shield },
     { type: 'setting', label: 'user.profile_title', description: 'user.profile_desc', tab: 'user', icon: User },
 ];
 
@@ -4517,7 +4896,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                             {!isCompact && <SectionHeader label={getTranslation(config, 'sidebar.system')} isExpanded={isSidebarExpanded} />}
                             <NavButton tab="widgets" label={getTranslation(config, 'sidebar.hud')} icon={Clock} isSidebarExpanded={isCompact ? false : isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} isCompact={isCompact} />
-                            <NavButton tab="gamemode" label={getTranslation(config, 'sidebar.gamemode')} icon={Gamepad2} isSidebarExpanded={isCompact ? false : isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} isCompact={isCompact} />
+                            <NavButton tab="gamemode" label={getTranslation(config, 'sidebar.gamemode')} icon={Shield} isSidebarExpanded={isCompact ? false : isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} isCompact={isCompact} />
                             <NavButton tab="user" label={getTranslation(config, 'sidebar.profile')} icon={User} isSidebarExpanded={isCompact ? false : isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} isCompact={isCompact} />
                         </div>
 

@@ -9,27 +9,32 @@ import {
 
 /**
  * “Ambient pill” — compacto, sem backdrop-blur (overlay transparente no Windows).
- * Borda em cabelo, sombra suave, leve highlight interno.
+ * `box-shadow` em HWND transparente costuma gerar halo/bounding box retangular no DWM — profundidade com `drop-shadow` + borda.
  */
 const islandPillClass =
-  'inline-flex min-w-0 items-center gap-2.5 rounded-full border border-white/[0.08] bg-[rgba(11,11,13,0.92)] px-3.5 py-1.5 shadow-[0_10px_40px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.055)]';
+  'inline-flex min-w-0 items-center gap-2.5 rounded-full border border-white/[0.1] bg-[rgba(11,11,13,0.94)] px-3.5 py-1.5 shadow-none [filter:drop-shadow(0_4px_14px_rgba(0,0,0,0.28))_drop-shadow(0_1px_2px_rgba(0,0,0,0.2))]';
 
 const islandPulseDot =
-  'h-[5px] w-[5px] shrink-0 rounded-full bg-emerald-400/95 shadow-[0_0_10px_rgba(52,211,153,0.5)]';
+  'h-[5px] w-[5px] shrink-0 rounded-full bg-emerald-400/95 [filter:drop-shadow(0_0_5px_rgba(52,211,153,0.45))]';
+
+/** Relógio HH:MM em repouso — sem caixa/fundo (só texto + dot). */
+const islandIdleClockClass =
+  'inline-flex min-w-0 items-center gap-2 rounded-full border-0 bg-transparent px-1 py-0 shadow-none';
 
 /** Faixa no topo: largura = viewport; ilha centrada em X com flex (sem translate). */
 function islandTopStripClass(paintReady: boolean): string {
   return [
     /** Sem transição de opacidade — ao redimensionar o HWND (small↔windowed) o DWM animava o fade e parecia o relógio a “voar” para o rect do dashboard. */
-    'fixed inset-x-0 top-0 z-[45] flex justify-center bg-transparent pt-[max(1.25rem,env(safe-area-inset-top,0px))] px-4 pb-4 pointer-events-none overflow-visible',
-    paintReady ? 'opacity-100' : 'opacity-0',
+    'fixed inset-x-0 top-0 z-[55] flex justify-center bg-transparent pt-[max(1.25rem,env(safe-area-inset-top,0px))] px-4 pb-4 pointer-events-none overflow-visible isolate [mix-blend-mode:normal]',
+    /** `invisible` evita flash de composição antes do hit-shape / 1 frame de reveal. */
+    paintReady ? 'opacity-100 visible' : 'opacity-0 invisible',
   ].join(' ');
 }
 
 /** Só este bloco entra no rect do hit-shape — deve envolver só a pill, não a faixa inteira. */
 function islandClusterClassNames(sideBySideTimerStrips: boolean): string {
   const base =
-    'pointer-events-auto items-center bg-transparent max-w-[min(100vw-1rem,52rem)] justify-center';
+    'pointer-events-auto relative isolate z-0 transform-gpu items-center bg-transparent max-w-[min(100vw-1rem,52rem)] justify-center';
   if (sideBySideTimerStrips) {
     return `${base} flex flex-row flex-wrap gap-2`;
   }
@@ -133,6 +138,16 @@ export const CompactTimerHud: React.FC<Props> = ({
     let cancelled = false;
     const pad = 20;
 
+    /** Um frame após aplicar hit-shape o DWM costuma estabilizar — evita “vazamento” / rect inicial. */
+    const revealPaintReady = () => {
+      if (cancelled) return;
+      requestAnimationFrame(() => {
+        if (!cancelled) setPaintReady(true);
+      });
+    };
+
+    setPaintReady(false);
+
     const applyNow = async () => {
       if (cancelled) return;
       /** Deixa o layout/viewport estabilizar após resize (evita 1.º rect errado + salto visível). */
@@ -174,7 +189,7 @@ export const CompactTimerHud: React.FC<Props> = ({
         Math.abs(prev.width - next.width) < 3 &&
         Math.abs(prev.height - next.height) < 3
       ) {
-        if (!cancelled) setPaintReady(true);
+        revealPaintReady();
         return;
       }
       lastSentBoundsRef.current = next;
@@ -183,7 +198,7 @@ export const CompactTimerHud: React.FC<Props> = ({
       } catch {
         /* ignore */
       } finally {
-        if (!cancelled) setPaintReady(true);
+        revealPaintReady();
       }
     };
 
@@ -231,6 +246,8 @@ export const CompactTimerHud: React.FC<Props> = ({
   const pomodoroLabel = `${pm}:${String(ps).padStart(2, '0')}`;
   const timeStyleBase = 'font-mono font-semibold tabular-nums leading-none text-white/[0.96]';
   const timeStyleDynamic = `${timeStyleBase} ${timeSize}`;
+  /** Leve sombra no texto — legível sem caixa; evitar blur forte (artefatos em janela transparente). */
+  const timeStyleIdleClock = `${timeStyleBase} text-[15px] tracking-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.55)]`;
 
   return (
     <div className={islandTopStripClass(paintReady)}>
@@ -255,11 +272,11 @@ export const CompactTimerHud: React.FC<Props> = ({
         )}
         {showIdleClock && (
           <div
-            className={`${pillClass} pl-2.5 pr-3.5 gap-2.5 justify-between`}
+            className={`${islandIdleClockClass} justify-between`}
             title={t('hud.island_clock')}
           >
             <span className={islandPulseDot} aria-hidden />
-            <span ref={idleTimeRef} className={`${timeStyleBase} text-[15px] tracking-tight`} />
+            <span ref={idleTimeRef} className={timeStyleIdleClock} />
           </div>
         )}
       </div>

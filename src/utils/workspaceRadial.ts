@@ -17,7 +17,7 @@ export function buildWorkspacePickerItems(cfg: UIConfig): AppItem[] {
       id: `__zenith_ws_pick__${index}`,
       type: 'app',
       label: ws.name,
-      iconName: 'Layers',
+      iconName: ws.pickerIconName?.trim() || 'Layers',
       iconSource: 'lucide',
       command: '',
       commandType: 'app',

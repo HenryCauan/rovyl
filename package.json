@@ -33,6 +33,7 @@
     "electron": "^28.3.3",
     "electron-builder": "^24.9.1",
     "png-to-ico": "^3.0.1",
+    "rcedit": "^4.0.1",
     "typescript": "^5.2.2",
     "vite": "^5.0.0",
     "wait-on": "^7.1.0"
@@ -40,6 +41,7 @@
   "build": {
     "appId": "com.seu.zenith",
     "productName": "Zenith OS",
+    "icon": "build/icon.ico",
     "files": [
       "dist/**/*",
       "backend/**/*",
@@ -56,6 +58,8 @@
     "directories": {
       "output": "build-out"
     },
+    "afterPack": "./scripts/after-pack-win-icon.cjs",
+    "afterAllArtifactBuild": "./scripts/after-all-artifact-win-icon.cjs",
     "win": {
       "target": [
         "nsis",
@@ -65,6 +69,9 @@
       "signAndEditExecutable": false
     },
     "nsis": {
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,

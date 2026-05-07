@@ -381,8 +381,42 @@ function applyMousePolicyAfterReveal(win) {
 
 /** When true, allow BrowserWindow to close (real quit). Otherwise close → hide to tray. */
 let isAppQuitting = false;
-app.on("before-quit", () => {
+/** Ensures renderer runs saveFullConfigSync before exit (tray "Sair" / OS shutdown paths). */
+let zenithQuitFlushStarted = false;
+app.on("before-quit", (event) => {
   isAppQuitting = true;
+  if (zenithQuitFlushStarted) {
+    return;
+  }
+  const w = mainWindow;
+  if (!w || w.isDestroyed()) {
+    return;
+  }
+  event.preventDefault();
+  zenithQuitFlushStarted = true;
+
+  let finished = false;
+  let timeoutId = null;
+  const finishExit = () => {
+    if (finished) return;
+    finished = true;
+    if (timeoutId != null) clearTimeout(timeoutId);
+    app.exit(0);
+  };
+
+  timeoutId = setTimeout(() => {
+    diagLog("[Quit] Persistence flush timeout — exiting");
+    finishExit();
+  }, 3000);
+
+  ipcMain.once("zenith-quit-flush-ack", finishExit);
+
+  try {
+    w.webContents.send("zenith-before-quit-flush");
+  } catch (e) {
+    diagLog(`[Quit] Flush IPC failed: ${e.message}`);
+    finishExit();
+  }
 });
 
 // Shortcut Recording State
@@ -743,6 +777,8 @@ function showMenuAtCursor(source = "shortcut") {
       x: cursorPoint.x,
       y: cursorPoint.y,
       source: source,
+      /** Main já chamou `updateWindowSize('fullscreen')` (exceto minimizado: bounds em fila). */
+      preSizedByMain: !wasMinimized,
     });
 
     setImmediate(() => {
@@ -798,11 +834,26 @@ function showMenuAtCursor(source = "shortcut") {
     return;
   }
 
+  let visibleOk = false;
+  try {
+    visibleOk = mainWindow.isVisible();
+  } catch {
+    visibleOk = false;
+  }
+
   /**
-   * Pedir ao renderer um frame sólido (#0A0A0A) ANTES de `open-menu` + `show`.
-   * Sem isto, ao restaurar da minimização o DWM mostra primeiro a textura antiga (dashboard).
+   * Caminho rápido: janela já visível e não minimizada — handshake prepare-radial custa ~2 rAF + IPC
+   * e parece “lag” ao abrir. O prep mantém-se só quando minimizado ou HWND oculto (bandeja / flash DWM).
    */
-  const prepTimeoutMs = wasMinimized ? 280 : 140;
+  if (!wasMinimized && visibleOk) {
+    setImmediate(sendOpenMenuAndReveal);
+    return;
+  }
+
+  /**
+   * Frame neutro antes de `open-menu` + `show` — sobretudo restore da minimização / HWND escondido.
+   */
+  const prepTimeoutMs = wasMinimized ? 200 : 72;
   const prepPromise = new Promise((resolve) => {
     const t = setTimeout(resolve, prepTimeoutMs);
     ipcMain.once("radial-prep-paint-done", () => {
@@ -1440,10 +1491,32 @@ app.whenReady().then(async () => {
     }
   };
 
+  /** Merge UI fields used by registerGlobalShortcut; workspaces stay in memory only (not written to settings.json). */
+  const applyUiConfigToCurrentSettings = (ui) => {
+    if (!ui || typeof ui !== "object") return;
+    if (typeof ui.globalShortcut === "string" && ui.globalShortcut.trim()) {
+      currentSettings.globalShortcut = ui.globalShortcut.trim();
+    }
+    if (typeof ui.enableMouseTrigger === "boolean") {
+      currentSettings.enableMouseTrigger = ui.enableMouseTrigger;
+    }
+    if (typeof ui.openAtLogin === "boolean") {
+      currentSettings.openAtLogin = ui.openAtLogin;
+    }
+    if (Array.isArray(ui.workspaces)) {
+      currentSettings.workspaces = ui.workspaces;
+    }
+  };
+
   const saveSettings = (newSettings) => {
     try {
       currentSettings = { ...currentSettings, ...newSettings };
-      fs.writeFileSync(settingsPath, JSON.stringify(currentSettings, null, 2));
+      const slim = {
+        globalShortcut: currentSettings.globalShortcut || "Alt+Z",
+        enableMouseTrigger: currentSettings.enableMouseTrigger !== false,
+        openAtLogin: !!currentSettings.openAtLogin,
+      };
+      fs.writeFileSync(settingsPath, JSON.stringify(slim, null, 2));
     } catch (e) {
       console.error("Failed to save settings:", e);
     }
@@ -1472,6 +1545,8 @@ app.whenReady().then(async () => {
       }
       const ui = extractUiConfigFromPersistenceBlob(fc);
       if (ui) {
+        // Authoritative UI state lives in config-v2.json — win over stale settings.json (fixes shortcut/sync races).
+        applyUiConfigToCurrentSettings(ui);
         if (typeof ui.performanceMode === "boolean") {
           cachedRadialFlags.performanceMode = ui.performanceMode;
         }
@@ -1484,6 +1559,8 @@ app.whenReady().then(async () => {
   } catch (_) {}
 
   let syncMouseHookState = () => {};
+  /** Assigned after registerGlobalShortcut(); refreshes OS shortcuts when renderer saves config-v2. */
+  let refreshShortcutsFromFullConfig = null;
 
   // Register essential IPC handlers BEFORE window creation
   ipcMain.handle("get-settings", () => currentSettings);
@@ -1509,6 +1586,13 @@ app.whenReady().then(async () => {
       fs.writeFileSync(tempPath, JSON.stringify(toWrite, null, 2), "utf-8");
 
       if (fs.existsSync(tempPath) && fs.statSync(tempPath).size > 0) {
+        try {
+          if (fs.existsSync(configPath) && fs.statSync(configPath).size > 0) {
+            fs.copyFileSync(configPath, `${configPath}.bak`);
+          }
+        } catch (e) {
+          diagLog(`[Persist] config-v2.json backup: ${e.message}`);
+        }
         fs.renameSync(tempPath, configPath);
       } else {
         throw new Error("Temp file is empty or missing after write");
@@ -1532,25 +1616,75 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("get-full-config", () => {
     const configPath = path.join(app.getPath("userData"), "config-v2.json");
+    const bakPath = `${configPath}.bak`;
+
+    const quarantineUnreadablePrimary = (err) => {
+      try {
+        if (fs.existsSync(configPath)) {
+          const bad = `${configPath}.broken-${Date.now()}.json`;
+          fs.renameSync(configPath, bad);
+          diagLog(
+            `[Persist] Quarantined unreadable config-v2.json → ${path.basename(bad)} (${err.message})`,
+          );
+        }
+      } catch (e) {
+        diagLog(`[Persist] Quarantine primary failed: ${e.message}`);
+      }
+    };
+
+    const loadAndNormalize = (filePath) => {
+      const data = fs.readFileSync(filePath, "utf-8");
+      const parsed = JSON.parse(data);
+      if (process.platform === "win32" && parsed && typeof parsed === "object") {
+        try {
+          const copy = JSON.parse(JSON.stringify(parsed));
+          win32Launch.normalizePersistedPayloadWin32(copy);
+          return copy;
+        } catch (e) {
+          diagLog(`[Persist] get-full-config win32 normalize: ${e.message}`);
+        }
+      }
+      return parsed;
+    };
+
     try {
       if (fs.existsSync(configPath)) {
-        const data = fs.readFileSync(configPath, "utf-8");
-        const parsed = JSON.parse(data);
-        if (process.platform === "win32" && parsed && typeof parsed === "object") {
-          try {
-            const copy = JSON.parse(JSON.stringify(parsed));
-            win32Launch.normalizePersistedPayloadWin32(copy);
-            return copy;
-          } catch (e) {
-            diagLog(`[Persist] get-full-config win32 normalize: ${e.message}`);
-          }
-        }
-        return parsed;
+        return loadAndNormalize(configPath);
       }
     } catch (e) {
       console.error("Failed to load full config:", e);
+      diagLog(`[Persist] get-full-config primary failed: ${e.message}`);
+      quarantineUnreadablePrimary(e);
+    }
+    try {
+      if (fs.existsSync(bakPath)) {
+        diagLog("[Persist] get-full-config: using config-v2.json.bak");
+        return loadAndNormalize(bakPath);
+      }
+    } catch (e2) {
+      console.error("Failed to load backup config:", e2);
+      diagLog(`[Persist] get-full-config bak failed: ${e2.message}`);
     }
     return null;
+  });
+
+  ipcMain.handle("get-config-persistence-meta", () => {
+    const configPath = path.join(app.getPath("userData"), "config-v2.json");
+    const bakPath = `${configPath}.bak`;
+    try {
+      const primaryBytes =
+        fs.existsSync(configPath) && fs.statSync(configPath).isFile()
+          ? fs.statSync(configPath).size
+          : 0;
+      const backupBytes =
+        fs.existsSync(bakPath) && fs.statSync(bakPath).isFile()
+          ? fs.statSync(bakPath).size
+          : 0;
+      return { primaryBytes, backupBytes };
+    } catch (e) {
+      diagLog(`[Persist] get-config-persistence-meta: ${e.message}`);
+      return { primaryBytes: 0, backupBytes: 0 };
+    }
   });
 
   ipcMain.on("save-full-config", (_event, payload) => {
@@ -1564,6 +1698,11 @@ app.whenReady().then(async () => {
       }
       const ui = extractUiConfigFromPersistenceBlob(payload);
       if (ui) {
+        applyUiConfigToCurrentSettings(ui);
+        saveSettings({});
+        if (typeof ui.openAtLogin === "boolean") {
+          syncLoginItemSettings(ui.openAtLogin);
+        }
         if (typeof ui.performanceMode === "boolean") {
           cachedRadialFlags.performanceMode = ui.performanceMode;
         }
@@ -1573,6 +1712,11 @@ app.whenReady().then(async () => {
         mergeGameModeConfig(ui.gameMode);
       }
       syncMouseHookState();
+      try {
+        refreshShortcutsFromFullConfig?.();
+      } catch (e) {
+        diagLog(`[Persist] refreshShortcutsFromFullConfig: ${e.message}`);
+      }
     }
   });
 
@@ -1588,6 +1732,11 @@ app.whenReady().then(async () => {
       }
       const ui = extractUiConfigFromPersistenceBlob(payload);
       if (ui) {
+        applyUiConfigToCurrentSettings(ui);
+        saveSettings({});
+        if (typeof ui.openAtLogin === "boolean") {
+          syncLoginItemSettings(ui.openAtLogin);
+        }
         if (typeof ui.performanceMode === "boolean") {
           cachedRadialFlags.performanceMode = ui.performanceMode;
         }
@@ -1597,6 +1746,11 @@ app.whenReady().then(async () => {
         mergeGameModeConfig(ui.gameMode);
       }
       syncMouseHookState();
+      try {
+        refreshShortcutsFromFullConfig?.();
+      } catch (e) {
+        diagLog(`[Persist] refreshShortcutsFromFullConfig(sync): ${e.message}`);
+      }
     }
   });
 
@@ -1942,6 +2096,27 @@ app.whenReady().then(async () => {
     console.error("Erro ao criar tray icon:", err);
   }
 
+  /**
+   * Evita toast a cada save/reopen do radial quando o atalho está ocupado (ex.: Alt+Z da NVIDIA).
+   * Volta a notificar se o utilizador mudar o atalho e o novo também falhar.
+   */
+  let mainShortcutConflictNotify = { failedKey: null, notifiedForKey: null };
+
+  const shortcutCompactKey = (s) =>
+    String(s || "")
+      .replace(/\s+/g, "")
+      .replace(/Win/gi, "Super")
+      .toLowerCase();
+
+  /** Alt+Z é comum na sobreposição GeForce / outros — mensagem mais útil que genérico "OS". */
+  const altZOverlayHint = (shortcutStr) => {
+    const k = shortcutCompactKey(shortcutStr);
+    if (k === "alt+z" || k === "option+z") {
+      return " Alt+Z costuma estar reservado à sobreposição NVIDIA GeForce Experience (ou a outra app). Desativa esse atalho lá ou escolhe outro atalho para o Zenith em Definições.";
+    }
+    return "";
+  };
+
   const registerGlobalShortcut = () => {
     globalShortcut.unregisterAll();
     let shortcut = currentSettings.globalShortcut || "Alt+Z";
@@ -1963,19 +2138,32 @@ app.whenReady().then(async () => {
       });
 
       if (registered) {
+        mainShortcutConflictNotify = { failedKey: null, notifiedForKey: null };
         diagLog(`Global shortcut '${shortcut}' registered successfully.`);
       } else {
-        const errorMsg = `Shortcut '${shortcut}' could not be registered (likely reserved by OS).`;
-        diagLog(`[ERROR] ${errorMsg}`);
-        if (mainWindow && !mainWindow.isDestroyed()) {
+        const failKey = shortcutCompactKey(shortcut);
+        mainShortcutConflictNotify.failedKey = failKey;
+        const alreadyNotified =
+          mainShortcutConflictNotify.notifiedForKey === failKey;
+        const base = `O atalho global "${shortcut}" não pôde ser registado (provavelmente já está em uso pelo Windows ou por outra aplicação).`;
+        const errorMsg = `${base}${altZOverlayHint(shortcut)}`;
+        diagLog(`[ERROR] Global shortcut not registered: ${shortcut}`);
+        if (mainWindow && !mainWindow.isDestroyed() && !alreadyNotified) {
           mainWindow.webContents.send("execution-error", errorMsg);
+          mainShortcutConflictNotify.notifiedForKey = failKey;
         }
       }
     } catch (e) {
-      const errorMsg = `Critical error registering shortcut '${shortcut}': ${e.message}`;
+      const failKey = shortcutCompactKey(shortcut);
+      mainShortcutConflictNotify.failedKey = failKey;
+      const alreadyNotified =
+        mainShortcutConflictNotify.notifiedForKey === failKey;
+      const base = `Erro ao registar o atalho "${shortcut}": ${e.message}`;
+      const errorMsg = `${base}${altZOverlayHint(shortcut)}`;
       diagLog(`[FATAL] ${errorMsg}`);
-      if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow && !mainWindow.isDestroyed() && !alreadyNotified) {
         mainWindow.webContents.send("execution-error", errorMsg);
+        mainShortcutConflictNotify.notifiedForKey = failKey;
       }
     }
 
@@ -2009,12 +2197,7 @@ app.whenReady().then(async () => {
                   diagLog(
                     `[Shortcuts] Failed to register app shortcut: ${appShortcut} for ${app.label} (Likely reserved by OS)`,
                   );
-                  if (mainWindow && !mainWindow.isDestroyed()) {
-                    mainWindow.webContents.send(
-                      "execution-error",
-                      `Erro ao registrar atalho para ${app.label}: ${appShortcut}`,
-                    );
-                  }
+                  // Não enviar execution-error: save-full-config re-regista atalhos muitas vezes e inundava o UI.
                 }
               } catch (e) {
                 diagLog(
@@ -2078,19 +2261,31 @@ app.whenReady().then(async () => {
   // Register initial shortcut
   registerGlobalShortcut();
 
-  ipcMain.on("set-settings", (event, settings) => {
-    saveSettings(settings);
+  refreshShortcutsFromFullConfig = () => {
+    registerGlobalShortcut();
+  };
 
-    if (settings.enableMouseTrigger !== undefined) {
-      cachedRadialFlags.enableMouseTrigger = settings.enableMouseTrigger;
+  ipcMain.on("set-settings", (event, settings) => {
+    if (!settings || typeof settings !== "object") return;
+    const patch = {};
+    if (typeof settings.globalShortcut === "string") patch.globalShortcut = settings.globalShortcut;
+    if (typeof settings.enableMouseTrigger === "boolean") patch.enableMouseTrigger = settings.enableMouseTrigger;
+    if (typeof settings.openAtLogin === "boolean") patch.openAtLogin = settings.openAtLogin;
+    if (Array.isArray(settings.workspaces)) patch.workspaces = settings.workspaces;
+    if (Object.keys(patch).length === 0) return;
+
+    saveSettings(patch);
+
+    if (patch.enableMouseTrigger !== undefined) {
+      cachedRadialFlags.enableMouseTrigger = patch.enableMouseTrigger;
     }
 
-    if (settings.globalShortcut) {
+    if (patch.globalShortcut) {
       registerGlobalShortcut();
     }
 
-    if (settings.openAtLogin !== undefined) {
-      syncLoginItemSettings(settings.openAtLogin);
+    if (patch.openAtLogin !== undefined) {
+      syncLoginItemSettings(patch.openAtLogin);
     }
 
     syncMouseHookState();

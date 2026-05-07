@@ -387,6 +387,8 @@ export default function App() {
     noteWorkspaces: [defaultNoteWorkspace] as NoteWorkspace[],
     activeNoteWorkspaceId: 'default',
   });
+  /** When load failed but disk still has a non-trivial config file — never overwrite with empty defaults. */
+  const persistenceSaveBlockedRef = useRef(false);
   useEffect(() => {
     persistenceRef.current = {
       user,
@@ -414,17 +416,6 @@ export default function App() {
       panelSurfaceOpen,
     };
   }, [isNotesOpen, isPomodoroOpen, pomodoroEndOverlay, panelSurfaceOpen]);
-
-  // Sync Settings with Backend
-  useEffect(() => {
-    if (window.electron && window.electron.getSettings) {
-      window.electron.getSettings().then((settings: any) => {
-        if (settings.globalShortcut) {
-          setConfig(prev => ({ ...prev, globalShortcut: settings.globalShortcut }));
-        }
-      });
-    }
-  }, []);
 
   // ICON NORMALIZATION CACHE-BUST:
   // When the extract-icon.ps1 normalization algorithm changes, bump this version
@@ -586,9 +577,26 @@ export default function App() {
 
     const loadPersistence = async () => {
       let finalData: any = null;
+      let loadedFromLocalStorageMigration = false;
 
       if (window.electron?.getFullConfig) {
-        finalData = await window.electron.getFullConfig();
+        try {
+          finalData = await window.electron.getFullConfig();
+        } catch (e) {
+          console.warn('[Zenith] getFullConfig failed:', e);
+          window.electron?.savePersistenceLog?.(
+            `getFullConfig: ${e instanceof Error ? e.message : String(e)}`,
+          );
+        }
+      }
+
+      let persistenceMeta = { primaryBytes: 0, backupBytes: 0 };
+      if (window.electron?.getConfigPersistenceMeta) {
+        try {
+          persistenceMeta = await window.electron.getConfigPersistenceMeta();
+        } catch (e) {
+          console.warn('[Zenith] getConfigPersistenceMeta failed:', e);
+        }
       }
 
       // Migration Fallback
@@ -624,9 +632,24 @@ export default function App() {
                 ? activeWsStr
                 : 'default',
           };
+          loadedFromLocalStorageMigration = true;
           // Save to main process immediately
           window.electron?.saveFullConfig(finalData);
         }
+      }
+
+      const diskLooksSubstantial =
+        persistenceMeta.primaryBytes > 100 || persistenceMeta.backupBytes > 100;
+      if (!finalData && diskLooksSubstantial && !loadedFromLocalStorageMigration) {
+        persistenceSaveBlockedRef.current = true;
+        window.electron?.savePersistenceLog?.(
+          'Hydration: no payload but config-v2.json (or .bak) is non-empty — blocking disk writes to avoid wiping user data',
+        );
+        setExecutionError(
+          'Zenith não conseguiu ler a configuração no disco (ficheiro em AppData). As gravações para o ficheiro estão bloqueadas para não apagar os teus dados. Consulta zenith-persistence.log na pasta de dados da app; copia ou repara config-v2.json / .bak.',
+        );
+      } else {
+        persistenceSaveBlockedRef.current = false;
       }
 
       if (finalData) {
@@ -855,10 +878,10 @@ export default function App() {
       localStorage.setItem('zenith_note_workspaces', JSON.stringify(noteWorkspaces));
       localStorage.setItem('zenith_active_note_workspace', activeNoteWorkspaceId);
 
-      if (window.electron?.saveFullConfig) {
+      if (!persistenceSaveBlockedRef.current && window.electron?.saveFullConfig) {
         window.electron.saveFullConfig(fullData);
       }
-    }, 400);
+    }, 250);
 
     return () => clearTimeout(timer);
   }, [user, apps, config, notes, alarms, noteWorkspaces, activeNoteWorkspaceId, isLoaded]);
@@ -889,6 +912,9 @@ export default function App() {
       } catch (e) {
         console.warn('localStorage flush failed', e);
       }
+      if (persistenceSaveBlockedRef.current) {
+        return;
+      }
       if (window.electron?.saveFullConfigSync) {
         window.electron.saveFullConfigSync(fullData);
       } else if (window.electron?.saveFullConfig) {
@@ -897,14 +923,22 @@ export default function App() {
     };
 
     const onPageHide = () => flushToDisk();
+    const onBeforeUnload = () => flushToDisk();
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') flushToDisk();
     };
     window.addEventListener('pagehide', onPageHide);
+    window.addEventListener('beforeunload', onBeforeUnload);
     document.addEventListener('visibilitychange', onVisibility);
+    const quitUnsub = window.electron?.onBeforeQuitFlush?.(() => {
+      flushToDisk();
+      window.electron?.ackQuitFlush?.();
+    });
     return () => {
       window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('beforeunload', onBeforeUnload);
       document.removeEventListener('visibilitychange', onVisibility);
+      quitUnsub?.();
     };
   }, [isLoaded]);
 
@@ -1227,9 +1261,8 @@ export default function App() {
     source: 'mmb' | 'shortcut' = 'shortcut',
     /** IPC sends screen coords from the main process; MMB uses client coords relative to the current window. */
     coordSpace: 'client' | 'screen' = 'client',
+    opts?: { preSizedByMain?: boolean },
   ) => {
-    console.warn(`[App.tsx] openMenu. Source: ${source}, index: ${config.activeWorkspaceIndex}, wsLength: ${config.workspaces?.length}`);
-
     const fixed = configRef.current.fixedPosition;
     if (fixed) {
       menuAnchorScreenRef.current = null;
@@ -1259,8 +1292,15 @@ export default function App() {
     });
 
     try {
-    /** `applyWindowSize` (invoke) garante que o main aplicou fullscreen antes do flushSync — evita 1.º paint ainda em rect windowed. */
-    if (isDesktopModeRef.current && window.electron) {
+    /**
+     * Atalho/MMB via main já chamou `updateWindowSize('fullscreen')` — repetir `applyWindowSize` aqui
+     * duplicava round-trip IPC + setBounds e atrasava o primeiro paint do radial.
+     */
+    if (
+      isDesktopModeRef.current &&
+      window.electron &&
+      !opts?.preSizedByMain
+    ) {
       try {
         if (window.electron.applyWindowSize) {
           await window.electron.applyWindowSize('fullscreen', anchorForFullscreen);
@@ -1274,6 +1314,8 @@ export default function App() {
           /* ignore */
         }
       }
+      lastWindowState.current = 'fullscreen';
+    } else if (opts?.preSizedByMain && isDesktopModeRef.current) {
       lastWindowState.current = 'fullscreen';
     }
 
@@ -1431,16 +1473,21 @@ export default function App() {
       });
     }
 
-    const cleanupMenu = window.electron?.onOpenMenu((data: { x: number, y: number, source?: 'mmb' | 'shortcut' }) => {
-      void openMenuRef.current(data.x, data.y, data.source ?? 'shortcut', 'screen');
+    const cleanupMenu = window.electron?.onOpenMenu((data: {
+      x: number;
+      y: number;
+      source?: 'mmb' | 'shortcut';
+      preSizedByMain?: boolean;
+    }) => {
+      void openMenuRef.current(data.x, data.y, data.source ?? 'shortcut', 'screen', {
+        preSizedByMain: data.preSizedByMain === true,
+      });
     });
 
     const cleanupPrepareRadial = window.electron?.onPrepareRadialShow?.(() => {
       flushSync(() => setRadialPreShowSolidCover(true));
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          window.electron?.notifyRadialPrepPaintDone?.();
-        });
+        window.electron?.notifyRadialPrepPaintDone?.();
       });
     });
 
