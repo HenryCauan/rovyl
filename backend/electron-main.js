@@ -1529,16 +1529,24 @@ const shouldOpenMenu = async () => {
     }
   }
 
+  if (mode === "all") {
+    if (activeResult && isForegroundWindowFullscreen(activeResult)) {
+      diagLog("[GameMode] Blocked: foreground fullscreen (mode=all)");
+      return false;
+    }
+    /**
+     * Caminho rápido para produtividade diária: `active-win` cobre o caso normal de fullscreen.
+     * O fallback PowerShell era usado em toda abertura e pode custar 1-2s no Windows.
+     */
+    if (activeResult) return true;
+  }
+
   let fgCtx = { exe: null, title: "", cmdline: "", bounds: null };
   if (process.platform === "win32") {
     fgCtx = await getForegroundContextWindows();
   }
 
   if (mode === "all") {
-    if (activeResult && isForegroundWindowFullscreen(activeResult)) {
-      diagLog("[GameMode] Blocked: foreground fullscreen (mode=all)");
-      return false;
-    }
     if (
       process.platform === "win32" &&
       fgCtx.bounds &&
@@ -1594,6 +1602,7 @@ app.whenReady().then(async () => {
   let currentSettings = {
     globalShortcut: "Alt+Z",
     enableMouseTrigger: true,
+    mouseTriggerMode: "click",
     openAtLogin: false,
   };
 
@@ -1636,6 +1645,9 @@ app.whenReady().then(async () => {
     if (typeof ui.enableMouseTrigger === "boolean") {
       currentSettings.enableMouseTrigger = ui.enableMouseTrigger;
     }
+    if (ui.mouseTriggerMode === "click" || ui.mouseTriggerMode === "hold") {
+      currentSettings.mouseTriggerMode = ui.mouseTriggerMode;
+    }
     if (typeof ui.openAtLogin === "boolean") {
       currentSettings.openAtLogin = ui.openAtLogin;
     }
@@ -1650,6 +1662,8 @@ app.whenReady().then(async () => {
       const slim = {
         globalShortcut: currentSettings.globalShortcut || "Alt+Z",
         enableMouseTrigger: currentSettings.enableMouseTrigger !== false,
+        mouseTriggerMode:
+          currentSettings.mouseTriggerMode === "hold" ? "hold" : "click",
         openAtLogin: !!currentSettings.openAtLogin,
       };
       fs.writeFileSync(settingsPath, JSON.stringify(slim, null, 2));
@@ -1667,6 +1681,8 @@ app.whenReady().then(async () => {
   /** Used with start/stop global MMB hook (PowerShell + WH_MOUSE_LL). */
   const cachedRadialFlags = {
     enableMouseTrigger: currentSettings.enableMouseTrigger !== false,
+    mouseTriggerMode:
+      currentSettings.mouseTriggerMode === "hold" ? "hold" : "click",
     performanceMode: false,
   };
   try {
@@ -1679,6 +1695,9 @@ app.whenReady().then(async () => {
       if (typeof fc.enableMouseTrigger === "boolean") {
         cachedRadialFlags.enableMouseTrigger = fc.enableMouseTrigger;
       }
+      if (fc.mouseTriggerMode === "click" || fc.mouseTriggerMode === "hold") {
+        cachedRadialFlags.mouseTriggerMode = fc.mouseTriggerMode;
+      }
       const ui = extractUiConfigFromPersistenceBlob(fc);
       if (ui) {
         // Authoritative UI state lives in config-v2.json — win over stale settings.json (fixes shortcut/sync races).
@@ -1688,6 +1707,9 @@ app.whenReady().then(async () => {
         }
         if (typeof ui.enableMouseTrigger === "boolean") {
           cachedRadialFlags.enableMouseTrigger = ui.enableMouseTrigger;
+        }
+        if (ui.mouseTriggerMode === "click" || ui.mouseTriggerMode === "hold") {
+          cachedRadialFlags.mouseTriggerMode = ui.mouseTriggerMode;
         }
         mergeGameModeConfig(ui.gameMode);
       }
@@ -1786,6 +1808,9 @@ app.whenReady().then(async () => {
     if (typeof payload.enableMouseTrigger === "boolean") {
       cachedRadialFlags.enableMouseTrigger = payload.enableMouseTrigger;
     }
+    if (payload.mouseTriggerMode === "click" || payload.mouseTriggerMode === "hold") {
+      cachedRadialFlags.mouseTriggerMode = payload.mouseTriggerMode;
+    }
     const ui = extractUiConfigFromPersistenceBlob(payload);
     if (ui) {
       applyUiConfigToCurrentSettings(ui);
@@ -1798,6 +1823,9 @@ app.whenReady().then(async () => {
       }
       if (typeof ui.enableMouseTrigger === "boolean") {
         cachedRadialFlags.enableMouseTrigger = ui.enableMouseTrigger;
+      }
+      if (ui.mouseTriggerMode === "click" || ui.mouseTriggerMode === "hold") {
+        cachedRadialFlags.mouseTriggerMode = ui.mouseTriggerMode;
       }
       mergeGameModeConfig(ui.gameMode);
     }
@@ -2478,6 +2506,9 @@ app.whenReady().then(async () => {
     const patch = {};
     if (typeof settings.globalShortcut === "string") patch.globalShortcut = settings.globalShortcut;
     if (typeof settings.enableMouseTrigger === "boolean") patch.enableMouseTrigger = settings.enableMouseTrigger;
+    if (settings.mouseTriggerMode === "click" || settings.mouseTriggerMode === "hold") {
+      patch.mouseTriggerMode = settings.mouseTriggerMode;
+    }
     if (typeof settings.openAtLogin === "boolean") patch.openAtLogin = settings.openAtLogin;
     if (Array.isArray(settings.workspaces)) patch.workspaces = settings.workspaces;
     if (Object.keys(patch).length === 0) return;
@@ -2486,6 +2517,9 @@ app.whenReady().then(async () => {
 
     if (patch.enableMouseTrigger !== undefined) {
       cachedRadialFlags.enableMouseTrigger = patch.enableMouseTrigger;
+    }
+    if (patch.mouseTriggerMode !== undefined) {
+      cachedRadialFlags.mouseTriggerMode = patch.mouseTriggerMode;
     }
 
     if (patch.globalShortcut) {
@@ -2939,9 +2973,10 @@ app.whenReady().then(async () => {
   let mouseHook = null;
   /** If the first MMB opened the radial immediately, the second MMB (double-click → settings) would race fullscreen vs windowed. We defer the radial slightly so a second MMB can cancel it and open settings only — no overlay conflict. */
   /** Single MMB opens radial after this delay so a second MMB can cancel → settings only (no fullscreen race). */
-  const MMB_MENU_DEBOUNCE_MS = 280;
+  const MMB_MENU_DEBOUNCE_MS = 65;
   let mmbMenuDebounceTimer = null;
   let mmbFirstDownAt = 0;
+  let mmbClickDownAt = 0;
 
   const startMouseHook = () => {
     if (mouseHook) return;
@@ -2962,6 +2997,10 @@ app.whenReady().then(async () => {
 
         if (msg === "MIDDLE_DOWN") {
           const now = Date.now();
+          if (cachedRadialFlags.mouseTriggerMode === "click") {
+            mmbClickDownAt = now;
+            continue;
+          }
           const sinceFirst = mmbFirstDownAt ? now - mmbFirstDownAt : 99999;
 
           // Second MMB while radial open is still deferred (timer pending): open settings only — no radial this gesture
@@ -2999,6 +3038,18 @@ app.whenReady().then(async () => {
             }, MMB_MENU_DEBOUNCE_MS);
           }
         } else if (msg === "MIDDLE_UP") {
+          if (cachedRadialFlags.mouseTriggerMode === "click") {
+            mmbClickDownAt = 0;
+            const allowed = await shouldOpenMenu();
+            if (allowed) showMenuAtCursor("mmb-click");
+            continue;
+          }
+          if (mmbMenuDebounceTimer) {
+            clearTimeout(mmbMenuDebounceTimer);
+            mmbMenuDebounceTimer = null;
+            mmbFirstDownAt = 0;
+            continue;
+          }
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send("mmb-release");
           }
@@ -3022,19 +3073,19 @@ app.whenReady().then(async () => {
       mmbMenuDebounceTimer = null;
     }
     mmbFirstDownAt = 0;
+    mmbClickDownAt = 0;
     diagLog("Stopping Mouse Hook");
     mouseHook.kill();
     mouseHook = null;
   };
 
   syncMouseHookState = () => {
-    const wantHook =
-      cachedRadialFlags.enableMouseTrigger && !cachedRadialFlags.performanceMode;
+    const wantHook = cachedRadialFlags.enableMouseTrigger;
     if (wantHook) startMouseHook();
     else stopMouseHook();
   };
   const mouseHookDelayMs = Number.parseInt(
-    process.env.ZENITH_MOUSE_HOOK_DELAY_MS ?? "12000",
+    process.env.ZENITH_MOUSE_HOOK_DELAY_MS ?? "0",
     10,
   );
   if (mouseHookDelayMs > 0) {

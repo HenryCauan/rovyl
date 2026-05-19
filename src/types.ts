@@ -175,6 +175,8 @@ export interface UIConfig {
   workspaceSwitchMode?: 'hotkeys' | 'picker';
   openAtLogin?: boolean; // New: Start app at login
   enableMouseTrigger: boolean;
+  /** click: clique MMB abre e deixa o radial aberto; hold: segurar abre e soltar executa a seleção. */
+  mouseTriggerMode?: 'click' | 'hold';
   language: "pt" | "en" | "es" | "fr" | "de" | "it" | "ja" | "zh" | "ko" | "ru";
   performanceMode: boolean; // New: Strict performance mode for zero-lag
   /**
@@ -217,7 +219,7 @@ export interface ElectronAPI {
     callback: (data: {
       x: number;
       y: number;
-      source?: "mmb" | "shortcut";
+      source?: "mmb" | "mmb-click" | "shortcut";
       /** True quando o main já aplicou fullscreen — evita segundo `applyWindowSize` no renderer. */
       preSizedByMain?: boolean;
     }) => void,

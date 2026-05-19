@@ -161,7 +161,7 @@ const InfoHint = ({
                         <div className="mb-2 flex items-center gap-2">
                             <span className="h-1.5 w-1.5 rounded-full bg-white/60" />
                             <span className="text-[9px] font-bold uppercase tracking-[0.22em] text-white/45">
-                                Ajuda rápida
+                                Info
                             </span>
                         </div>
                         <div className="text-[12px] font-semibold leading-snug text-white/90">{title}</div>
@@ -1316,8 +1316,8 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                             <div className="flex items-center justify-between">
                                 <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/20">Distância entre itens</span>
                                 <InfoHint
-                                    title="Espaçamento dos apps"
-                                    description="Controla a distância visual entre os atalhos dentro do menu radial. Valores maiores deixam a roda mais aberta; valores menores compactam os ícones."
+                                    title={getTranslation(config, 'tooltip.visual_spacing_title')}
+                                    description={getTranslation(config, 'tooltip.visual_spacing_desc')}
                                     align="left"
                                 />
                             </div>
@@ -1342,8 +1342,8 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                             <div className="flex items-center justify-between">
                                 <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/20">Arrasto para ativar</span>
                                 <InfoHint
-                                    title="Limite de ativação"
-                                    description="Define quantos pixels você precisa mover/segurar antes do radial considerar uma seleção ativa. Menor é mais sensível; maior reduz ativações acidentais."
+                                    title={getTranslation(config, 'tooltip.activation_limit_title')}
+                                    description={getTranslation(config, 'tooltip.activation_limit_desc')}
                                     align="left"
                                 />
                             </div>
@@ -1368,8 +1368,8 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                             <div className="flex items-center justify-between">
                                 <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/20">Texto dos atalhos</span>
                                 <InfoHint
-                                    title="Legendas dos apps"
-                                    description="Mostra ou oculta os nomes abaixo dos ícones no menu radial. Desligar deixa o menu mais limpo, mas exige reconhecer os apps pelo ícone."
+                                    title={getTranslation(config, 'tooltip.app_labels_title')}
+                                    description={getTranslation(config, 'tooltip.app_labels_desc')}
                                     align="left"
                                 />
                             </div>
@@ -1392,8 +1392,8 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                                 <span className="flex items-center gap-2 text-sm font-semibold text-white/80 group-hover:text-white">
                                     {getTranslation(config, 'performance.strict')}
                                     <InfoHint
-                                        title="Modo de desempenho estrito"
-                                        description="Reduz efeitos visuais e comportamentos mais pesados para priorizar resposta rápida do menu. Use se notar lag, stutter ou atraso ao abrir o radial."
+                                        title={getTranslation(config, 'tooltip.performance_strict_title')}
+                                        description={getTranslation(config, 'tooltip.performance_strict_desc')}
                                     />
                                 </span>
                                 <span className="text-[10px] text-white/30 uppercase tracking-wider block font-bold leading-tight">{getTranslation(config, 'performance.strict_desc')}</span>
@@ -1413,8 +1413,8 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                                 <span className="flex items-center gap-2 text-sm font-semibold text-white/80 group-hover:text-white">
                                     {getTranslation(config, 'performance.idle_island')}
                                     <InfoHint
-                                        title="Ilha em repouso"
-                                        description="Mantém o pequeno relógio/HUD visível no desktop quando nada está aberto. Desligar reduz presença visual e pode economizar um pouco de GPU."
+                                        title={getTranslation(config, 'tooltip.idle_island_title')}
+                                        description={getTranslation(config, 'tooltip.idle_island_desc')}
                                     />
                                 </span>
                                 <span className="text-[10px] text-white/30 uppercase tracking-wider block font-bold leading-tight">{getTranslation(config, 'performance.idle_island_desc')}</span>
@@ -2455,10 +2455,7 @@ const InterfaceTab = React.memo((props: {
                             <div className="flex items-start gap-3 rounded-xl border border-white/[0.06] bg-black/20 px-4 py-3">
                                 <AlertTriangle size={14} className="mt-0.5 shrink-0 text-white/30" />
                                 <p className="text-[11px] leading-relaxed text-white/38">
-                                    Se o atalho escolhido já estiver sendo usado pelo Windows ou por outro aplicativo
-                                    (por exemplo, sobreposições de jogos, drivers ou launchers), o menu radial não
-                                    abrirá por esse comando. Nesse caso, libere o atalho no outro aplicativo ou escolha
-                                    uma combinação diferente para o Zenith.
+                                    {getTranslation(config, 'interface.shortcut_conflict_hint')}
                                 </p>
                             </div>
                         </div>
@@ -2476,8 +2473,8 @@ const InterfaceTab = React.memo((props: {
                             <div className="flex items-center gap-2">
                                 <h4 className="text-[13px] font-medium text-white">{getTranslation(config, 'interface.autostart')}</h4>
                                 <InfoHint
-                                    title="Iniciar com o Windows"
-                                    description="Liga ou desliga a inicialização automática do Zenith ao entrar no Windows. Não altera seus workspaces nem abre o menu radial sozinho."
+                                    title={getTranslation(config, 'tooltip.autostart_title')}
+                                    description={getTranslation(config, 'tooltip.autostart_desc')}
                                 />
                             </div>
                         </div>
@@ -2503,42 +2500,89 @@ const InterfaceTab = React.memo((props: {
 
                     {/* MOUSE TRIGGER - New 2026 */}
                     <motion.div
-                        className="p-5 rounded-xl bg-gradient-to-br from-white/[0.04] to-transparent border border-white/[0.08] flex items-center justify-between hover:bg-white/[0.07] transition-all duration-500 group"
+                        className="p-5 rounded-xl bg-gradient-to-br from-white/[0.04] to-transparent border border-white/[0.08] hover:bg-white/[0.07] transition-all duration-500 group"
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.3, delay: 0.28 }}
                     >
-                        <div className="relative z-10 pr-4">
-                            <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.25em] block ml-0.5 mb-0.5">{getTranslation(config, 'interface.somatic_input')}</label>
-                            <div className="flex items-center gap-2">
-                                <h4 className="text-[13px] font-medium text-white">{getTranslation(config, 'interface.mouse_trigger')}</h4>
-                                <InfoHint
-                                    title="Botão central do mouse"
-                                    description="Quando ativado, pressionar o botão do meio do mouse abre o menu radial na posição do cursor. Quando desligado, o menu só abre pelo atalho global configurado."
-                                />
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="relative z-10 pr-4">
+                                <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.25em] block ml-0.5 mb-0.5">{getTranslation(config, 'interface.somatic_input')}</label>
+                                <div className="flex items-center gap-2">
+                                    <h4 className="text-[13px] font-medium text-white">{getTranslation(config, 'interface.mouse_trigger')}</h4>
+                                    <InfoHint
+                                        title={getTranslation(config, 'tooltip.mouse_trigger_title')}
+                                        description={getTranslation(config, 'tooltip.mouse_trigger_desc')}
+                                    />
+                                </div>
                             </div>
+                            <motion.button
+                                onClick={() => {
+                                    const newValue = !config.enableMouseTrigger;
+                                    setConfig({ ...config, enableMouseTrigger: newValue });
+                                    if (window.electron && window.electron.setSettings) {
+                                        window.electron.setSettings({
+                                            enableMouseTrigger: newValue,
+                                            mouseTriggerMode: config.mouseTriggerMode || 'click',
+                                            globalShortcut: config.globalShortcut,
+                                        });
+                                    }
+                                }}
+                                className={`relative w-16 h-10 shrink-0 rounded-2xl transition-all duration-500 p-1.5 shadow-lg ${config.enableMouseTrigger ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                            >
+                                <motion.div
+                                    className={`w-7 h-7 rounded-[0.8rem] shadow-xl ${config.enableMouseTrigger ? 'bg-black' : 'bg-white/20'}`}
+                                    animate={{ x: config.enableMouseTrigger ? 26 : 0 }}
+                                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                                />
+                            </motion.button>
                         </div>
-                        <motion.button
-                            onClick={() => {
-                                const newValue = !config.enableMouseTrigger;
-                                setConfig({ ...config, enableMouseTrigger: newValue });
-                                if (window.electron && window.electron.setSettings) {
-                                    window.electron.setSettings({
-                                        enableMouseTrigger: newValue,
-                                        globalShortcut: config.globalShortcut,
-                                    });
-                                }
-                            }}
-                            className={`relative w-16 h-10 rounded-2xl transition-all duration-500 p-1.5 shadow-lg ${config.enableMouseTrigger ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                        >
-                            <motion.div
-                                className={`w-7 h-7 rounded-[0.8rem] shadow-xl ${config.enableMouseTrigger ? 'bg-black' : 'bg-white/20'}`}
-                                animate={{ x: config.enableMouseTrigger ? 26 : 0 }}
-                                transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                            />
-                        </motion.button>
+
+                        <AnimatePresence>
+                            {config.enableMouseTrigger && (
+                                <motion.div
+                                    initial={{ opacity: 0, height: 0, y: -6 }}
+                                    animate={{ opacity: 1, height: 'auto', y: 0 }}
+                                    exit={{ opacity: 0, height: 0, y: -6 }}
+                                    className="overflow-hidden"
+                                >
+                                    <div className="mt-5 flex gap-1.5 rounded-2xl border border-white/[0.07] bg-black/20 p-1.5">
+                                        {(['click', 'hold'] as const).map((mode) => {
+                                            const active = (config.mouseTriggerMode || 'click') === mode;
+                                            return (
+                                                <button
+                                                    key={mode}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setConfig({ ...config, mouseTriggerMode: mode });
+                                                        window.electron?.setSettings?.({
+                                                            enableMouseTrigger: config.enableMouseTrigger,
+                                                            mouseTriggerMode: mode,
+                                                            globalShortcut: config.globalShortcut,
+                                                        });
+                                                    }}
+                                                    className={`w-1/2 rounded-xl px-4 py-3 text-left transition-all duration-300 ${
+                                                        active
+                                                            ? 'bg-white text-black shadow-lg'
+                                                            : 'text-white/35 hover:bg-white/[0.05] hover:text-white/70'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em]">
+                                                        {getTranslation(config, mode === 'click' ? 'interface.mouse_mode_click' : 'interface.mouse_mode_hold')}
+                                                        {active && <Check size={12} strokeWidth={3} />}
+                                                    </div>
+                                                    <div className={`mt-1 text-[10px] leading-relaxed ${active ? 'text-black/55' : 'text-white/28'}`}>
+                                                        {getTranslation(config, mode === 'click' ? 'interface.mouse_mode_click_desc' : 'interface.mouse_mode_hold_desc')}
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </motion.div>
 
                     <div className="h-px bg-white/[0.08]" />
@@ -2555,8 +2599,8 @@ const InterfaceTab = React.memo((props: {
                             <div className="flex items-center gap-2">
                                 <h4 className="text-sm font-medium text-white tracking-tight">{getTranslation(config, 'interface.neural_center')}</h4>
                                 <InfoHint
-                                    title="Botão central do radial"
-                                    description="Define o que acontece ao selecionar o centro do menu radial: executar um app, abrir um widget, simular um atalho, cancelar o menu ou deixar sem ação."
+                                    title={getTranslation(config, 'tooltip.radial_center_title')}
+                                    description={getTranslation(config, 'tooltip.radial_center_desc')}
                                 />
                             </div>
                         </div>
@@ -2684,8 +2728,8 @@ const InterfaceTab = React.memo((props: {
                             <div className="flex items-center gap-2">
                                 <label className="text-sm font-normal text-white">{getTranslation(config, 'interface.center_screen')}</label>
                                 <InfoHint
-                                    title="Posição fixa do menu"
-                                    description="Quando ligado, o menu radial sempre abre no centro da tela. Quando desligado, ele abre próximo ao cursor ou ao ponto de ativação."
+                                    title={getTranslation(config, 'tooltip.fixed_position_title')}
+                                    description={getTranslation(config, 'tooltip.fixed_position_desc')}
                                 />
                             </div>
                             <motion.button
@@ -2811,8 +2855,8 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
                                 <div className="flex items-center gap-2 text-[13px] font-medium text-white/80">
                                     {getTranslation(config, 'hud.chronometer')}
                                     <InfoHint
-                                        title="Relógio no radial"
-                                        description="Mostra a hora dentro do menu radial e nos elementos do HUD que usam o módulo temporal."
+                                        title={getTranslation(config, 'tooltip.clock_title')}
+                                        description={getTranslation(config, 'tooltip.clock_desc')}
                                     />
                                 </div>
                                 <motion.button
@@ -2829,8 +2873,8 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
                                 <div className="flex items-center gap-2 text-[13px] font-medium text-white/80">
                                     {getTranslation(config, 'hud.calendar')}
                                     <InfoHint
-                                        title="Data no radial"
-                                        description="Mostra a data junto ao relógio quando o menu radial ou HUD temporal estiverem visíveis."
+                                        title={getTranslation(config, 'tooltip.date_title')}
+                                        description={getTranslation(config, 'tooltip.date_desc')}
                                     />
                                 </div>
                                 <motion.button
@@ -2866,8 +2910,8 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
                                 <div className="flex items-center gap-2 text-[13px] font-medium text-white/80">
                                     {getTranslation(config, 'hud.energy_status')}
                                     <InfoHint
-                                        title="Status de bateria"
-                                        description="Exibe a bateria do dispositivo no HUD. Em desktops sem bateria, essa informação pode não aparecer mesmo com a opção ligada."
+                                        title={getTranslation(config, 'tooltip.battery_title')}
+                                        description={getTranslation(config, 'tooltip.battery_desc')}
                                     />
                                 </div>
                                 <motion.button
@@ -2884,8 +2928,8 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
                                 <div className="flex items-center gap-2 text-[13px] font-medium text-white/80">
                                     {getTranslation(config, 'hud.ambient_intel')}
                                     <InfoHint
-                                        title="Clima no HUD"
-                                        description="Mostra uma leitura rápida do clima usando a localização definida abaixo. Precisa de uma cidade ou CEP válido para exibir dados úteis."
+                                        title={getTranslation(config, 'tooltip.weather_title')}
+                                        description={getTranslation(config, 'tooltip.weather_desc')}
                                     />
                                 </div>
                                 <motion.button
@@ -2929,8 +2973,8 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
                         <div className="mb-6 flex items-center gap-2">
                             <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.3em] block ml-1">{getTranslation(config, 'hud.spatial_quadrant')}</label>
                             <InfoHint
-                                title="Posição do relógio"
-                                description="Escolhe em qual canto ou região da tela o relógio/HUD temporal aparece quando o radial ou a ilha estiverem ativos."
+                                title={getTranslation(config, 'tooltip.clock_position_title')}
+                                description={getTranslation(config, 'tooltip.clock_position_desc')}
                             />
                         </div>
                         <div className="flex flex-col gap-3">

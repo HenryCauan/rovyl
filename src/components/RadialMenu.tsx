@@ -109,7 +109,7 @@ interface RadialMenuProps {
   onClose: (selectedId: string | null, selectedApp?: AppItem | null) => void;
   apps: AppItem[];
   config: UIConfig;
-  triggerSource?: 'mmb' | 'shortcut';
+  triggerSource?: 'mmb' | 'mmb-click' | 'shortcut';
   onWorkspaceSwitch?: (workspaceIndex: number) => void;
   currentWorkspace?: Workspace;
 }

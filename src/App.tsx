@@ -256,7 +256,7 @@ export default function App() {
   const [menuPosition, setMenuPosition] = useState<Coordinates>({ x: 0, y: 0 });
   /** Screen-space anchor for the radial center — keeps client coords correct after fullscreen + multi-monitor. */
   const menuAnchorScreenRef = useRef<{ x: number; y: number } | null>(null);
-  const [triggerSource, setTriggerSource] = useState<'mmb' | 'shortcut'>('shortcut');
+  const [triggerSource, setTriggerSource] = useState<'mmb' | 'mmb-click' | 'shortcut'>('shortcut');
   /** Evita a ilha compacta aparecer no mesmo instante em que o radial ainda desvanece (flash do relógio do radial). */
   const [islandHoldAfterRadialClose, setIslandHoldAfterRadialClose] = useState(false);
   /** Evita repetir reapply quando já estamos em ilha de repouso; repõe ao sair do estado. */
@@ -1662,7 +1662,7 @@ export default function App() {
   const openMenu = async (
     x: number,
     y: number,
-    source: 'mmb' | 'shortcut' = 'shortcut',
+    source: 'mmb' | 'mmb-click' | 'shortcut' = 'shortcut',
     /** IPC sends screen coords from the main process; MMB uses client coords relative to the current window. */
     coordSpace: 'client' | 'screen' = 'client',
     opts?: { preSizedByMain?: boolean },
@@ -1862,7 +1862,7 @@ export default function App() {
     const cleanupMenu = window.electron?.onOpenMenu((data: {
       x: number;
       y: number;
-      source?: 'mmb' | 'shortcut';
+      source?: 'mmb' | 'mmb-click' | 'shortcut';
       preSizedByMain?: boolean;
     }) => {
       void openMenuRef.current(data.x, data.y, data.source ?? 'shortcut', 'screen', {

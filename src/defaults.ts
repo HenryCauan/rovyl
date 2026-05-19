@@ -251,6 +251,7 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   activeWorkspaceIndex: 0,
   workspaceSwitchMode: 'picker',
   enableMouseTrigger: true,
+  mouseTriggerMode: 'click',
   language: "pt",
   performanceMode: false,
   mainStartMenuDiscoveryDone: false,
