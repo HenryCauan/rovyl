@@ -1916,6 +1916,15 @@ export default function App() {
 
     const cleanupExecutionError = window.electron?.onExecutionError((errorMsg: string) => {
       console.error('Execution error received:', errorMsg);
+      const normalized = errorMsg.toLowerCase();
+      const isGlobalShortcutRegistrationError =
+        normalized.includes('atalho global') ||
+        normalized.includes('global shortcut') ||
+        normalized.includes('registar o atalho');
+      if (isGlobalShortcutRegistrationError) {
+        window.electron?.savePersistenceLog?.(`suppressed global shortcut toast: ${errorMsg}`);
+        return;
+      }
       const isShortcutError = errorMsg.toLowerCase().includes('shortcut');
 
       setLastLaunched({

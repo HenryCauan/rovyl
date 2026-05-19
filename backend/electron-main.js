@@ -2361,28 +2361,18 @@ app.whenReady().then(async () => {
       } else {
         const failKey = shortcutCompactKey(shortcut);
         mainShortcutConflictNotify.failedKey = failKey;
-        const alreadyNotified =
-          mainShortcutConflictNotify.notifiedForKey === failKey;
-        const base = `O atalho global "${shortcut}" não pôde ser registado (provavelmente já está em uso pelo Windows ou por outra aplicação).`;
-        const errorMsg = `${base}${altZOverlayHint(shortcut)}`;
-        diagLog(`[ERROR] Global shortcut not registered: ${shortcut}`);
-        if (mainWindow && !mainWindow.isDestroyed() && !alreadyNotified) {
-          mainWindow.webContents.send("execution-error", errorMsg);
-          mainShortcutConflictNotify.notifiedForKey = failKey;
-        }
+        mainShortcutConflictNotify.notifiedForKey = failKey;
+        diagLog(
+          `[Shortcut] Global shortcut '${shortcut}' not registered; it is likely already in use.${altZOverlayHint(shortcut)}`,
+        );
       }
     } catch (e) {
       const failKey = shortcutCompactKey(shortcut);
       mainShortcutConflictNotify.failedKey = failKey;
-      const alreadyNotified =
-        mainShortcutConflictNotify.notifiedForKey === failKey;
-      const base = `Erro ao registar o atalho "${shortcut}": ${e.message}`;
-      const errorMsg = `${base}${altZOverlayHint(shortcut)}`;
-      diagLog(`[FATAL] ${errorMsg}`);
-      if (mainWindow && !mainWindow.isDestroyed() && !alreadyNotified) {
-        mainWindow.webContents.send("execution-error", errorMsg);
-        mainShortcutConflictNotify.notifiedForKey = failKey;
-      }
+      mainShortcutConflictNotify.notifiedForKey = failKey;
+      diagLog(
+        `[Shortcut] Global shortcut '${shortcut}' registration failed: ${e.message}${altZOverlayHint(shortcut)}`,
+      );
     }
 
     // Register individual app shortcuts from workspaces
