@@ -16,7 +16,7 @@ import {
     Hash, Download, ExternalLink, Moon, Sun, ArrowRight, ArrowLeft, TimerReset,
     FolderPlus, FileText, Edit3, Calendar, Battery, CloudRain,
     Layout, Compass, Laptop, Smartphone, Bell, GripVertical, ChevronLeft, LogOut,
-    Layers, ArrowLeftRight, Shield
+    Layers, ArrowLeftRight, Shield, PackageX
 } from 'lucide-react';
 import { ZenithLogo } from './ZenithLogo';
 import { IconPicker } from './IconPicker';
@@ -3703,7 +3703,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const [iconSearchTerm, setIconSearchTerm] = useState('');
     const [folderPath, setFolderPath] = useState<number[]>([]);
     // --- CONFIRMATION DIALOG STATE ---
-    type ConfirmAction = 'reset' | 'delete_workspace' | 'delete_app' | 'warning';
+    type ConfirmAction = 'reset' | 'delete_workspace' | 'delete_app' | 'warning' | 'uninstall';
     const [confirmDialog, setConfirmDialog] = useState<{
         type: ConfirmAction;
         title: string;
@@ -4958,6 +4958,88 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                             >
                                                 <div className="absolute inset-0 bg-white/[0.02] rounded-xl pointer-events-none" />
                                                 <span className="relative z-10 text-red-400">{getTranslation(config, 'reset.button_label') || 'Reset'}</span>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+                                </button>
+
+                                <button
+                                    onClick={() => setConfirmDialog({
+                                        type: 'uninstall',
+                                        title: getTranslation(config, 'uninstall.title'),
+                                        description: getTranslation(config, 'uninstall.description'),
+                                        confirmLabel: getTranslation(config, 'uninstall.confirm'),
+                                        cancelLabel: getTranslation(config, 'uninstall.cancel'),
+                                        variant: 'danger',
+                                        onConfirm: async () => {
+                                            setConfirmDialog(null);
+                                            try {
+                                                const r = await window.electron?.openSystemUninstall?.();
+                                                if (r?.ok) {
+                                                    if (r.mode === 'uninstaller') {
+                                                        setStatus({ type: 'success', message: getTranslation(config, 'uninstall.started_uninstaller') });
+                                                    } else if (r.mode === 'finder') {
+                                                        setStatus({ type: 'success', message: getTranslation(config, 'uninstall.finder_hint') });
+                                                    } else if (r.mode === 'settings') {
+                                                        setStatus({
+                                                            type: 'success',
+                                                            message: r.dev
+                                                                ? getTranslation(config, 'uninstall.dev_hint')
+                                                                : getTranslation(config, 'uninstall.opened_settings'),
+                                                        });
+                                                    }
+                                                } else {
+                                                    setStatus({
+                                                        type: 'error',
+                                                        message: getTranslation(
+                                                            config,
+                                                            r?.error === 'unsupported' ? 'uninstall.unsupported' : 'uninstall.failed',
+                                                        ),
+                                                    });
+                                                }
+                                            } catch {
+                                                setStatus({ type: 'error', message: getTranslation(config, 'uninstall.failed') });
+                                            }
+                                        },
+                                    })}
+                                    className={`w-full flex items-center ${isSidebarExpanded ? 'gap-3 px-4' : 'justify-center'} py-2.5 text-orange-300/45 hover:text-orange-300/95 hover:bg-orange-500/[0.07] transition-all duration-300 group relative rounded-xl border border-transparent hover:border-orange-500/15`}
+                                >
+                                    <div className="flex items-center justify-center transition-all duration-300 relative z-10">
+                                        <motion.div
+                                            whileHover={{ scale: 1.08, y: -1 }}
+                                            transition={{ type: "spring", stiffness: 300, damping: 18 }}
+                                        >
+                                            <PackageX size={isSidebarExpanded ? 16 : 19} strokeWidth={2} />
+                                        </motion.div>
+                                    </div>
+                                    <AnimatePresence mode="wait">
+                                        {isSidebarExpanded ? (
+                                            <motion.span
+                                                key="label-uninstall"
+                                                initial={{ opacity: 0, x: -8 }}
+                                                animate={{ opacity: 1, x: 0 }}
+                                                exit={{ opacity: 0, x: -8 }}
+                                                transition={{ duration: 0.2 }}
+                                                className="text-[11px] font-medium tracking-wide whitespace-nowrap ml-px relative z-10"
+                                            >
+                                                {getTranslation(config, 'uninstall.button_label')}
+                                            </motion.span>
+                                        ) : (
+                                            <motion.div
+                                                key="badge-uninstall"
+                                                initial={{ opacity: 0, scale: 0.8, x: -10 }}
+                                                whileHover={{ opacity: 1, scale: 1, x: 0 }}
+                                                animate={{ opacity: 0 }}
+                                                transition={{
+                                                    type: "spring",
+                                                    stiffness: 400,
+                                                    damping: 25,
+                                                    delay: 0.05
+                                                }}
+                                                className="absolute left-[64px] px-3.5 py-2 bg-black/80 border border-white/10 rounded-xl text-[10px] font-bold text-white pointer-events-none whitespace-nowrap z-[200] shadow-2xl backdrop-blur-xl ring-1 ring-white/5"
+                                            >
+                                                <div className="absolute inset-0 bg-white/[0.02] rounded-xl pointer-events-none" />
+                                                <span className="relative z-10 text-orange-300">{getTranslation(config, 'uninstall.button_label')}</span>
                                             </motion.div>
                                         )}
                                     </AnimatePresence>

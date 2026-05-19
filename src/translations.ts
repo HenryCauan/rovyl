@@ -509,6 +509,22 @@ export const translations: Record<Language, Record<string, string>> = {
     "reset.cancel": "Cancelar",
     "reset.button_label": "Redefinir",
 
+    "uninstall.button_label": "Desinstalar",
+    "uninstall.title": "Desinstalar o Zenith?",
+    "uninstall.description":
+      "Vamos abrir o desinstalador do Windows ou a página de Aplicações. Isto remove a app do sistema; dados em AppData podem permanecer até os apagares.",
+    "uninstall.confirm": "Continuar",
+    "uninstall.cancel": "Cancelar",
+    "uninstall.opened_settings":
+      "Abriram-se as Definições do Windows. Procura «Zenith OS» na lista para desinstalar.",
+    "uninstall.started_uninstaller": "Desinstalador iniciado. Segue os passos no ecrã.",
+    "uninstall.failed": "Não foi possível iniciar a desinstalação.",
+    "uninstall.unsupported": "Neste sistema, remove a aplicação manualmente.",
+    "uninstall.dev_hint":
+      "Modo de desenvolvimento: abrimos Aplicações nas Definições. Na build instalada (NSIS), corre o desinstalador.",
+    "uninstall.finder_hint":
+      "Abriu-se o Finder na pasta da aplicação — move o Zenith para o Lixo para remover.",
+
     "editingApp.config_label": "Configuração do Atalho",
     "editingApp.details_title": "Detalhes do Aplicativo",
     "editingApp.name_label": "Nome do Atalho",
@@ -1065,6 +1081,22 @@ export const translations: Record<Language, Record<string, string>> = {
     "reset.cancel": "Cancel",
     "reset.button_label": "Reset",
 
+    "uninstall.button_label": "Uninstall",
+    "uninstall.title": "Uninstall Zenith?",
+    "uninstall.description":
+      "We will open the Windows uninstaller or the Apps settings page. This removes the app from the system; AppData files may remain until you delete them.",
+    "uninstall.confirm": "Continue",
+    "uninstall.cancel": "Cancel",
+    "uninstall.opened_settings":
+      "Windows Settings opened. Find «Zenith OS» in the list to uninstall.",
+    "uninstall.started_uninstaller": "Uninstaller started. Follow the steps on screen.",
+    "uninstall.failed": "Could not start uninstall.",
+    "uninstall.unsupported": "On this system, remove the app manually.",
+    "uninstall.dev_hint":
+      "Development mode: opened Apps in Settings. In an installed NSIS build, the uninstaller runs instead.",
+    "uninstall.finder_hint":
+      "Finder opened at the app location — move Zenith to Trash to remove it.",
+
     "editingApp.config_label": "Shortcut Config",
     "editingApp.details_title": "App Details",
     "editingApp.name_label": "Shortcut Name",
@@ -1480,6 +1512,22 @@ export const translations: Record<Language, Record<string, string>> = {
     "reset.cancel": "Cancelar",
     "reset.button_label": "Restablecer",
 
+    "uninstall.button_label": "Desinstalar",
+    "uninstall.title": "¿Desinstalar Zenith?",
+    "uninstall.description":
+      "Abriremos el desinstalador de Windows o la página de Aplicaciones. Esto quita la app del sistema; los datos en AppData pueden permanecer hasta que los borres.",
+    "uninstall.confirm": "Continuar",
+    "uninstall.cancel": "Cancelar",
+    "uninstall.opened_settings":
+      "Se abrieron los Ajustes de Windows. Busca «Zenith OS» en la lista para desinstalar.",
+    "uninstall.started_uninstaller": "Desinstalador iniciado. Sigue los pasos en pantalla.",
+    "uninstall.failed": "No se pudo iniciar la desinstalación.",
+    "uninstall.unsupported": "En este sistema, elimina la aplicación manualmente.",
+    "uninstall.dev_hint":
+      "Modo desarrollo: abrimos Aplicaciones en Ajustes. En la build instalada (NSIS) se ejecuta el desinstalador.",
+    "uninstall.finder_hint":
+      "Se abrió el Finder en la carpeta de la app — mueve Zenith a la Papelera para eliminarlo.",
+
     "editingApp.config_label": "Configuración del Atajo",
     "editingApp.details_title": "Detalles de la App",
     "editingApp.name_label": "Nombre del Atajo",
@@ -1821,6 +1869,22 @@ export const translations: Record<Language, Record<string, string>> = {
     "reset.confirm": "Oui, réinitialiser",
     "reset.cancel": "Annuler",
     "reset.button_label": "Réinitialiser",
+
+    "uninstall.button_label": "Désinstaller",
+    "uninstall.title": "Désinstaller Zenith ?",
+    "uninstall.description":
+      "Nous ouvrirons le désinstalleur Windows ou la page Applications. Cela retire l’app du système ; les données AppData peuvent rester jusqu’à suppression manuelle.",
+    "uninstall.confirm": "Continuer",
+    "uninstall.cancel": "Annuler",
+    "uninstall.opened_settings":
+      "Paramètres Windows ouverts. Cherchez « Zenith OS » dans la liste pour désinstaller.",
+    "uninstall.started_uninstaller": "Désinstalleur lancé. Suivez les étapes à l’écran.",
+    "uninstall.failed": "Impossible de lancer la désinstallation.",
+    "uninstall.unsupported": "Sur ce système, supprimez l’application manuellement.",
+    "uninstall.dev_hint":
+      "Mode développement : page Applications ouverte. Avec l’installeur NSIS, le désinstalleur s’exécute.",
+    "uninstall.finder_hint":
+      "Finder ouvert sur l’emplacement de l’app — glissez Zenith vers la Corbeille pour supprimer.",
 
     "editingApp.config_label": "Config Raccourci",
     "editingApp.details_title": "Détails App",
@@ -2196,6 +2260,22 @@ export const translations: Record<Language, Record<string, string>> = {
     "reset.cancel": "Abbrechen",
     "reset.button_label": "Zurücksetzen",
 
+    "uninstall.button_label": "Deinstallieren",
+    "uninstall.title": "Zenith deinstallieren?",
+    "uninstall.description":
+      "Wir öffnen den Windows-Deinstaller oder die App-Einstellungen. Die App wird vom System entfernt; AppData kann manuell gelöscht werden.",
+    "uninstall.confirm": "Weiter",
+    "uninstall.cancel": "Abbrechen",
+    "uninstall.opened_settings":
+      "Windows-Einstellungen geöffnet. Suche in der Liste nach «Zenith OS» zum Deinstallieren.",
+    "uninstall.started_uninstaller": "Deinstaller gestartet. Bitte den Anweisungen folgen.",
+    "uninstall.failed": "Deinstallation konnte nicht gestartet werden.",
+    "uninstall.unsupported": "Auf diesem System die App manuell entfernen.",
+    "uninstall.dev_hint":
+      "Entwicklermodus: Apps in den Einstellungen geöffnet. Bei installiertem NSIS-Build startet der Deinstaller.",
+    "uninstall.finder_hint":
+      "Finder am App-Ort geöffnet — Zenith in den Papierkorb legen, um zu entfernen.",
+
     "editingApp.config_label": "Kürzel-Konfig",
     "editingApp.details_title": "App-Details",
     "editingApp.name_label": "Kürzel-Name",
@@ -2570,6 +2650,22 @@ export const translations: Record<Language, Record<string, string>> = {
     "reset.cancel": "Annulla",
     "reset.button_label": "Ripristina",
 
+    "uninstall.button_label": "Disinstalla",
+    "uninstall.title": "Disinstallare Zenith?",
+    "uninstall.description":
+      "Apriremo il programma di disinstallazione di Windows o la pagina App. Rimuove l’app dal sistema; i dati in AppData possono restare finché non li elimini.",
+    "uninstall.confirm": "Continua",
+    "uninstall.cancel": "Annulla",
+    "uninstall.opened_settings":
+      "Impostazioni di Windows aperte. Cerca «Zenith OS» nell’elenco per disinstallare.",
+    "uninstall.started_uninstaller": "Disinstallazione avviata. Segui i passaggi sullo schermo.",
+    "uninstall.failed": "Impossibile avviare la disinstallazione.",
+    "uninstall.unsupported": "Su questo sistema rimuovi l’app manualmente.",
+    "uninstall.dev_hint":
+      "Modalità sviluppo: aperta la pagina App. Nella build installata (NSIS) parte il disinstaller.",
+    "uninstall.finder_hint":
+      "Finder aperto sulla cartella dell’app — trascina Zenith nel Cestino per rimuovere.",
+
     "editingApp.config_label": "Config Scorciatoia",
     "editingApp.details_title": "Dettagli App",
     "editingApp.name_label": "Nome Scorciatoia",
@@ -2941,6 +3037,22 @@ export const translations: Record<Language, Record<string, string>> = {
     "reset.cancel": "キャンセル",
     "reset.button_label": "リセット",
 
+    "uninstall.button_label": "アンインストール",
+    "uninstall.title": "Zenith をアンインストールしますか？",
+    "uninstall.description":
+      "Windows のアンインストーラーまたはアプリの設定ページを開きます。システムからアプリが削除されます。AppData のデータは手動で削除するまで残る場合があります。",
+    "uninstall.confirm": "続行",
+    "uninstall.cancel": "キャンセル",
+    "uninstall.opened_settings":
+      "Windows の設定を開きました。一覧から「Zenith OS」を選んでアンインストールしてください。",
+    "uninstall.started_uninstaller": "アンインストーラーを開始しました。画面の手順に従ってください。",
+    "uninstall.failed": "アンインストールを開始できませんでした。",
+    "uninstall.unsupported": "このシステムでは手動でアプリを削除してください。",
+    "uninstall.dev_hint":
+      "開発モード: アプリ設定を開きました。NSIS インストール版ではアンインストーラーが実行されます。",
+    "uninstall.finder_hint":
+      "アプリの場所で Finder を開きました — Zenith をゴミ箱に入れて削除してください。",
+
     "editingApp.config_label": "ショートカット設定",
     "editingApp.details_title": "アプリの詳細",
     "editingApp.name_label": "ショートカット名",
@@ -3308,6 +3420,22 @@ export const translations: Record<Language, Record<string, string>> = {
     "reset.confirm": "是的，重置",
     "reset.cancel": "取消",
     "reset.button_label": "重置",
+
+    "uninstall.button_label": "卸载",
+    "uninstall.title": "卸载 Zenith？",
+    "uninstall.description":
+      "将打开 Windows 卸载程序或「应用」设置页面。这会从系统中移除应用；AppData 中的数据可能需手动删除。",
+    "uninstall.confirm": "继续",
+    "uninstall.cancel": "取消",
+    "uninstall.opened_settings":
+      "已打开 Windows 设置。在列表中找到「Zenith OS」并卸载。",
+    "uninstall.started_uninstaller": "已启动卸载程序，请按屏幕提示操作。",
+    "uninstall.failed": "无法开始卸载。",
+    "uninstall.unsupported": "在此系统上请手动移除应用。",
+    "uninstall.dev_hint":
+      "开发模式：已打开应用设置页面。已安装的 NSIS 版本会改为运行卸载程序。",
+    "uninstall.finder_hint":
+      "已在应用位置打开访达 — 将 Zenith 移到废纸篓以移除。",
 
     "editingApp.config_label": "快捷方式配置",
     "editingApp.details_title": "应用详情",
@@ -3678,6 +3806,22 @@ export const translations: Record<Language, Record<string, string>> = {
     "reset.confirm": "예, 초기화합니다",
     "reset.cancel": "취소",
     "reset.button_label": "초기화",
+
+    "uninstall.button_label": "제거",
+    "uninstall.title": "Zenith를 제거할까요?",
+    "uninstall.description":
+      "Windows 제거 프로그램 또는 앱 설정 페이지를 엽니다. 시스템에서 앱이 삭제됩니다. AppData 데이터는 직접 지울 때까지 남을 수 있습니다.",
+    "uninstall.confirm": "계속",
+    "uninstall.cancel": "취소",
+    "uninstall.opened_settings":
+      "Windows 설정이 열렸습니다. 목록에서 «Zenith OS»를 찾아 제거하세요.",
+    "uninstall.started_uninstaller": "제거 프로그램이 시작되었습니다. 화면 안내를 따르세요.",
+    "uninstall.failed": "제거를 시작할 수 없습니다.",
+    "uninstall.unsupported": "이 시스템에서는 앱을 수동으로 제거하세요.",
+    "uninstall.dev_hint":
+      "개발 모드: 앱 설정을 열었습니다. 설치된 NSIS 빌드에서는 제거 프로그램이 실행됩니다.",
+    "uninstall.finder_hint":
+      "앱 위치에서 Finder를 열었습니다 — Zenith를 휴지통으로 옮겨 제거하세요.",
 
     "editingApp.config_label": "단축키 설정",
     "editingApp.details_title": "앱 상세 정보",
@@ -4050,6 +4194,22 @@ export const translations: Record<Language, Record<string, string>> = {
     "reset.confirm": "Да, сбросить",
     "reset.cancel": "Отмена",
     "reset.button_label": "Сброс",
+
+    "uninstall.button_label": "Удалить",
+    "uninstall.title": "Удалить Zenith?",
+    "uninstall.description":
+      "Откроется программа удаления Windows или раздел «Приложения». Приложение будет удалено из системы; данные в AppData могут остаться до ручного удаления.",
+    "uninstall.confirm": "Продолжить",
+    "uninstall.cancel": "Отмена",
+    "uninstall.opened_settings":
+      "Открыты параметры Windows. Найдите «Zenith OS» в списке и удалите приложение.",
+    "uninstall.started_uninstaller": "Установщик удаления запущен. Следуйте инструкциям на экране.",
+    "uninstall.failed": "Не удалось запустить удаление.",
+    "uninstall.unsupported": "На этой системе удалите приложение вручную.",
+    "uninstall.dev_hint":
+      "Режим разработки: открыт раздел приложений. В установленной сборке NSIS запускается деинсталлятор.",
+    "uninstall.finder_hint":
+      "Finder открыт в папке приложения — переместите Zenith в Корзину для удаления.",
 
     "editingApp.config_label": "Конфигурация Ярлыка",
     "editingApp.details_title": "Детали Приложения",

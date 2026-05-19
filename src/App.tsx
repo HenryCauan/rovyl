@@ -126,6 +126,52 @@ function windowCenterScreenPoint(): { x: number; y: number } {
   };
 }
 
+/** JSON-clone + garante `config.workspaces` não vazio — ficheiro tem de passar `normalizeFullPersistenceBlob` no próximo arranque. */
+function sanitizeFullPersistenceForDisk(d: {
+  user: UserProfile | null;
+  apps: AppItem[];
+  config: UIConfig;
+  notes: Note[];
+  alarms: Alarm[];
+  noteWorkspaces: NoteWorkspace[];
+  activeNoteWorkspaceId: string;
+}): {
+  user: UserProfile | null;
+  apps: AppItem[];
+  config: UIConfig;
+  notes: Note[];
+  alarms: Alarm[];
+  noteWorkspaces: NoteWorkspace[];
+  activeNoteWorkspaceId: string;
+  /** Espelho na raiz do JSON — `normalizeFullPersistenceBlob` funde isto se `config.workspaces` vier vazio no disco. */
+  workspaces: Workspace[];
+} | null {
+  try {
+    const raw = JSON.parse(JSON.stringify(d)) as typeof d;
+    if (!raw.config || typeof raw.config !== 'object') {
+      return null;
+    }
+    if (!Array.isArray(raw.config.workspaces) || raw.config.workspaces.length === 0) {
+      return null;
+    }
+    const mainWs = raw.config.workspaces.find(
+      (ws) => ws.id === 'workspace-1' || ws.name === 'Main',
+    );
+    if (mainWs && Array.isArray(mainWs.apps) && mainWs.apps.length > 0) {
+      raw.apps = JSON.parse(JSON.stringify(mainWs.apps)) as AppItem[];
+    }
+    const workspacesMirror = JSON.parse(
+      JSON.stringify(raw.config.workspaces),
+    ) as Workspace[];
+    return {
+      ...raw,
+      workspaces: workspacesMirror,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
   /* zenith-verify:radial-handshake-renderer — overlays/handshake radial; ver scripts/verify-radial-windowing.mjs */
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -184,11 +230,20 @@ export default function App() {
 
   const [windowState, setWindowState] = useState<'maximized' | 'windowed'>('windowed');
   const [isLoaded, setIsLoaded] = useState(false);
+  /** True quando hidratámos a partir de config-v2.json / migração — localStorage pode estar vazio após reboot. */
+  const hydratedFromPersistenceRef = useRef(false);
+  /** Desktop welcome / primeira sessão: corre só depois `isLoaded` (IPC não pode correr antes da hidratação). */
+  const welcomeBootstrapDoneRef = useRef(false);
   /** Full-screen notice while Windows Start menu is scanned for Main workspace (IPC can take several seconds). */
   const [startMenuResolving, setStartMenuResolving] = useState<{
     open: boolean;
     lang: Language;
   }>({ open: false, lang: 'pt' });
+  /**
+   * Após a descoberta do Menu Iniciar numa sessão sem dados anteriores (reset / primeiro arranque),
+   * abrir o dashboard automaticamente para que o utilizador veja os seus apps.
+   */
+  const openDashboardAfterDiscoveryRef = useRef(false);
 
   // User / Auth State (Defaults to null)
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -239,26 +294,74 @@ export default function App() {
    * para o DWM não redesenhar o relógio a “voar” para o rect da janela (o HWND muda antes do paint sem isto).
    */
   const [hideIslandForWindowedPanelTransition, setHideIslandForWindowedPanelTransition] = useState(false);
+  /**
+   * Cobertura opaca durante small→windowed: mascara artefactos do DWM se o main pintar antes de `applyWindowSize`.
+   * Liga no mesmo commit que o painel fica visível; desliga no microtask após resize + invalidate.
+   */
+  const [panelResizeSolidCover, setPanelResizeSolidCover] = useState(false);
+
+  /**
+   * Reforço: no edge `panelSurfaceOpen` false→true, esconder a ilha no layout **antes** de `setWindowSize('windowed')`
+   * (evita 1 frame em que o HWND já é o rect do dashboard mas o HUD ainda medido no viewport antigo).
+   * Caminhos IPC já fazem `setHideIslandForWindowedPanelTransition(true)` em flushSync; isto cobre qualquer outro.
+   */
+  const prevPanelSurfaceOpenRef = useRef(panelSurfaceOpen);
+  useLayoutEffect(() => {
+    const prev = prevPanelSurfaceOpenRef.current;
+    prevPanelSurfaceOpenRef.current = panelSurfaceOpen;
+    if (!prev && panelSurfaceOpen && isDesktopMode) {
+      setHideIslandForWindowedPanelTransition(true);
+      setPanelResizeSolidCover(true);
+    }
+  }, [panelSurfaceOpen, isDesktopMode]);
 
   /** Garante HWND em `windowed` quando o painel/definições estão visíveis (não minimizados). */
   useLayoutEffect(() => {
-    if (!isDesktopMode || !window.electron?.setWindowSize) return;
+    if (!isDesktopMode) return;
+    if (!window.electron?.setWindowSize && !window.electron?.applyWindowSize) return;
     if (!panelSurfaceOpen) return;
     if (radialOpenAwaitingFullscreen) return;
-    try {
-      window.electron.setWindowSize('windowed');
-      window.electron.showWindow();
-      lastWindowState.current = 'windowed';
-    } catch {
-      /* ignore */
-    } finally {
-      queueMicrotask(() => setHideIslandForWindowedPanelTransition(false));
-    }
-  }, [isDesktopMode, panelSurfaceOpen, radialOpenAwaitingFullscreen]);
+
+    let cancelled = false;
+
+    /** Microtask corre após o commit React e antes do paint — `invoke` expande o HWND depois da ilha já ir ao DOM. */
+    queueMicrotask(async () => {
+      if (cancelled) return;
+      try {
+        if (window.electron?.applyWindowSize) {
+          await window.electron.applyWindowSize('windowed');
+        } else {
+          window.electron?.setWindowSize?.('windowed');
+        }
+        if (cancelled) return;
+        window.electron?.showWindow();
+        lastWindowState.current = 'windowed';
+        void window.electron?.invalidatePaint?.();
+      } catch {
+        /* ignore */
+      } finally {
+        if (cancelled) return;
+        /** Dois rAF — DWM costuma completar o resize antes de voltar a mostrar a ilha ao fechar painel. */
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            if (!cancelled) {
+              setHideIslandForWindowedPanelTransition(false);
+              setPanelResizeSolidCover(false);
+            }
+          });
+        });
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isDesktopMode, panelSurfaceOpen, radialOpenAwaitingFullscreen, isSettingsOpen]);
 
   useEffect(() => {
     if (!panelSurfaceOpen) {
       setHideIslandForWindowedPanelTransition(false);
+      setPanelResizeSolidCover(false);
     }
   }, [panelSurfaceOpen]);
 
@@ -323,7 +426,7 @@ export default function App() {
     isMenuOpen || radialOpenAwaitingFullscreen,
     config.deskIslandClockWhileIdle !== false,
     anyFullscreenWidgetOpen,
-    isDashboardOpen || isSettingsOpen,
+    panelSurfaceOpen,
   );
 
   const prevTimerHudActiveRef = useRef(timerHudActive);
@@ -389,7 +492,18 @@ export default function App() {
   });
   /** When load failed but disk still has a non-trivial config file — never overwrite with empty defaults. */
   const persistenceSaveBlockedRef = useRef(false);
-  useEffect(() => {
+  /**
+   * Scan do Menu Iniciar foi agendado (defer longo) após strip do Main — bloqueia o auto-save aos 150ms que
+   * gravava só Notes no disco antes do scan terminar (reinício mostrava Main vazio).
+   */
+  const startMenuScanPersistenceHoldRef = useRef(false);
+  /**
+   * `hide-window` no main só baixa a opacidade — o documento pode continuar "visible", logo `visibilitychange`/`pagehide`
+   * não gravam. Guardamos o flush síncrono aqui e chamamo-lo sempre antes de `hideWindow()`.
+   */
+  const flushPersistenceToDiskRef = useRef<(() => void) | null>(null);
+  /** Layout: garantir ref alinhada ao state antes dos `useEffect` que gravam disco (evita flush com snapshot velho). */
+  useLayoutEffect(() => {
     persistenceRef.current = {
       user,
       apps,
@@ -422,6 +536,7 @@ export default function App() {
   // so all stored base64 icons get cleared and re-fetched with the new format.
   const ICON_NORMALIZATION_VERSION = 'v3-onedirectional-75pct-threshold';
   useEffect(() => {
+    if (!isLoaded) return;
     if (!window.electron?.getFileIcon) return;
     const storedVersion = localStorage.getItem('zenith_icon_normalization_version');
     if (storedVersion === ICON_NORMALIZATION_VERSION) return; // Already using new format
@@ -450,7 +565,7 @@ export default function App() {
 
     localStorage.setItem('zenith_icon_normalization_version', ICON_NORMALIZATION_VERSION);
     // console.log('[Icons] Cache-busted: re-fetching icons with new normalization.');
-  }, []);
+  }, [isLoaded]);
 
   // Listen for execution errors from backend
   useEffect(() => {
@@ -464,6 +579,7 @@ export default function App() {
 
   // ICON HEALING: Automatically re-fetch missing native icons
   useEffect(() => {
+    if (!isLoaded) return;
     if (!window.electron?.getFileIcon && !window.electron?.getWebsiteFaviconDataUrl) return;
 
     const findMissingIcons = (items: AppItem[]): AppItem[] => {
@@ -492,7 +608,8 @@ export default function App() {
       return missing;
     };
 
-    const appsToHeal = findMissingIcons(config.workspaces.flatMap(ws => ws.apps));
+    const sourceWorkspaces = config.workspaces;
+    const appsToHeal = findMissingIcons(sourceWorkspaces.flatMap(ws => ws.apps));
     if (appsToHeal.length === 0) return;
 
     // console.log(`[Icon Healing] Attempting to fix ${appsToHeal.length} icons...`);
@@ -557,23 +674,32 @@ export default function App() {
       };
 
       const updatedWorkspaces: Workspace[] = [];
-      for (const ws of config.workspaces) {
+      for (const ws of sourceWorkspaces) {
         const newApps = await healRecursive(ws.apps);
         updatedWorkspaces.push({ ...ws, apps: newApps });
       }
 
       if (hasUpdates) {
-        setConfig(prev => ({ ...prev, workspaces: updatedWorkspaces }));
+        setConfig(prev => {
+          if (prev.workspaces !== sourceWorkspaces) {
+            window.electron?.savePersistenceLog?.(
+              `iconHealing skipped stale apply | sourceWs=${sourceWorkspaces.length} currentWs=${prev.workspaces.length}`,
+            );
+            return prev;
+          }
+          return { ...prev, workspaces: updatedWorkspaces };
+        });
       }
     };
 
-    heal();
-  }, [config.workspaces.length]); // Re-run mainly if workspaces are added/loaded
+    void heal();
+  }, [isLoaded, config.workspaces]); // Re-run after hydration and when workspace references change.
 
 
   // 1. PRIMARY PERSISTENCE: Load from Electron Main or Migrate from LocalStorage
   useEffect(() => {
     let discoveryDeferTimer: number | undefined;
+    let cancelled = false;
 
     const loadPersistence = async () => {
       let finalData: any = null;
@@ -589,15 +715,22 @@ export default function App() {
           );
         }
       }
+      if (cancelled) return;
 
-      let persistenceMeta = { primaryBytes: 0, backupBytes: 0 };
+      let persistenceMeta = { primaryBytes: 0, backupBytes: 0, quarantineBytes: 0 };
       if (window.electron?.getConfigPersistenceMeta) {
         try {
-          persistenceMeta = await window.electron.getConfigPersistenceMeta();
+          const m = await window.electron.getConfigPersistenceMeta();
+          persistenceMeta = {
+            primaryBytes: m.primaryBytes,
+            backupBytes: m.backupBytes,
+            quarantineBytes: m.quarantineBytes ?? 0,
+          };
         } catch (e) {
           console.warn('[Zenith] getConfigPersistenceMeta failed:', e);
         }
       }
+      if (cancelled) return;
 
       // Migration Fallback
       if (!finalData) {
@@ -634,19 +767,23 @@ export default function App() {
           };
           loadedFromLocalStorageMigration = true;
           // Save to main process immediately
-          window.electron?.saveFullConfig(finalData);
+          void window.electron?.saveFullConfig?.(finalData);
         }
       }
+      if (cancelled) return;
 
+      const quarantineBytes = persistenceMeta.quarantineBytes ?? 0;
       const diskLooksSubstantial =
-        persistenceMeta.primaryBytes > 100 || persistenceMeta.backupBytes > 100;
+        persistenceMeta.primaryBytes > 50 ||
+        persistenceMeta.backupBytes > 50 ||
+        quarantineBytes > 0;
       if (!finalData && diskLooksSubstantial && !loadedFromLocalStorageMigration) {
         persistenceSaveBlockedRef.current = true;
         window.electron?.savePersistenceLog?.(
-          'Hydration: no payload but config-v2.json (or .bak) is non-empty — blocking disk writes to avoid wiping user data',
+          `Hydration: no payload but disk has data (primary=${persistenceMeta.primaryBytes} bak=${persistenceMeta.backupBytes} quarantine=${quarantineBytes}) — blocking saves`,
         );
         setExecutionError(
-          'Zenith não conseguiu ler a configuração no disco (ficheiro em AppData). As gravações para o ficheiro estão bloqueadas para não apagar os teus dados. Consulta zenith-persistence.log na pasta de dados da app; copia ou repara config-v2.json / .bak.',
+          'Zenith não conseguiu ler a configuração no disco (ficheiro em AppData). As gravações para o ficheiro estão bloqueadas para não apagar os teus dados. Consulta zenith-persistence.log na pasta de dados da app; procura ficheiros config-v2.json.broken-* ou restaura config-v2.json / .bak.',
         );
       } else {
         persistenceSaveBlockedRef.current = false;
@@ -678,7 +815,6 @@ export default function App() {
       let nextConfig: UIConfig = DEFAULT_UI_CONFIG;
 
       if (finalData) {
-        if (finalData.apps) nextApps = finalData.apps;
         if (finalData.config) {
           nextConfig = {
             ...finalData.config,
@@ -687,10 +823,38 @@ export default function App() {
               ...(finalData.config.gameMode || {}),
             },
           };
+          const mainWs = nextConfig.workspaces?.find(
+            (ws) => ws.id === 'workspace-1' || ws.name === 'Main',
+          );
+          if (mainWs?.apps && mainWs.apps.length > 0) {
+            nextApps = mainWs.apps;
+          } else if (finalData.apps) {
+            nextApps = finalData.apps;
+          }
+        } else if (finalData.apps) {
+          nextApps = finalData.apps;
         }
       }
 
-      const mainWs = nextConfig.workspaces.find(
+      if (finalData && window.electron) {
+        nextConfig = {
+          ...nextConfig,
+          persistenceMeta: {
+            ...nextConfig.persistenceMeta,
+            version: Math.max(2, Number(nextConfig.persistenceMeta?.version) || 0),
+            lastSuccessfulLoad: new Date().toISOString(),
+          },
+        };
+      }
+
+      /** Perfil do disco / migração LS — não forçar `mainStartMenuDiscoveryDone=true` só por haver blob (quebrava scan do Menu Iniciar e misturava LS obsoleto com o disco). */
+      const loadedPersistedBlob = !!(finalData || loadedFromLocalStorageMigration);
+
+      window.electron?.savePersistenceLog?.(
+        `load | source=${finalData ? 'disk' : loadedFromLocalStorageMigration ? 'localStorage' : 'none'} ws=${nextConfig.workspaces?.length ?? 0} discoveryDone=${nextConfig.mainStartMenuDiscoveryDone}`,
+      );
+
+      const mainWs = nextConfig.workspaces?.find(
         (ws) => ws.id === 'workspace-1' || ws.name === 'Main',
       );
       const lsDiscoveryDone = localStorage.getItem(LS_MAIN_DISCOVERY_DONE) === 'true';
@@ -699,14 +863,46 @@ export default function App() {
       const mainIsEmpty = !!(mainWs && mainWs.apps.length === 0);
       const canDiscover = !!window.electron?.getStartupApps;
       const mainCustom = mainWorkspaceAlreadyCustomized(mainWs);
-      /** Disco + heurística: evita re-scan quando só o localStorage foi limpo (ex.: sessão Electron). */
+
+      if (loadedPersistedBlob) {
+        if (mainCustom && nextConfig.mainStartMenuDiscoveryDone !== true) {
+          nextConfig = { ...nextConfig, mainStartMenuDiscoveryDone: true };
+        }
+        /**
+         * Estado inconsistente: `mainStartMenuDiscoveryDone: true` foi salvo mas o workspace Main
+         * ficou apenas com apps mínimos (ex.: só Notes). Isso ocorre quando a descoberta do Menu
+         * Iniciar marca-se como concluída antes de gravar os apps no disco (race condition ou
+         * restart durante a janela de 20 s), ou quando a migração de dados legados restaura um
+         * arquivo de configuração obsoleto.
+         * Solução: resetar a flag para que a descoberta rode novamente.
+         *
+         * Condição adicional de segurança: só resetar se o config NÃO tem workspaces customizados
+         * (nenhum workspace além dos padrões Main+Streaming). Se o utilizador tem um workspace
+         * personalizado mas deixou o Main só com Notes, a descoberta NÃO deve sobrescrever.
+         */
+        const hasCustomWorkspaces =
+          nextConfig.workspaces.length > DEFAULT_UI_CONFIG.workspaces.length;
+        if (!mainCustom && !hasCustomWorkspaces && nextConfig.mainStartMenuDiscoveryDone === true) {
+          nextConfig = { ...nextConfig, mainStartMenuDiscoveryDone: false };
+          try {
+            localStorage.removeItem(LS_MAIN_DISCOVERY_DONE);
+          } catch {
+            /* ignore */
+          }
+        } else if (nextConfig.mainStartMenuDiscoveryDone === true) {
+          try {
+            localStorage.setItem(LS_MAIN_DISCOVERY_DONE, 'true');
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+
+      /** Com disco hidratado, o LS `zenith_main_discovery_done` já não manda sozinho — evita bloquear scan quando o ficheiro diz que ainda falta. */
       let discoveryDoneEffective =
-        lsDiscoveryDone ||
-        nextConfig.mainStartMenuDiscoveryDone === true ||
-        mainCustom;
-      if (mainCustom && nextConfig.mainStartMenuDiscoveryDone !== true) {
-        nextConfig = { ...nextConfig, mainStartMenuDiscoveryDone: true };
-        discoveryDoneEffective = true;
+        mainCustom || nextConfig.mainStartMenuDiscoveryDone === true;
+      if (!loadedPersistedBlob) {
+        discoveryDoneEffective = discoveryDoneEffective || lsDiscoveryDone;
       }
 
       /** Main só com widgets Zenith (ex.: Notes) ainda não passou pelo scan do Menu Iniciar — não é “vazio” nem usa IDs do demo embutido. */
@@ -718,6 +914,8 @@ export default function App() {
         canDiscover &&
         !discoveryDoneEffective &&
         !legacyOnboardingDone &&
+        (!loadedPersistedBlob ||
+          (!mainCustom && nextConfig.mainStartMenuDiscoveryDone !== true)) &&
         (hasDemoFingerprint || mainIsEmpty || mainAwaitingStartMenuBootstrap);
 
       const stripMainToZenithOnly = () => {
@@ -731,6 +929,7 @@ export default function App() {
       };
 
       if (shouldTryStartMenuIpc) {
+        startMenuScanPersistenceHoldRef.current = true;
         if (hasDemoFingerprint) {
           stripMainToZenithOnly();
         } else if (mainIsEmpty) {
@@ -747,14 +946,31 @@ export default function App() {
         const discoverHasDemoFingerprint = hasDemoFingerprint;
         const uiLangDeferred = (nextConfig.language || 'pt') as Language;
 
+        /**
+         * Arranque sem dados anteriores (reset / primeira instalação): mostrar overlay imediatamente
+         * — o temporizador de 20 s ainda aguarda antes do IPC PowerShell, mas visualmente
+         * o utilizador vê a ecrã de espera desde o início.
+         */
+        const isFreshStart = !finalData && !loadedFromLocalStorageMigration;
+        if (isFreshStart) {
+          setStartMenuResolving({ open: true, lang: uiLangDeferred });
+          openDashboardAfterDiscoveryRef.current = true;
+        }
+
         discoveryDeferTimer = window.setTimeout(() => {
           void (async () => {
+            if (cancelled) {
+              startMenuScanPersistenceHoldRef.current = false;
+              return;
+            }
             flushSync(() =>
               setStartMenuResolving({ open: true, lang: uiLangDeferred }),
             );
             const mainIdx = configRef.current.workspaces.findIndex(
               (ws) => ws.id === 'workspace-1' || ws.name === 'Main',
             );
+            /** Rastreia se a descoberta realmente adicionou apps — só marca como concluída quando sim. */
+            let discoveryAddedApps = false;
             try {
               const discovered = (await window.electron!.getStartupApps()) as StartMenuDiscoveryRow[];
               if (discovered?.length > 0 && mainIdx !== -1) {
@@ -764,6 +980,7 @@ export default function App() {
                   workspaces[mainIdx] = { ...workspaces[mainIdx], apps: mergedApps };
                   return { ...prev, workspaces, mainStartMenuDiscoveryDone: true };
                 });
+                discoveryAddedApps = true;
               } else if (discoverHasDemoFingerprint) {
                 setConfig((prev) => {
                   const mi = prev.workspaces.findIndex(
@@ -774,6 +991,7 @@ export default function App() {
                   workspaces[mi] = { ...workspaces[mi], apps: MINIMAL_MAIN_WORKSPACE_APPS };
                   return { ...prev, workspaces, mainStartMenuDiscoveryDone: true };
                 });
+                discoveryAddedApps = true;
               }
             } catch (e) {
               console.warn('[Zenith] Start Menu discovery failed:', e);
@@ -787,23 +1005,56 @@ export default function App() {
                   workspaces[mi] = { ...workspaces[mi], apps: MINIMAL_MAIN_WORKSPACE_APPS };
                   return { ...prev, workspaces, mainStartMenuDiscoveryDone: true };
                 });
+                discoveryAddedApps = true;
               }
             } finally {
               flushSync(() =>
                 setStartMenuResolving({ open: false, lang: uiLangDeferred }),
               );
-              localStorage.setItem(LS_MAIN_DISCOVERY_DONE, 'true');
-              setConfig((prev) =>
-                prev.mainStartMenuDiscoveryDone === true
-                  ? prev
-                  : { ...prev, mainStartMenuDiscoveryDone: true },
-              );
+              /**
+               * Só marcar como concluída e gravar no LS quando apps foram realmente adicionados.
+               * Se a descoberta falhou ou retornou 0 apps, manter `mainStartMenuDiscoveryDone: false`
+               * para que o próximo arranque tente novamente.
+               */
+              if (discoveryAddedApps) {
+                localStorage.setItem(LS_MAIN_DISCOVERY_DONE, 'true');
+                setConfig((prev) =>
+                  prev.mainStartMenuDiscoveryDone === true
+                    ? prev
+                    : { ...prev, mainStartMenuDiscoveryDone: true },
+                );
+              }
+              startMenuScanPersistenceHoldRef.current = false;
+              queueMicrotask(() => {
+                flushPersistenceToDiskRef.current?.();
+              });
+              /**
+               * Primeiro arranque / reset: abrir o dashboard automaticamente após a descoberta
+               * para que o utilizador veja os apps importados sem precisar de abri-lo manualmente.
+               */
+              if (discoveryAddedApps && openDashboardAfterDiscoveryRef.current) {
+                openDashboardAfterDiscoveryRef.current = false;
+                window.setTimeout(() => {
+                  flushSync(() => {
+                    setPanelChromeDismissedForIsland(false);
+                    setIsSettingsOpen(false);
+                    setIsDashboardOpen(true);
+                  });
+                }, 350);
+              } else {
+                openDashboardAfterDiscoveryRef.current = false;
+              }
             }
           })();
         }, START_MENU_DISCOVERY_DEFER_MS);
       } else if (!lsDiscoveryDone && discoveryDoneEffective) {
         localStorage.setItem(LS_MAIN_DISCOVERY_DONE, 'true');
       }
+
+      if (cancelled) return;
+
+      hydratedFromPersistenceRef.current =
+        !!(finalData || loadedFromLocalStorageMigration);
 
       if (finalData) {
         if (finalData.user) setUser(finalData.user);
@@ -833,16 +1084,79 @@ export default function App() {
         setApps(nextApps);
         setConfig(nextConfig);
       }
-      setIsLoaded(true);
+      if (!cancelled) {
+        setIsLoaded(true);
+      }
     };
 
     void loadPersistence();
     return () => {
+      cancelled = true;
       if (discoveryDeferTimer !== undefined) {
         window.clearTimeout(discoveryDeferTimer);
+        startMenuScanPersistenceHoldRef.current = false;
       }
     };
   }, []);
+
+  /** Desktop + welcome: só após hidratar — evita depender só do localStorage (cleared em algumas sessões Electron). */
+  useEffect(() => {
+    if (!isLoaded || welcomeBootstrapDoneRef.current) return;
+    welcomeBootstrapDoneRef.current = true;
+
+    const fromLs = localStorage.getItem('zenith_first_run_complete') === 'true';
+    const fromDisk = config.persistenceMeta?.isFirstRunCompleted === true;
+    const discoveryDone = config.mainStartMenuDiscoveryDone === true;
+    const hadDiskPayload = hydratedFromPersistenceRef.current;
+
+    const hasRunBefore =
+      fromLs || fromDisk || discoveryDone || hadDiskPayload;
+
+    if (window.electron) {
+      flushSync(() => setIsDesktopMode(true));
+    }
+
+    if (!hasRunBefore) {
+      /**
+       * Se a descoberta do Menu Iniciar está pendente (hold ativo + sem dados anteriores),
+       * o overlay já está visível — não abrir o dashboard agora.
+       * `openDashboardAfterDiscoveryRef` está a true e o dashboard abrirá após a descoberta.
+       */
+      const discoveryOverlayPending =
+        startMenuScanPersistenceHoldRef.current && openDashboardAfterDiscoveryRef.current;
+
+      if (!discoveryOverlayPending) {
+        flushSync(() => {
+          setPanelResizeSolidCover(true);
+          setHideIslandForWindowedPanelTransition(true);
+          setIsDashboardOpen(true);
+        });
+      }
+      localStorage.setItem('zenith_first_run_complete', 'true');
+      if (window.electron) {
+        setConfig((prev) => ({
+          ...prev,
+          persistenceMeta: {
+            ...prev.persistenceMeta,
+            isFirstRunCompleted: true,
+          },
+        }));
+      }
+    } else {
+      if (!fromLs) {
+        localStorage.setItem('zenith_first_run_complete', 'true');
+      }
+      if (window.electron && !fromDisk && hadDiskPayload) {
+        setConfig((prev) => ({
+          ...prev,
+          persistenceMeta: {
+            ...prev.persistenceMeta,
+            isFirstRunCompleted: true,
+          },
+        }));
+      }
+    }
+  }, [isLoaded]);
 
   /** Modo jogo vive no main (`shouldOpenMenu`); antes só mandávamos IPC na montagem — antes do config carregar do disco. */
   useEffect(() => {
@@ -860,7 +1174,26 @@ export default function App() {
     if (!isLoaded) return;
 
     const timer = setTimeout(() => {
-      const fullData = {
+      if (startMenuScanPersistenceHoldRef.current) {
+        /**
+         * Hold ativo (aguardando descoberta do Menu Iniciar).
+         * Permitir save se o utilizador já tem conteúdo customizado além do estado padrão:
+         * - workspaces extra além do Main e Streaming padrões
+         * - Main workspace com apps reais (não só widgets internos)
+         * Desta forma, alterações feitas pelo utilizador durante os 20 s de hold não se perdem.
+         */
+        const mainWs = config.workspaces?.find(
+          (ws) => ws.id === 'workspace-1' || ws.name === 'Main',
+        );
+        const hasCustomContent =
+          mainWorkspaceAlreadyCustomized(mainWs) ||
+          config.workspaces.length > DEFAULT_UI_CONFIG.workspaces.length;
+        if (!hasCustomContent) {
+          return; // Ainda em estado padrão — aguardar a descoberta
+        }
+        // conteúdo customizado: salvar mesmo com hold ativo
+      }
+      const fullData = sanitizeFullPersistenceForDisk({
         user,
         apps,
         config,
@@ -868,7 +1201,8 @@ export default function App() {
         alarms,
         noteWorkspaces,
         activeNoteWorkspaceId,
-      };
+      });
+      if (!fullData) return;
 
       localStorage.setItem('zenith_user', JSON.stringify(user));
       localStorage.setItem('zenith_apps', JSON.stringify(apps));
@@ -879,9 +1213,21 @@ export default function App() {
       localStorage.setItem('zenith_active_note_workspace', activeNoteWorkspaceId);
 
       if (!persistenceSaveBlockedRef.current && window.electron?.saveFullConfig) {
-        window.electron.saveFullConfig(fullData);
+        const wsCount = fullData.config?.workspaces?.length ?? 0;
+        const mainApps = (fullData.config?.workspaces?.[0]?.apps?.length ?? 0);
+        void window.electron.saveFullConfig(fullData).then((r) => {
+          if (r && !r.ok) {
+            window.electron?.savePersistenceLog?.(
+              `saveFullConfig failed: ${r.error || 'unknown'} | ws=${wsCount} mainApps=${mainApps}`,
+            );
+          } else {
+            window.electron?.savePersistenceLog?.(
+              `saveFullConfig ok | ws=${wsCount} mainApps=${mainApps} discoveryDone=${fullData.config?.mainStartMenuDiscoveryDone}`,
+            );
+          }
+        });
       }
-    }, 250);
+    }, 150);
 
     return () => clearTimeout(timer);
   }, [user, apps, config, notes, alarms, noteWorkspaces, activeNoteWorkspaceId, isLoaded]);
@@ -892,7 +1238,7 @@ export default function App() {
 
     const flushToDisk = () => {
       const d = persistenceRef.current;
-      const fullData = {
+      const fullData = sanitizeFullPersistenceForDisk({
         user: d.user,
         apps: d.apps,
         config: d.config,
@@ -900,7 +1246,8 @@ export default function App() {
         alarms: d.alarms,
         noteWorkspaces: d.noteWorkspaces,
         activeNoteWorkspaceId: d.activeNoteWorkspaceId,
-      };
+      });
+      if (!fullData) return;
       try {
         localStorage.setItem('zenith_user', JSON.stringify(d.user));
         localStorage.setItem('zenith_apps', JSON.stringify(d.apps));
@@ -916,11 +1263,19 @@ export default function App() {
         return;
       }
       if (window.electron?.saveFullConfigSync) {
-        window.electron.saveFullConfigSync(fullData);
+        const ok = window.electron.saveFullConfigSync(fullData);
+        if (!ok) {
+          window.electron?.savePersistenceLog?.(
+            'saveFullConfigSync: false or IPC error — scheduling invoke fallback',
+          );
+          void window.electron.saveFullConfig?.(fullData);
+        }
       } else if (window.electron?.saveFullConfig) {
-        window.electron.saveFullConfig(fullData);
+        void window.electron.saveFullConfig(fullData);
       }
     };
+
+    flushPersistenceToDiskRef.current = flushToDisk;
 
     const onPageHide = () => flushToDisk();
     const onBeforeUnload = () => flushToDisk();
@@ -930,11 +1285,59 @@ export default function App() {
     window.addEventListener('pagehide', onPageHide);
     window.addEventListener('beforeunload', onBeforeUnload);
     document.addEventListener('visibilitychange', onVisibility);
-    const quitUnsub = window.electron?.onBeforeQuitFlush?.(() => {
-      flushToDisk();
-      window.electron?.ackQuitFlush?.();
+    const quitUnsub = window.electron?.onBeforeQuitFlush?.(async () => {
+      const d = persistenceRef.current;
+      const fullData = sanitizeFullPersistenceForDisk({
+        user: d.user,
+        apps: d.apps,
+        config: d.config,
+        notes: d.notes,
+        alarms: d.alarms,
+        noteWorkspaces: d.noteWorkspaces,
+        activeNoteWorkspaceId: d.activeNoteWorkspaceId,
+      });
+      try {
+        if (!fullData) return;
+        try {
+          localStorage.setItem('zenith_user', JSON.stringify(d.user));
+          localStorage.setItem('zenith_apps', JSON.stringify(d.apps));
+          localStorage.setItem('zenith_config', JSON.stringify(d.config));
+          localStorage.setItem('zenith_notes', JSON.stringify(d.notes));
+          localStorage.setItem('zenith_alarms', JSON.stringify(d.alarms));
+          localStorage.setItem('zenith_note_workspaces', JSON.stringify(d.noteWorkspaces));
+          localStorage.setItem('zenith_active_note_workspace', d.activeNoteWorkspaceId);
+        } catch (e) {
+          console.warn('localStorage flush failed', e);
+        }
+        if (persistenceSaveBlockedRef.current) return;
+        if (window.electron?.saveFullConfig) {
+          const r = await window.electron.saveFullConfig(fullData);
+          if (!r?.ok) {
+            window.electron?.savePersistenceLog?.(
+              `quit flush saveFullConfig: ${r?.error || 'unknown'}`,
+            );
+            const syncOk = window.electron.saveFullConfigSync?.(fullData);
+            if (syncOk === false) {
+              window.electron?.savePersistenceLog?.('quit flush saveFullConfigSync also failed');
+            }
+          }
+        } else if (window.electron?.saveFullConfigSync) {
+          const ok = window.electron.saveFullConfigSync(fullData);
+          if (!ok) {
+            window.electron?.savePersistenceLog?.('quit flush saveFullConfigSync failed');
+          }
+        }
+      } finally {
+        window.electron?.ackQuitFlush?.();
+      }
     });
     return () => {
+      try {
+        flushToDisk();
+      } catch {
+        /* ignore */
+      }
+      flushPersistenceToDiskRef.current = null;
       window.removeEventListener('pagehide', onPageHide);
       window.removeEventListener('beforeunload', onBeforeUnload);
       document.removeEventListener('visibilitychange', onVisibility);
@@ -1043,7 +1446,6 @@ export default function App() {
         };
         flushSync(() => {
           setUser(newUser);
-          setHideIslandForWindowedPanelTransition(true);
           setPanelChromeDismissedForIsland(false);
           setIsDashboardOpen(true);
         });
@@ -1131,6 +1533,7 @@ export default function App() {
             window.electron.showWindow();
           } else {
             hideTimeout.current = setTimeout(() => {
+              flushPersistenceToDiskRef.current?.();
               window.electron.hideWindow();
             }, 300);
           }
@@ -1186,6 +1589,7 @@ export default function App() {
           window.electron.showWindow();
         } else {
           hideTimeout.current = setTimeout(() => {
+            flushPersistenceToDiskRef.current?.();
             window.electron.hideWindow();
           }, 300); // allow exit animations to complete
         }
@@ -1455,24 +1859,6 @@ export default function App() {
 
   // IPC: menu / dashboard / settings — must run after openMenu exists; use openMenuRef so handler always calls latest openMenu.
   useEffect(() => {
-    const hasRunBefore = localStorage.getItem('zenith_first_run_complete');
-    if (window.electron) {
-      flushSync(() => {
-        setIsDesktopMode(true);
-        if (!hasRunBefore) {
-          setHideIslandForWindowedPanelTransition(true);
-          setIsDashboardOpen(true);
-        }
-      });
-    } else {
-      flushSync(() => {
-        if (!hasRunBefore) {
-          setHideIslandForWindowedPanelTransition(true);
-          setIsDashboardOpen(true);
-        }
-      });
-    }
-
     const cleanupMenu = window.electron?.onOpenMenu((data: {
       x: number;
       y: number;
@@ -1493,25 +1879,31 @@ export default function App() {
 
     const cleanupDashboard = window.electron?.onOpenDashboard(() => {
       flushSync(() => {
-        setHideIslandForWindowedPanelTransition(true);
+        // Não ligar panelResizeSolidCover aqui se o painel já estiver aberto (ex.: Settings→Dashboard):
+        // z-[96] ficava preso porque o layout que o desliga só corre em false→true de panelSurfaceOpen.
         setPanelChromeDismissedForIsland(false);
         setMinimizeNeutralCoverActive(false);
         setRadialPreShowSolidCover(false);
         setIsSettingsOpen(false);
         setIsDashboardOpen(true);
       });
-      window.electron?.showWindow();
+      /** Não chamar `showWindow()` aqui: corre antes dos `useLayoutEffect` + microtask com `applyWindowSize('windowed')`
+       * e o DWM pinta o HWND grande com a textura da ilha (relógio “puxado”). O show fica no microtask após resize. */
     });
 
     const cleanupSettings = window.electron?.onOpenSettings(() => {
       flushSync(() => {
-        setHideIslandForWindowedPanelTransition(true);
         setPanelChromeDismissedForIsland(false);
         setIsMenuOpen(false);
         setIsSettingsOpen(true);
         setIsDashboardOpen(true);
       });
-      window.electron?.showWindow();
+      requestAnimationFrame(() => {
+        void window.electron?.invalidatePaint?.();
+        requestAnimationFrame(() => {
+          void window.electron?.invalidatePaint?.();
+        });
+      });
     });
 
     const cleanupWindowState = window.electron?.onWindowState((state) => {
@@ -1537,6 +1929,8 @@ export default function App() {
     });
 
     const cleanupWindowHidToTray = window.electron?.onWindowHidToTray(() => {
+      // Persist before resetting UI state so we never flush a stale ref or miss the write if the window hides quickly.
+      flushPersistenceToDiskRef.current?.();
       syncAfterMainWindowHidRef.current();
     });
 
@@ -1568,10 +1962,6 @@ export default function App() {
         window.electron?.showWindow();
         lastWindowState.current = m;
       });
-
-    if (!hasRunBefore) {
-      localStorage.setItem('zenith_first_run_complete', 'true');
-    }
 
     return () => {
       cleanupMenu?.();
@@ -1669,12 +2059,18 @@ export default function App() {
   const handleOpenSettings = () => {
     flushSync(() => {
       if (isMenuOpen) setIsMenuOpen(false);
-      setHideIslandForWindowedPanelTransition(true);
+      // Cobertura z-[96]: só o useLayoutEffect (panelSurfaceOpen false→true) deve ligar ao sair da ilha.
+      // Se já estamos no dashboard, ligar aqui deixa a cobertura para sempre — o efeito de resize não re-corre.
       setPanelChromeDismissedForIsland(false);
       setIsSettingsOpen(true);
       setIsDashboardOpen(true);
     });
-    if (isDesktopMode) window.electron?.showWindow();
+    requestAnimationFrame(() => {
+      void window.electron?.invalidatePaint?.();
+      requestAnimationFrame(() => {
+        void window.electron?.invalidatePaint?.();
+      });
+    });
   };
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button === 1) { // Botão do meio
@@ -1882,11 +2278,9 @@ export default function App() {
     flushSync(() => {
       setUser(null);
       setIsSettingsOpen(false);
-      setHideIslandForWindowedPanelTransition(true);
       setPanelChromeDismissedForIsland(false);
       setIsDashboardOpen(true);
     });
-    if (isDesktopMode) window.electron?.showWindow();
   };
 
   const handleUserProfileUpdate = useCallback((patch: Partial<UserProfile>) => {
@@ -2021,16 +2415,16 @@ export default function App() {
         {/* BACKGROUND (Simulator Only OR First Run Dashboard) */}
         {/* DELETED: Removed redundant background to allow RadialMenu to handle it exclusively */}
 
-        {/* WELCOME SCREEN / DASHBOARD CONTENT AREA */}
+        {/* WELCOME SCREEN / DASHBOARD — AnimatePresence sync evita buraco só com fundo entre dashboard e definições (DWM). */}
         {!isMenuOpen && !radialOpenAwaitingFullscreen && (
-          <AnimatePresence mode="wait">
+          <AnimatePresence mode="sync">
             {isDashboardOpen && panelSurfaceOpen && !isSettingsOpen && !isNotesOpen && !isAlarmWidgetOpen && !isStopwatchOpen && !isPomodoroOpen && !alarmRinging && !pomodoroEndOverlay && (
               <motion.div
                 key="welcome"
                 initial={{ opacity: 0, x: -20, filter: 'blur(10px)' }}
                 animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
                 exit={{ opacity: 0, x: -20, filter: 'blur(10px)' }}
-                transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
                 className="absolute inset-0 z-10"
                 id="dashboard-container"
               >
@@ -2052,7 +2446,7 @@ export default function App() {
                 initial={{ opacity: 0, x: 20, filter: 'blur(10px)' }}
                 animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
                 exit={{ opacity: 0, x: 20, filter: 'blur(10px)' }}
-                transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
                 className="absolute inset-0 z-20"
               >
                 <SettingsModal
@@ -2081,12 +2475,10 @@ export default function App() {
                   }}
                   onOpenDashboard={() => {
                     flushSync(() => {
-                      setHideIslandForWindowedPanelTransition(true);
                       setIsSettingsOpen(false);
                       setPanelChromeDismissedForIsland(false);
                       setIsDashboardOpen(true);
                     });
-                    if (isDesktopMode) window.electron?.showWindow();
                   }}
                   user={user}
                   onLogout={handleLogout}
@@ -2149,6 +2541,14 @@ export default function App() {
       {isDesktopMode && radialOpenAwaitingFullscreen && (
         <div
           className="fixed inset-0 z-[65] bg-[#0A0A0A] pointer-events-auto"
+          aria-hidden
+        />
+      )}
+
+      {/* Ilha small→windowed: cobre um frame errado do DWM antes do invalidate após `applyWindowSize`. */}
+      {isDesktopMode && panelResizeSolidCover && (
+        <div
+          className="fixed inset-0 z-[96] bg-[#0A0A0A] pointer-events-none"
           aria-hidden
         />
       )}

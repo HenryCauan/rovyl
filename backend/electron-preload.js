@@ -121,20 +121,32 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.on("shortcut-recorded", subscription);
     return () => ipcRenderer.removeListener("shortcut-recorded", subscription);
   },
-  saveFullConfig: (config) => ipcRenderer.send("save-full-config", config),
+  saveFullConfig: (config) => ipcRenderer.invoke("save-full-config", config),
   /** Blocks until written — use on shutdown / visibility hidden so notes are not lost. */
   saveFullConfigSync: (config) => {
     try {
-      ipcRenderer.sendSync("save-full-config-sync", config);
+      return !!ipcRenderer.sendSync("save-full-config-sync", config);
     } catch (e) {
       console.error("saveFullConfigSync failed:", e);
+      return false;
     }
   },
   getFullConfig: () => ipcRenderer.invoke("get-full-config"),
   getConfigPersistenceMeta: () =>
     ipcRenderer.invoke("get-config-persistence-meta"),
   onBeforeQuitFlush: (callback) => {
-    const listener = () => callback();
+    const listener = () => {
+      try {
+        const out = callback();
+        if (out != null && typeof out.then === "function") {
+          void out.catch((err) =>
+            console.error("onBeforeQuitFlush async error:", err),
+          );
+        }
+      } catch (e) {
+        console.error("onBeforeQuitFlush error:", e);
+      }
+    };
     ipcRenderer.on("zenith-before-quit-flush", listener);
     return () =>
       ipcRenderer.removeListener("zenith-before-quit-flush", listener);
@@ -160,6 +172,7 @@ contextBridge.exposeInMainWorld("electron", {
   savePersistenceLog: (message) => ipcRenderer.send("save-persistence-log", message),
   /** Opens http(s) URLs in the system default browser (not an Electron window). */
   openExternalUrl: (url) => ipcRenderer.invoke("open-external-url", url),
+  openSystemUninstall: () => ipcRenderer.invoke("open-system-uninstall"),
 });
 
 // Intercept console messages from the renderer process and send them to the main process

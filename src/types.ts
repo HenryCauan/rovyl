@@ -317,17 +317,18 @@ export interface ElectronAPI {
   startShortcutRecording: () => void;
   stopShortcutRecording: () => void;
   onShortcutRecorded: (callback: (shortcut: string) => void) => () => void;
-  saveFullConfig: (config: any) => void;
-  /** Synchronous save to disk (Electron); use before exit so notes persist across reboot. */
-  saveFullConfigSync?: (config: any) => void;
+  saveFullConfig: (config: any) => Promise<{ ok: boolean; error?: string }>;
+  /** Synchronous save to disk (Electron); returns false if main rejected or IPC failed. */
+  saveFullConfigSync?: (config: any) => boolean;
   getFullConfig: () => Promise<any>;
-  /** Sizes of config-v2.json (+ .bak) on disk — used to avoid overwriting real data when load fails. */
+  /** Sizes of config-v2.json (+ .bak + quarantined .broken-*) — used to avoid overwriting real data when load fails. */
   getConfigPersistenceMeta?: () => Promise<{
     primaryBytes: number;
     backupBytes: number;
+    quarantineBytes?: number;
   }>;
-  /** Main is quitting — flush persistence synchronously then call ackQuitFlush. */
-  onBeforeQuitFlush?: (callback: () => void) => () => void;
+  /** Main is quitting — flush then call ackQuitFlush (callback may be async). */
+  onBeforeQuitFlush?: (callback: () => void | Promise<void>) => () => void;
   ackQuitFlush?: () => void;
   getAppRecents: (appName: string, appCommand?: string) => Promise<AppItem[]>;
   setWorkspaceShortcutsState: (
@@ -342,6 +343,13 @@ export interface ElectronAPI {
   savePersistenceLog: (message: string) => void;
   /** Open URL in the OS default browser (shell.openExternal). */
   openExternalUrl?: (url: string) => Promise<{ ok: boolean; error?: string }>;
+  /** OS-native uninstall flow (Windows uninstaller / Apps settings; macOS Finder). */
+  openSystemUninstall?: () => Promise<{
+    ok: boolean;
+    mode?: "uninstaller" | "settings" | "finder";
+    dev?: boolean;
+    error?: string;
+  }>;
 }
 
 declare global {

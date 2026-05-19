@@ -12,6 +12,7 @@
     "start": "concurrently -k \"npm run dev\" \"npm run electron\"",
     "dist": "npm run build && electron-builder",
     "test:win32-launch": "node --test backend/win32-launch.test.cjs",
+    "test:persistence-shape": "node scripts/persistence-normalize-smoke.mjs",
     "verify:radial-windowing": "node scripts/verify-radial-windowing.mjs"
   },
   "dependencies": {

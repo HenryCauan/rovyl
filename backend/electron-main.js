@@ -11,10 +11,11 @@ const {
   dialog,
 } = require("electron");
 const path = require("path");
-const { exec, spawn, execFile } = require("child_process");
+const { exec, spawn, execFile, execFileSync } = require("child_process");
 const os = require("os");
 const fs = require("fs");
 const win32Launch = require("./win32-launch");
+const { normalizeFullPersistenceBlob } = require("./persistence-normalize.cjs");
 const crypto = require("crypto");
 const { GlobalKeyboardListener } = require("node-global-key-listener");
 const http = require("http");
@@ -84,6 +85,73 @@ function applyEnvFileContent(content) {
 }
 
 /**
+ * Packaged Zenith uses electron-builder `productName` → userData `%APPDATA%\\Zenith OS`.
+ * Unpackaged `npm start` uses package.json `name` → `%APPDATA%\\zenith-radial-menu` by default,
+ * so dev and installer wrote/read different folders (looks like “nothing persists”).
+ * Optional override: `ZENITH_USER_DATA=C:\\path`.
+ * Must run before any `app.getPath("userData")`.
+ */
+function ensureUnifiedUserDataDirectory() {
+  const udOverride = (process.env.ZENITH_USER_DATA || "").trim();
+  if (udOverride) {
+    try {
+      app.setPath("userData", udOverride);
+      diagLog(`[Persist] userData from ZENITH_USER_DATA=${app.getPath("userData")}`);
+      return;
+    } catch (e) {
+      console.error("ZENITH_USER_DATA setPath failed:", e.message);
+    }
+  }
+  if (app.isPackaged) return;
+
+  try {
+    const appData = app.getPath("appData");
+    const unifiedDir = path.join(appData, "Zenith OS");
+    let legacyName = "zenith-radial-menu";
+    try {
+      const pkgPath = path.join(__dirname, "..", "package.json");
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+      if (pkg && typeof pkg.name === "string" && pkg.name.trim()) {
+        legacyName = pkg.name.trim();
+      }
+    } catch (_) {}
+
+    const legacyDir = path.join(appData, legacyName);
+    const unifiedCfg = path.join(unifiedDir, "config-v2.json");
+    const legacyCfg = path.join(legacyDir, "config-v2.json");
+
+    if (!fs.existsSync(unifiedCfg) && fs.existsSync(legacyCfg)) {
+      if (!fs.existsSync(unifiedDir)) {
+        fs.mkdirSync(unifiedDir, { recursive: true });
+      }
+      for (const f of [
+        "config-v2.json",
+        "config-v2.json.bak",
+        "settings.json",
+        "zenith-persistence.log",
+        "icon-cache.json",
+      ]) {
+        const src = path.join(legacyDir, f);
+        const dst = path.join(unifiedDir, f);
+        if (fs.existsSync(src) && !fs.existsSync(dst)) {
+          try {
+            fs.copyFileSync(src, dst);
+            diagLog(`[Persist] Migrated dev profile ${f} → Zenith OS userData`);
+          } catch (e) {
+            diagLog(`[Persist] Migrate ${f} failed: ${e.message}`);
+          }
+        }
+      }
+    }
+
+    app.setPath("userData", unifiedDir);
+    diagLog(`[Persist] Dev userData unified to: ${unifiedDir}`);
+  } catch (e) {
+    console.error("ensureUnifiedUserDataDirectory:", e.message);
+  }
+}
+
+/**
  * Packaged apps don't ship the repo-root .env.local. Load from (in order, last wins per key):
  * - project / asar parent: `.env` then `.env.local` (último ganha) — funciona com `npm start` sem build
  * - resources (extraResources / beside installer)
@@ -115,6 +183,7 @@ function loadEnvLocalFiles() {
   }
 }
 
+ensureUnifiedUserDataDirectory();
 loadEnvLocalFiles();
 
 /** Último recurso se GPU partilhada continuar a travar Edge/outros browsers com o Zenith aberto. */
@@ -193,6 +262,40 @@ async function loadRecentlyOpenedPathsFromVscdb(vscdbPath) {
 }
 
 diagLog("Zenith Main Process Started");
+
+/**
+ * Ctrl+C no terminal envia SIGINT ao processo Node/Electron. Sem este handler, o processo
+ * termina abruptamente sem acionar `before-quit`, pelo que o flush síncrono do renderer
+ * nunca acontece e as últimas alterações perdem-se. Redirecionar SIGINT para `app.quit()`
+ * permite que o fluxo normal de fecho (before-quit → renderer flush → exit) ocorra.
+ */
+process.on("SIGINT", () => {
+  diagLog("[Signal] SIGINT received — routing through app.quit() for clean persistence flush");
+  app.quit();
+});
+
+/** Sum bytes of config-v2.json.broken-*.json (after quarantine) so the renderer can block destructive saves. */
+function sumQuarantinedConfigBytes(userDataDir) {
+  let total = 0;
+  try {
+    if (!userDataDir || !fs.existsSync(userDataDir)) return 0;
+    const files = fs.readdirSync(userDataDir);
+    for (const f of files) {
+      if (f.startsWith("config-v2.json.broken-") && f.endsWith(".json")) {
+        try {
+          const p = path.join(userDataDir, f);
+          const st = fs.statSync(p);
+          if (st.isFile()) total += st.size;
+        } catch (_) {
+          /* ignore */
+        }
+      }
+    }
+  } catch (_) {
+    /* ignore */
+  }
+  return total;
+}
 
 /** Declared before single-instance lock so `second-instance` can safely reference it. */
 let mainWindow;
@@ -383,6 +486,13 @@ function applyMousePolicyAfterReveal(win) {
 let isAppQuitting = false;
 /** Ensures renderer runs saveFullConfigSync before exit (tray "Sair" / OS shutdown paths). */
 let zenithQuitFlushStarted = false;
+/**
+ * Definido como `true` imediatamente antes de chamar `app.exit(0)` no handler de importação.
+ * Impede que o `before-quit` envie `zenith-before-quit-flush` ao renderer — que ainda tem
+ * o estado ANTERIOR à importação em memória e sobrescreveria o backup recém-gravado no disco.
+ */
+let skipQuitFlushForImport = false;
+
 app.on("before-quit", (event) => {
   isAppQuitting = true;
   if (zenithQuitFlushStarted) {
@@ -390,6 +500,11 @@ app.on("before-quit", (event) => {
   }
   const w = mainWindow;
   if (!w || w.isDestroyed()) {
+    return;
+  }
+  // Importação: o backup já está no disco — não deixar o renderer sobrescrevê-lo com estado antigo.
+  if (skipQuitFlushForImport) {
+    diagLog("[Quit] Skipping renderer flush — import in progress, backup on disk is authoritative");
     return;
   }
   event.preventDefault();
@@ -407,7 +522,7 @@ app.on("before-quit", (event) => {
   timeoutId = setTimeout(() => {
     diagLog("[Quit] Persistence flush timeout — exiting");
     finishExit();
-  }, 3000);
+  }, 12000);
 
   ipcMain.once("zenith-quit-flush-ack", finishExit);
 
@@ -539,15 +654,20 @@ async function createWindow() {
     }
     if (newWindow.isVisible()) {
       event.preventDefault();
-      newWindow.hide();
-      newWindow.setSkipTaskbar(true);
+      // Notify renderer before native hide so it can sync-save while webContents is still fully alive.
       try {
-        if (!newWindow.isDestroyed()) {
+        if (
+          !newWindow.isDestroyed() &&
+          newWindow.webContents &&
+          !newWindow.webContents.isDestroyed()
+        ) {
           newWindow.webContents.send("window-hid-to-tray");
         }
       } catch (e) {
         /* ignore */
       }
+      newWindow.hide();
+      newWindow.setSkipTaskbar(true);
     }
   });
 
@@ -1120,6 +1240,16 @@ function openSettingsFromMainProcess() {
   mainWindow.focus();
   mainWindow.webContents.focus();
   mainWindow.webContents.send("open-settings");
+  try {
+    if (
+      mainWindow.webContents &&
+      typeof mainWindow.webContents.invalidate === "function"
+    ) {
+      mainWindow.webContents.invalidate();
+    }
+  } catch (e) {
+    /* ignore */
+  }
 }
 
 /** Lazy — native binding may fail on some installs; fail-open (allow radial). */
@@ -1453,6 +1583,12 @@ let tray = null;
 app.whenReady().then(async () => {
   if (!gotTheLock) return;
 
+  try {
+    diagLog(`[Persist] userData=${app.getPath("userData")}`);
+  } catch (e) {
+    diagLog(`[Persist] userData path unavailable: ${e.message}`);
+  }
+
   // 1. Initialize Settings Management First (to avoid race conditions with renderer)
   const settingsPath = path.join(app.getPath("userData"), "settings.json");
   let currentSettings = {
@@ -1465,7 +1601,7 @@ app.whenReady().then(async () => {
     try {
       if (typeof openAtLogin === "boolean") {
         const currentLoginSettings = app.getLoginItemSettings();
-        if (currentLoginSettings.openAtLogin !== openAtLogin || isDev) {
+        if (currentLoginSettings.openAtLogin !== openAtLogin) {
           app.setLoginItemSettings({
             openAtLogin: openAtLogin,
             path: app.getPath("exe"),
@@ -1565,6 +1701,22 @@ app.whenReady().then(async () => {
   // Register essential IPC handlers BEFORE window creation
   ipcMain.handle("get-settings", () => currentSettings);
 
+  /** Flush temp / final file to disk — reduces loss on crash/reboot right after save (Windows). */
+  const fsyncFileBestEffort = (filePath) => {
+    try {
+      if (!fs.existsSync(filePath)) return;
+      const fd = fs.openSync(filePath, "r+");
+      try {
+        fs.fsyncSync(fd);
+      } finally {
+        fs.closeSync(fd);
+      }
+    } catch (e) {
+      diagLog(`[Persist] fsync ${path.basename(filePath)}: ${e.message}`);
+    }
+  };
+
+  /** @returns {boolean} */
   const saveFullConfigToDisk = (config) => {
     const configPath = path.join(app.getPath("userData"), "config-v2.json");
     const tempPath = configPath + ".tmp";
@@ -1583,7 +1735,9 @@ app.whenReady().then(async () => {
         }
       }
 
-      fs.writeFileSync(tempPath, JSON.stringify(toWrite, null, 2), "utf-8");
+      const json = JSON.stringify(toWrite, null, 2);
+      fs.writeFileSync(tempPath, json, "utf-8");
+      fsyncFileBestEffort(tempPath);
 
       if (fs.existsSync(tempPath) && fs.statSync(tempPath).size > 0) {
         try {
@@ -1594,17 +1748,27 @@ app.whenReady().then(async () => {
           diagLog(`[Persist] config-v2.json backup: ${e.message}`);
         }
         fs.renameSync(tempPath, configPath);
-      } else {
-        throw new Error("Temp file is empty or missing after write");
+        fsyncFileBestEffort(configPath);
+        try {
+          const sz = fs.statSync(configPath).size;
+          diagLog(`[Persist] save-full-config ok path=${configPath} bytes=${sz}`);
+        } catch (_) {
+          diagLog(`[Persist] save-full-config ok path=${configPath}`);
+        }
+        return true;
       }
+      throw new Error("Temp file is empty or missing after write");
     } catch (e) {
       console.error("Failed to save full config (Atomic):", e);
       diagLog(`[ERROR] Persistence Failure: ${e.message}`);
       try {
-        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
+        fsyncFileBestEffort(configPath);
+        return fs.existsSync(configPath) && fs.statSync(configPath).size > 0;
       } catch (e2) {
         /* ignore */
       }
+      return false;
     } finally {
       try {
         if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
@@ -1612,6 +1776,43 @@ app.whenReady().then(async () => {
         /* ignore */
       }
     }
+  };
+
+  const applyPersistedFullConfigSideEffects = (payload) => {
+    if (!payload || typeof payload !== "object") return;
+    if (typeof payload.performanceMode === "boolean") {
+      cachedRadialFlags.performanceMode = payload.performanceMode;
+    }
+    if (typeof payload.enableMouseTrigger === "boolean") {
+      cachedRadialFlags.enableMouseTrigger = payload.enableMouseTrigger;
+    }
+    const ui = extractUiConfigFromPersistenceBlob(payload);
+    if (ui) {
+      applyUiConfigToCurrentSettings(ui);
+      saveSettings({});
+      if (typeof ui.openAtLogin === "boolean") {
+        syncLoginItemSettings(ui.openAtLogin);
+      }
+      if (typeof ui.performanceMode === "boolean") {
+        cachedRadialFlags.performanceMode = ui.performanceMode;
+      }
+      if (typeof ui.enableMouseTrigger === "boolean") {
+        cachedRadialFlags.enableMouseTrigger = ui.enableMouseTrigger;
+      }
+      mergeGameModeConfig(ui.gameMode);
+    }
+    syncMouseHookState();
+    try {
+      refreshShortcutsFromFullConfig?.();
+    } catch (e) {
+      diagLog(`[Persist] refreshShortcutsFromFullConfig: ${e.message}`);
+    }
+  };
+
+  const persistFullConfigFromRenderer = (payload) => {
+    const ok = saveFullConfigToDisk(payload);
+    applyPersistedFullConfigSideEffects(payload);
+    return ok;
   };
 
   ipcMain.handle("get-full-config", () => {
@@ -1632,24 +1833,38 @@ app.whenReady().then(async () => {
       }
     };
 
-    const loadAndNormalize = (filePath) => {
+    const loadShapeAndWin32 = (filePath, label) => {
       const data = fs.readFileSync(filePath, "utf-8");
       const parsed = JSON.parse(data);
-      if (process.platform === "win32" && parsed && typeof parsed === "object") {
+      const shaped = normalizeFullPersistenceBlob(parsed);
+      if (!shaped) {
+        diagLog(
+          `[Persist] get-full-config ${label}: JSON ok but shape invalid (missing workspaces?) path=${filePath}`,
+        );
+        return null;
+      }
+      if (process.platform === "win32") {
         try {
-          const copy = JSON.parse(JSON.stringify(parsed));
+          const copy = JSON.parse(JSON.stringify(shaped));
           win32Launch.normalizePersistedPayloadWin32(copy);
           return copy;
         } catch (e) {
-          diagLog(`[Persist] get-full-config win32 normalize: ${e.message}`);
+          diagLog(`[Persist] get-full-config win32 normalize (${label}): ${e.message}`);
         }
       }
-      return parsed;
+      return shaped;
     };
 
     try {
       if (fs.existsSync(configPath)) {
-        return loadAndNormalize(configPath);
+        const st = fs.statSync(configPath);
+        const loaded = loadShapeAndWin32(configPath, "primary");
+        if (loaded) {
+          diagLog(
+            `[Persist] load ok source=primary path=${configPath} bytes=${st.size}`,
+          );
+          return loaded;
+        }
       }
     } catch (e) {
       console.error("Failed to load full config:", e);
@@ -1658,19 +1873,29 @@ app.whenReady().then(async () => {
     }
     try {
       if (fs.existsSync(bakPath)) {
-        diagLog("[Persist] get-full-config: using config-v2.json.bak");
-        return loadAndNormalize(bakPath);
+        const st = fs.statSync(bakPath);
+        const loaded = loadShapeAndWin32(bakPath, "bak");
+        if (loaded) {
+          diagLog(
+            `[Persist] load ok source=bak path=${bakPath} bytes=${st.size}`,
+          );
+          return loaded;
+        }
       }
     } catch (e2) {
       console.error("Failed to load backup config:", e2);
       diagLog(`[Persist] get-full-config bak failed: ${e2.message}`);
     }
+    diagLog(
+      `[Persist] load miss: no readable v2 config (primaryExists=${fs.existsSync(configPath)} bakExists=${fs.existsSync(bakPath)} quarantineBytes=${sumQuarantinedConfigBytes(path.dirname(configPath))})`,
+    );
     return null;
   });
 
   ipcMain.handle("get-config-persistence-meta", () => {
     const configPath = path.join(app.getPath("userData"), "config-v2.json");
     const bakPath = `${configPath}.bak`;
+    const userDataDir = path.dirname(configPath);
     try {
       const primaryBytes =
         fs.existsSync(configPath) && fs.statSync(configPath).isFile()
@@ -1680,77 +1905,39 @@ app.whenReady().then(async () => {
         fs.existsSync(bakPath) && fs.statSync(bakPath).isFile()
           ? fs.statSync(bakPath).size
           : 0;
-      return { primaryBytes, backupBytes };
+      const quarantineBytes = sumQuarantinedConfigBytes(userDataDir);
+      return { primaryBytes, backupBytes, quarantineBytes };
     } catch (e) {
       diagLog(`[Persist] get-config-persistence-meta: ${e.message}`);
-      return { primaryBytes: 0, backupBytes: 0 };
+      return { primaryBytes: 0, backupBytes: 0, quarantineBytes: 0 };
     }
   });
 
-  ipcMain.on("save-full-config", (_event, payload) => {
-    saveFullConfigToDisk(payload);
-    if (payload && typeof payload === "object") {
-      if (typeof payload.performanceMode === "boolean") {
-        cachedRadialFlags.performanceMode = payload.performanceMode;
+  /** invoke: main processa e grava antes do renderer continuar — mais fiável que `send` ao fechar a app. */
+  ipcMain.handle("save-full-config", async (_event, payload) => {
+    try {
+      if (!payload || typeof payload !== "object") {
+        return { ok: false, error: "invalid payload" };
       }
-      if (typeof payload.enableMouseTrigger === "boolean") {
-        cachedRadialFlags.enableMouseTrigger = payload.enableMouseTrigger;
-      }
-      const ui = extractUiConfigFromPersistenceBlob(payload);
-      if (ui) {
-        applyUiConfigToCurrentSettings(ui);
-        saveSettings({});
-        if (typeof ui.openAtLogin === "boolean") {
-          syncLoginItemSettings(ui.openAtLogin);
-        }
-        if (typeof ui.performanceMode === "boolean") {
-          cachedRadialFlags.performanceMode = ui.performanceMode;
-        }
-        if (typeof ui.enableMouseTrigger === "boolean") {
-          cachedRadialFlags.enableMouseTrigger = ui.enableMouseTrigger;
-        }
-        mergeGameModeConfig(ui.gameMode);
-      }
-      syncMouseHookState();
-      try {
-        refreshShortcutsFromFullConfig?.();
-      } catch (e) {
-        diagLog(`[Persist] refreshShortcutsFromFullConfig: ${e.message}`);
-      }
+      const ok = persistFullConfigFromRenderer(payload);
+      return ok ? { ok: true } : { ok: false, error: "write failed" };
+    } catch (e) {
+      diagLog(`[Persist] save-full-config handle: ${e.message}`);
+      return { ok: false, error: e.message };
     }
   });
 
   /** Synchronous IPC so the renderer can flush to disk before process exit (notes, etc.). */
-  ipcMain.on("save-full-config-sync", (_event, payload) => {
-    saveFullConfigToDisk(payload);
-    if (payload && typeof payload === "object") {
-      if (typeof payload.performanceMode === "boolean") {
-        cachedRadialFlags.performanceMode = payload.performanceMode;
+  ipcMain.on("save-full-config-sync", (event, payload) => {
+    try {
+      if (!payload || typeof payload !== "object") {
+        event.returnValue = false;
+        return;
       }
-      if (typeof payload.enableMouseTrigger === "boolean") {
-        cachedRadialFlags.enableMouseTrigger = payload.enableMouseTrigger;
-      }
-      const ui = extractUiConfigFromPersistenceBlob(payload);
-      if (ui) {
-        applyUiConfigToCurrentSettings(ui);
-        saveSettings({});
-        if (typeof ui.openAtLogin === "boolean") {
-          syncLoginItemSettings(ui.openAtLogin);
-        }
-        if (typeof ui.performanceMode === "boolean") {
-          cachedRadialFlags.performanceMode = ui.performanceMode;
-        }
-        if (typeof ui.enableMouseTrigger === "boolean") {
-          cachedRadialFlags.enableMouseTrigger = ui.enableMouseTrigger;
-        }
-        mergeGameModeConfig(ui.gameMode);
-      }
-      syncMouseHookState();
-      try {
-        refreshShortcutsFromFullConfig?.();
-      } catch (e) {
-        diagLog(`[Persist] refreshShortcutsFromFullConfig(sync): ${e.message}`);
-      }
+      event.returnValue = persistFullConfigFromRenderer(payload);
+    } catch (e) {
+      diagLog(`[Persist] save-full-config-sync: ${e.message}`);
+      event.returnValue = false;
     }
   });
 
@@ -1818,13 +2005,58 @@ app.whenReady().then(async () => {
       const settingsPath = path.join(app.getPath("userData"), "settings.json");
       const iconCachePath = path.join(app.getPath("userData"), "icon-cache.json");
 
-      if (data.config) fs.writeFileSync(configPath, JSON.stringify(data.config, null, 2));
+      if (data.config) {
+        /**
+         * Normalizar antes de gravar: garantir que `config.workspaces` é um array válido e
+         * que existe o espelho `workspaces` de topo de nível que `normalizeFullPersistenceBlob`
+         * usa como fallback. Sem isto, um backup com forma ligeiramente diferente pode fazer
+         * `get-full-config` retornar `null` → LS migration → overwrite do backup.
+         */
+        const normalized = normalizeFullPersistenceBlob(data.config);
+        if (!normalized) {
+          throw new Error("Arquivo de backup inválido: estrutura de workspaces ausente ou vazia.");
+        }
+        // Garantir mirror de workspaces no nível de raiz (fallback do normalizer)
+        if (!Array.isArray(normalized.workspaces) && Array.isArray(normalized.config?.workspaces)) {
+          normalized.workspaces = normalized.config.workspaces;
+        }
+        const toWrite = JSON.stringify(normalized, null, 2);
+        // Escrita atómica idêntica ao saveFullConfigToDisk
+        const tempPath = configPath + ".tmp";
+        fs.writeFileSync(tempPath, toWrite, "utf-8");
+        fs.renameSync(tempPath, configPath);
+      }
       if (data.settings) fs.writeFileSync(settingsPath, JSON.stringify(data.settings, null, 2));
       if (data.iconCache) fs.writeFileSync(iconCachePath, JSON.stringify(data.iconCache, null, 2));
 
+      // Criar o .bak imediatamente — se o before-quit disparar mesmo assim, o save do renderer
+      // iria sobrescrever apenas o primary (o .bak preserva o backup importado).
+      try {
+        if (data.config && fs.existsSync(configPath)) {
+          fs.copyFileSync(configPath, `${configPath}.bak`);
+        }
+      } catch (_) { /* non-fatal */ }
+
+      /**
+       * Limpar o localStorage do renderer antes do relaunch.
+       * Se `get-full-config` falhar no próximo arranque e o LS ainda tiver as chaves
+       * `zenith_config` / `zenith_apps` antigas, a migração LS sobrescreveria o backup.
+       */
+      try {
+        const { session } = require("electron");
+        await session.defaultSession.clearStorageData({ storages: ["localstorage"] });
+        diagLog("[Backup] Cleared renderer localStorage before import relaunch");
+      } catch (lse) {
+        diagLog(`[Backup] localStorage clear failed (non-fatal): ${lse.message}`);
+      }
+
       diagLog(`[Backup] Configuration imported from ${result.filePaths[0]}. Relaunching...`);
-      
-      // Safety relaunch
+
+      /**
+       * Sinalizar ao handler before-quit que não deve pedir ao renderer para fazer flush
+       * — o renderer tem estado ANTERIOR à importação em memória e sobrescreveria o backup.
+       */
+      skipQuitFlushForImport = true;
       app.relaunch();
       app.exit(0);
       return { success: true };
@@ -2044,33 +2276,19 @@ app.whenReady().then(async () => {
           // Não chamar `updateWindowSize` aqui: expandir o HWND antes do React desmontar a ilha causa frames
           // vazios / ilha no topo e pode atrasar o compositor. O renderer faz `setWindowSize('windowed')` em
           // `useLayoutEffect` logo após `flushSync` em `open-dashboard`.
+          /**
+           * Ordem crítica: IPC primeiro; opacidade 0 antes de `show()` para não pintar a ilha no rect antigo.
+           * Não expandir o HWND aqui — só o renderer após `flushSync` (`apply-window-size` `windowed`).
+           * `show()` só para restaurar minimizada / garantir delivery do IPC; foco/opacidade final vêm do `show-window`
+           * que o renderer envia **depois** de `applyWindowSize` (microtask).
+           */
           mainWindow.webContents.send("open-dashboard");
-
-          // Smooth Entry Trick: Mask the initial white flash/compositor stutter
           mainWindow.setOpacity(0);
-          mainWindow.show();
-
-          /** Garante HWND `windowed` no monitor — o pending `small` do minimize não pode deixar o radial no rect do dashboard. */
-          setImmediate(() => {
-            try {
-              if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isMinimized()) return;
-              updateWindowSize("windowed");
-            } catch (e) {
-              /* ignore */
-            }
-          });
-
-          setTimeout(() => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.setOpacity(1);
-              mainWindow.focus();
-              try {
-                mainWindow.webContents.focus();
-              } catch (e) {
-                /* ignore */
-              }
-            }
-          }, 50);
+          try {
+            mainWindow.show();
+          } catch (e) {
+            /* ignore */
+          }
         },
       },
       {
@@ -2320,6 +2538,67 @@ app.whenReady().then(async () => {
     } catch (e) {
       diagLog(`[open-external-url] ${e.message}`);
       return { ok: false, error: e.message };
+    }
+  });
+
+  /** Windows: run NSIS uninstaller from registry, or open Apps settings; dev → Apps; macOS: reveal .app in Finder. */
+  ipcMain.handle("open-system-uninstall", async () => {
+    const displayName = "Zenith OS";
+    try {
+      if (process.platform === "win32") {
+        if (isDev) {
+          await shell.openExternal("ms-settings:appsfeatures");
+          return { ok: true, mode: "settings", dev: true };
+        }
+        const esc = (s) => String(s).replace(/'/g, "''");
+        const ps = [
+          "$ErrorActionPreference='SilentlyContinue'",
+          `$n='${esc(displayName)}'`,
+          "$roots=@('HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall','HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall','HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall')",
+          "foreach($r in $roots){",
+          "if(-not(Test-Path $r)){continue};",
+          "$hit=Get-ChildItem $r -EA 0 | ForEach-Object { Get-ItemProperty $_.PSPath -EA 0 } | Where-Object { $_.DisplayName -eq $n -and $_.UninstallString } | Select-Object -First 1;",
+          "if($hit){ [Console]::Out.Write($hit.UninstallString); exit 0 }",
+          "}",
+          "exit 1",
+        ].join(" ");
+        try {
+          const out = execFileSync(
+            "powershell.exe",
+            ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
+            {
+              encoding: "utf8",
+              windowsHide: true,
+              timeout: 20000,
+              maxBuffer: 4 * 1024 * 1024,
+            },
+          )
+            .trim()
+            .replace(/\r\n/g, "\n")
+            .split("\n")
+            .map((l) => l.trim())
+            .filter(Boolean)[0];
+          if (out) {
+            const child = spawn(out, { shell: true, detached: true, stdio: "ignore" });
+            try {
+              child.unref();
+            } catch (_) {}
+            return { ok: true, mode: "uninstaller" };
+          }
+        } catch (e) {
+          diagLog(`[Uninstall] registry: ${e.message}`);
+        }
+        await shell.openExternal("ms-settings:appsfeatures");
+        return { ok: true, mode: "settings" };
+      }
+      if (process.platform === "darwin") {
+        shell.showItemInFolder(app.getPath("exe"));
+        return { ok: true, mode: "finder" };
+      }
+      return { ok: false, error: "unsupported" };
+    } catch (e) {
+      diagLog(`[Uninstall] ${e.message}`);
+      return { ok: false, error: e.message || "error" };
     }
   });
 
@@ -3943,6 +4222,30 @@ ipcMain.on("quit-app", () => {
     if (fs.existsSync(iconCachePath)) {
       fs.unlinkSync(iconCachePath);
       diagLog("[Reset] Deleted icon-cache.json");
+    }
+
+    // Limpar também a pasta legada (dev: zenith-radial-menu) para evitar que a migração
+    // restaure um ficheiro obsoleto com mainStartMenuDiscoveryDone:true mas sem apps.
+    try {
+      const appData = app.getPath("appData");
+      let legacyName = "zenith-radial-menu";
+      try {
+        const pkgPath = path.join(__dirname, "..", "package.json");
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+        if (pkg && typeof pkg.name === "string" && pkg.name.trim()) {
+          legacyName = pkg.name.trim();
+        }
+      } catch (_) {}
+      const legacyDir = path.join(appData, legacyName);
+      for (const f of ["config-v2.json", "config-v2.json.bak", "settings.json"]) {
+        const legacy = path.join(legacyDir, f);
+        if (fs.existsSync(legacy)) {
+          fs.unlinkSync(legacy);
+          diagLog(`[Reset] Deleted legacy ${f} from ${legacyName}`);
+        }
+      }
+    } catch (le) {
+      diagLog(`[Reset] Legacy cleanup error (non-fatal): ${le.message}`);
     }
 
     // Clear Electron session storage (Local Storage, IndexedDB, Cache, etc.)
