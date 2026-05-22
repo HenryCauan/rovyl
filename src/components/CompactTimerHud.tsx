@@ -15,18 +15,43 @@ const islandPillClass =
   'inline-flex min-w-0 items-center gap-2.5 rounded-full border border-white/[0.1] bg-[rgba(11,11,13,0.94)] px-3.5 py-1.5 shadow-none [filter:drop-shadow(0_4px_14px_rgba(0,0,0,0.28))_drop-shadow(0_1px_2px_rgba(0,0,0,0.2))]';
 
 const islandPulseDot =
-  'h-[5px] w-[5px] shrink-0 rounded-full bg-emerald-400/95 [filter:drop-shadow(0_0_5px_rgba(52,211,153,0.45))]';
+  'h-[4px] w-[4px] shrink-0 rounded-full bg-emerald-400/95 [filter:drop-shadow(0_0_5px_rgba(52,211,153,0.5))]';
 
-/** Relógio HH:MM em repouso — sem caixa/fundo (só texto + dot). */
-const islandIdleClockClass =
-  'inline-flex min-w-0 items-center gap-2 rounded-full border-0 bg-transparent px-1 py-0 shadow-none';
+/**
+ * Liquid-glass simulado — sem `backdrop-blur` nem `mix-blend` (no Windows transparente
+ * geram um retângulo grande visível à volta da ilha). Contraste via preto semi-opaco + brilho.
+ */
+const islandIdleGlassClass = [
+  'relative inline-flex min-w-0 items-center justify-center gap-2',
+  'rounded-full px-3.5 py-1.5',
+  'bg-[rgba(10,10,12,0.88)]',
+  'shadow-none',
+  '[filter:drop-shadow(0_5px_16px_rgba(0,0,0,0.45))]',
+  'before:pointer-events-none before:absolute before:inset-0 before:rounded-full',
+  'before:bg-gradient-to-b before:from-white/[0.11] before:via-white/[0.03] before:to-transparent',
+].join(' ');
+
+function IdleClockIsland({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={islandIdleGlassClass} title={title}>
+      <div className="relative z-[1] inline-flex items-center gap-2">{children}</div>
+    </div>
+  );
+}
 
 /** Faixa no topo: largura = viewport; ilha centrada em X com flex (sem translate). */
-function islandTopStripClass(paintReady: boolean): string {
+function islandTopStripClass(paintReady: boolean, notchFlush: boolean): string {
+  const pt = notchFlush
+    ? 'pt-2.5'
+    : 'pt-[max(1.25rem,env(safe-area-inset-top,0px))]';
   return [
-    /** Sem transição de opacidade — ao redimensionar o HWND (small↔windowed) o DWM animava o fade e parecia o relógio a “voar” para o rect do dashboard. */
-    'fixed inset-x-0 top-0 z-[55] flex justify-center bg-transparent pt-[max(1.25rem,env(safe-area-inset-top,0px))] px-4 pb-4 pointer-events-none overflow-visible isolate [mix-blend-mode:normal]',
-    /** `invisible` evita flash de composição antes do hit-shape / 1 frame de reveal. */
+    `fixed inset-x-0 top-0 z-[55] flex justify-center bg-transparent ${pt} px-4 pb-4 pointer-events-none overflow-visible isolate [mix-blend-mode:normal]`,
     paintReady ? 'opacity-100 visible' : 'opacity-0 invisible',
   ].join(' ');
 }
@@ -48,6 +73,20 @@ function formatStopwatchMs(ms: number): string {
   const sec = s % 60;
   if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
   return `${m}:${String(sec).padStart(2, '0')}`;
+}
+
+/** BrowserWindow nasce 1280×800 — hit-shape antes do `small` fullscreen desloca a ilha para o centro do ecrã. */
+function looksLikeStartupWindowedViewport(): boolean {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  return Math.abs(w - 1280) <= 48 && Math.abs(h - 800) <= 48;
+}
+
+async function ensureSmallOverlayBeforeHitShape(): Promise<void> {
+  if (!window.electron?.reapplySmallOverlay) return;
+  if (!looksLikeStartupWindowedViewport()) return;
+  await window.electron.reapplySmallOverlay();
+  await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
 }
 
 type Props = {
@@ -92,6 +131,7 @@ export const CompactTimerHud: React.FC<Props> = ({
     allowIdleClock && !suppressFloatingClock && !showPomodoro && !showStopwatch;
 
   const sideBySideTimerStrips = showPomodoro && showStopwatch;
+  const notchFlush = showIdleClock && !showPomodoro && !showStopwatch;
   const pillClass = islandPillClass;
   const labelMicro = 'text-[8px] font-semibold uppercase tracking-[0.2em]';
   const timeSize = 'text-[15px]';
@@ -153,6 +193,8 @@ export const CompactTimerHud: React.FC<Props> = ({
       /** Deixa o layout/viewport estabilizar após resize (evita 1.º rect errado + salto visível). */
       await new Promise<void>((r) => requestAnimationFrame(() => r()));
       await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      if (cancelled) return;
+      await ensureSmallOverlayBeforeHitShape();
       if (cancelled) return;
 
       const r = el.getBoundingClientRect();
@@ -246,11 +288,11 @@ export const CompactTimerHud: React.FC<Props> = ({
   const pomodoroLabel = `${pm}:${String(ps).padStart(2, '0')}`;
   const timeStyleBase = 'font-mono font-semibold tabular-nums leading-none text-white/[0.96]';
   const timeStyleDynamic = `${timeStyleBase} ${timeSize}`;
-  /** Leve sombra no texto — legível sem caixa; evitar blur forte (artefatos em janela transparente). */
-  const timeStyleIdleClock = `${timeStyleBase} text-[15px] tracking-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.55)]`;
+  const timeStyleIdleClock =
+    'font-[system-ui,-apple-system,BlinkMacSystemFont,"Segoe_UI",sans-serif] text-[13px] font-medium tabular-nums leading-none tracking-[-0.01em] text-white/[0.94]';
 
   return (
-    <div className={islandTopStripClass(paintReady)}>
+    <div className={islandTopStripClass(paintReady, notchFlush)}>
       <div ref={rootRef} className={islandClusterClassNames(sideBySideTimerStrips)}>
         {showPomodoro && (
           <div
@@ -271,13 +313,10 @@ export const CompactTimerHud: React.FC<Props> = ({
           </div>
         )}
         {showIdleClock && (
-          <div
-            className={`${islandIdleClockClass} justify-between`}
-            title={t('hud.island_clock')}
-          >
+          <IdleClockIsland title={t('hud.island_clock')}>
             <span className={islandPulseDot} aria-hidden />
             <span ref={idleTimeRef} className={timeStyleIdleClock} />
-          </div>
+          </IdleClockIsland>
         )}
       </div>
     </div>

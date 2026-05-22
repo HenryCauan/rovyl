@@ -236,6 +236,7 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
     iconName: "Circle",
   },
   showLabels: true,
+  alwaysShowAppLabels: false,
   showClock: true,
   showDate: true,
   showBattery: false,

@@ -61,6 +61,7 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.send("set-window-size", mode, anchorScreenPoint),
   applyWindowSize: (mode, anchorScreenPoint) =>
     ipcRenderer.invoke("apply-window-size", mode, anchorScreenPoint),
+  warmRadialTransition: () => ipcRenderer.invoke("warm-radial-transition"),
   reapplySmallOverlay: () => ipcRenderer.invoke("reapply-small-overlay"),
   setWindowHitShape: (rects, opts) =>
     ipcRenderer.invoke("set-window-hit-shape", rects, opts || {}),

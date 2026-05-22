@@ -10,7 +10,7 @@
     "build": "tsc && vite build && node scripts/verify-radial-windowing.mjs && node scripts/generate-win-icon.mjs",
     "electron": "wait-on tcp:5173 && cross-env NODE_ENV=development node scripts/launch-electron.js",
     "start": "concurrently -k \"npm run dev\" \"npm run electron\"",
-    "dist": "npm run build && electron-builder",
+    "dist": "npm run build && node scripts/run-electron-builder.mjs",
     "test:win32-launch": "node --test backend/win32-launch.test.cjs",
     "test:persistence-shape": "node scripts/persistence-normalize-smoke.mjs",
     "verify:radial-windowing": "node scripts/verify-radial-windowing.mjs"

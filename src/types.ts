@@ -153,6 +153,8 @@ export interface UIConfig {
   activationThreshold: number;
   centerButton: CenterButtonConfig;
   showLabels: boolean;
+  /** When true, app names stay visible for all items; when false, only the hovered/selected item shows its label. */
+  alwaysShowAppLabels: boolean;
   showClock: boolean;
   showDate: boolean; // New
   showBattery: boolean; // New
@@ -252,6 +254,8 @@ export interface ElectronAPI {
     mode: "small" | "fullscreen" | "windowed",
     anchorScreenPoint?: { x: number; y: number },
   ) => Promise<boolean>;
+  /** Pré-aquece small↔fullscreen uma vez após arranque (HWND da ilha encolhido). */
+  warmRadialTransition?: () => Promise<boolean>;
   /** Re-applies desktop passthrough overlay after closing a fullscreen widget (fixes flaky clicks on Windows). */
   reapplySmallOverlay?: () => Promise<boolean>;
   /** Windows/Linux: ilha — `coordinateSpace: "screen"` encolhe o HWND; sem isso, coords de cliente + setShape. */

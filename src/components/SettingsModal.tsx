@@ -1382,6 +1382,28 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
                                 </span>
                                 <div className={`w-2 h-2 rounded-full ${config.showLabels ? 'bg-black animate-pulse' : 'bg-white/10'}`} />
                             </button>
+                            <div className={`flex flex-col gap-3 transition-opacity duration-300 ${config.showLabels ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/20">
+                                        {getTranslation(config, 'visuals.labels_always')}
+                                    </span>
+                                    <InfoHint
+                                        title={getTranslation(config, 'tooltip.app_labels_always_title')}
+                                        description={getTranslation(config, 'tooltip.app_labels_always_desc')}
+                                        align="left"
+                                    />
+                                </div>
+                                <button
+                                    onClick={() => setConfig({ ...config, alwaysShowAppLabels: !(config.alwaysShowAppLabels ?? false) })}
+                                    disabled={!config.showLabels}
+                                    className={`w-full flex items-center justify-between p-3.5 rounded-xl border transition-all duration-500 ${(config.alwaysShowAppLabels ?? false) ? 'bg-white border-white' : 'bg-white/[0.02] border-white/10'}`}
+                                >
+                                    <span className={`text-[10px] font-bold uppercase tracking-widest ${(config.alwaysShowAppLabels ?? false) ? 'text-black' : 'text-white/40'}`}>
+                                        {(config.alwaysShowAppLabels ?? false) ? getTranslation(config, 'status.visible') || 'Visível' : getTranslation(config, 'status.hidden') || 'Oculto'}
+                                    </span>
+                                    <div className={`w-2 h-2 rounded-full ${(config.alwaysShowAppLabels ?? false) ? 'bg-black animate-pulse' : 'bg-white/10'}`} />
+                                </button>
+                            </div>
                         </div>
                     </BentoCard>
 

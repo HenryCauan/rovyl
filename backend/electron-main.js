@@ -4040,6 +4040,53 @@ ipcMain.handle("apply-window-size", (event, mode, anchorScreenPoint) => {
   return true;
 });
 
+/** Pré-aquece small↔fullscreen (HWND encolhido pela ilha) — 1.ª abertura do radial deixa de “travar” no DWM. */
+let radialTransitionWarmed = false;
+ipcMain.handle("warm-radial-transition", () => {
+  if (radialTransitionWarmed) return true;
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  try {
+    if (mainWindow.isMinimized()) return false;
+  } catch (e) {
+    return false;
+  }
+  if (nativeWindowSizeMode !== "small") {
+    radialTransitionWarmed = true;
+    return true;
+  }
+
+  const cur = mainWindow.getBounds();
+  const point = {
+    x: Math.round(cur.x + cur.width / 2),
+    y: Math.round(cur.y + cur.height / 2),
+  };
+
+  let prevOpacity = 1;
+  try {
+    prevOpacity = mainWindow.getOpacity();
+  } catch (e) {
+    /* ignore */
+  }
+
+  try {
+    mainWindow.setOpacity(0);
+  } catch (e) {
+    /* ignore */
+  }
+
+  updateWindowSize("fullscreen", point);
+  updateWindowSize("small", point);
+
+  try {
+    mainWindow.setOpacity(prevOpacity);
+  } catch (e) {
+    /* ignore */
+  }
+
+  radialTransitionWarmed = true;
+  return true;
+});
+
 /** Re-run `small` overlay (forward mouse) — refreshes Windows hit-testing after fullscreen → HUD-only. */
 ipcMain.handle("reapply-small-overlay", () => {
   if (!mainWindow || mainWindow.isDestroyed()) return false;

@@ -26,6 +26,11 @@ const CLOCK_HUD_POSITIONS = [
   'bottom-right',
 ] as const;
 
+/** HUD temporal no radial — sem card/blur (HWND transparente no Windows gera halo retangular). */
+const hudPanelClass = 'w-full min-w-0 border-0 bg-transparent px-0 py-0 shadow-none';
+
+const hudTextShadow = 'drop-shadow-[0_1px_3px_rgba(0,0,0,0.55)]';
+
 /** Subconjunto da API Battery — evita `BatteryManager` quando o TS/DOM local não o expõe. */
 type ZenithBattery = {
   level: number;
@@ -125,6 +130,7 @@ interface RadialMenuItemProps {
   accentColor: string;
   backdropOpacity: number;
   showLabels: boolean;
+  alwaysShowAppLabels: boolean;
   performanceMode: boolean;
   folderStackLength: number;
   isOpen: boolean;
@@ -141,6 +147,7 @@ const RadialMenuItem = React.memo(({
   accentColor,
   backdropOpacity,
   showLabels,
+  alwaysShowAppLabels,
   performanceMode,
   folderStackLength,
   isOpen,
@@ -275,8 +282,8 @@ const RadialMenuItem = React.memo(({
             }}
             initial={{ opacity: 0, scale: 0.85, y: actualIconSize / 2 + 0 }}
             animate={{
-              opacity: isActive ? 1 : 0,
-              scale: isActive ? 1 : 0.9,
+              opacity: alwaysShowAppLabels ? (isActive ? 1 : 0.72) : (isActive ? 1 : 0),
+              scale: alwaysShowAppLabels ? (isActive ? 1 : 0.94) : (isActive ? 1 : 0.9),
               x: 0,
               y: actualIconSize / 2 + 4,
             }}
@@ -292,7 +299,7 @@ const RadialMenuItem = React.memo(({
               }}
             >
               <span
-                className="text-white/90 font-medium text-[13px] tracking-wide leading-none"
+                className={`font-medium text-[13px] tracking-wide leading-none ${isActive ? 'text-white/90' : 'text-white/55'}`}
                 style={{ fontFamily: 'Space Grotesk, sans-serif' }}
               >
                 {app.label}
@@ -1174,7 +1181,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
                 transition={{ duration: isOpen ? 0.26 : 0.14, ease: [0.22, 1, 0.36, 1] }}
                 className={hudInnerClass}
               >
-                <div className="w-full min-w-0 rounded-2xl border border-white/[0.09] bg-black/25 px-5 py-4 shadow-[0_20px_60px_rgba(0,0,0,0.4)] backdrop-blur-xl supports-[backdrop-filter]:bg-black/[0.14] sm:px-6 sm:py-5">
+                <div className={hudPanelClass}>
                   {(config.showClock || config.showDate) && (
                     <div
                       className={
@@ -1199,7 +1206,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
                       )}
                       {config.showDate && (
                         <p
-                          className={`max-w-[52ch] text-[0.8125rem] font-medium leading-snug tracking-wide text-white/55 sm:text-sm ${
+                          className={`max-w-[52ch] text-[0.8125rem] font-medium leading-snug tracking-wide text-white/55 sm:text-sm ${hudTextShadow} ${
                             hudRegion === 'top-center'
                               ? 'text-center'
                               : hudRegion === 'top-right' || hudRegion === 'bottom-right'
@@ -1219,9 +1226,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
 
                   {(config.showBattery || config.showWeather) && (
                     <div
-                      className={`mt-3 border-t border-white/[0.07] pt-3 text-white/85 ${hudStatusRowClass} ${
-                        config.showClock || config.showDate ? '' : 'mt-0 border-t-0 pt-0'
-                      }`}
+                      className={`${config.showClock || config.showDate ? 'mt-2' : 'mt-0'} text-white/85 ${hudTextShadow} ${hudStatusRowClass}`}
                     >
                       {config.showBattery && batteryLevel !== null && (
                         <div className="flex items-center gap-2.5">
@@ -1244,7 +1249,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
                       )}
                       {config.showWeather && !config.performanceMode && weather && (
                         <div className="flex items-center gap-2">
-                          <Cloud className="h-4 w-4 shrink-0 text-white/45" strokeWidth={1.75} aria-hidden />
+                          <Cloud className={`h-4 w-4 shrink-0 text-white/45 ${hudTextShadow}`} strokeWidth={1.75} aria-hidden />
                           <div className="flex flex-col leading-none">
                             <span className="text-sm font-semibold tabular-nums tracking-tight text-white/90">
                               {weather.temp}°
@@ -1431,6 +1436,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
                     accentColor={config.accentColor}
                     backdropOpacity={config.backdropOpacity}
                     showLabels={config.showLabels}
+                    alwaysShowAppLabels={config.alwaysShowAppLabels ?? false}
                     performanceMode={config.performanceMode}
                     folderStackLength={folderStack.length}
                     isOpen={isOpen}

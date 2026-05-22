@@ -261,6 +261,7 @@ export default function App() {
   const [islandHoldAfterRadialClose, setIslandHoldAfterRadialClose] = useState(false);
   /** Evita repetir reapply quando já estamos em ilha de repouso; repõe ao sair do estado. */
   const prevIdleIslandHudRef = useRef(false);
+  const radialTransitionWarmedRef = useRef(false);
   const prevIsMenuOpenRef = useRef(false);
   const [lastLaunched, setLastLaunched] = useState<AppItem | null>(null);
   const [executionError, setExecutionError] = useState<string | null>(null);
@@ -383,18 +384,32 @@ export default function App() {
       setElectronSmallOverlayReady(true);
       return;
     }
+
+    let cancelled = false;
+    setElectronSmallOverlayReady(false);
     const { x: ax, y: ay } = windowCenterScreenPoint();
-    window.electron.setWindowSize('small', { x: ax, y: ay });
-    lastWindowState.current = 'small';
-    let id2 = 0;
-    const id1 = requestAnimationFrame(() => {
-      id2 = requestAnimationFrame(() => {
-        setElectronSmallOverlayReady(true);
-      });
-    });
+
+    void (async () => {
+      try {
+        if (window.electron?.applyWindowSize) {
+          await window.electron.applyWindowSize('small', { x: ax, y: ay });
+        } else {
+          window.electron!.setWindowSize!('small', { x: ax, y: ay });
+          await new Promise<void>((r) => window.setTimeout(r, 48));
+        }
+        if (cancelled) return;
+        lastWindowState.current = 'small';
+        await window.electron?.reapplySmallOverlay?.();
+        if (cancelled) return;
+        await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+        if (!cancelled) setElectronSmallOverlayReady(true);
+      } catch {
+        if (!cancelled) setElectronSmallOverlayReady(true);
+      }
+    })();
+
     return () => {
-      cancelAnimationFrame(id1);
-      cancelAnimationFrame(id2);
+      cancelled = true;
       setElectronSmallOverlayReady(false);
     };
   }, [isDesktopMode, panelSurfaceOpen, isMenuOpen, radialOpenAwaitingFullscreen]);
@@ -445,6 +460,46 @@ export default function App() {
     }
     prevTimerHudActiveRef.current = timerHudActive;
   }, [isDesktopMode, timerHudActive, panelSurfaceOpen, isMenuOpen, radialOpenAwaitingFullscreen]);
+
+  /**
+   * Pré-aquece small↔fullscreen enquanto a ilha está visível — a 1.ª abertura do radial
+   * (HWND encolhido pelo hit-shape) deixa de pagar o custo frio do DWM.
+   */
+  useEffect(() => {
+    if (!isDesktopMode || !electronSmallOverlayReady || !window.electron?.warmRadialTransition) {
+      return;
+    }
+    if (radialTransitionWarmedRef.current || isMenuOpen || radialOpenAwaitingFullscreen) return;
+    if (!timerHudActive || panelSurfaceOpen) return;
+
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      void (async () => {
+        try {
+          await window.electron!.warmRadialTransition!();
+          if (cancelled) return;
+          radialTransitionWarmedRef.current = true;
+          await window.electron?.reapplySmallOverlay?.();
+          if (cancelled) return;
+          setIslandHudRemountKey((k) => k + 1);
+        } catch {
+          /* ignore */
+        }
+      })();
+    }, 100);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [
+    isDesktopMode,
+    electronSmallOverlayReady,
+    timerHudActive,
+    panelSurfaceOpen,
+    isMenuOpen,
+    radialOpenAwaitingFullscreen,
+  ]);
 
   useEffect(() => {
     const wasOpen = prevIsMenuOpenRef.current;
@@ -1646,9 +1701,12 @@ export default function App() {
     if (wasIdle) return;
 
     const t = window.setTimeout(() => {
-      void window.electron?.reapplySmallOverlay?.();
-      void window.electron?.invalidatePaint?.();
-    }, 320);
+      void (async () => {
+        await window.electron?.reapplySmallOverlay?.();
+        await window.electron?.invalidatePaint?.();
+        setIslandHudRemountKey((k) => k + 1);
+      })();
+    }, 120);
     return () => clearTimeout(t);
   }, [
     isDesktopMode,
@@ -1689,22 +1747,28 @@ export default function App() {
           y: window.screenY + window.innerHeight / 2,
         });
 
-    flushSync(() => {
-      setRadialOpenAwaitingFullscreen(true);
-      setMinimizeNeutralCoverActive(false);
-      /** Manter `radialPreShowSolidCover` até ao 2.º flush — senão o `show()` do main pode ocorrer durante o `await` e expor a textura antiga. */
-    });
+    const needsRendererFullscreenResize =
+      isDesktopModeRef.current &&
+      window.electron &&
+      !opts?.preSizedByMain;
+
+    if (needsRendererFullscreenResize) {
+      flushSync(() => {
+        setRadialOpenAwaitingFullscreen(true);
+        setMinimizeNeutralCoverActive(false);
+      });
+    } else {
+      flushSync(() => {
+        setMinimizeNeutralCoverActive(false);
+      });
+    }
 
     try {
     /**
      * Atalho/MMB via main já chamou `updateWindowSize('fullscreen')` — repetir `applyWindowSize` aqui
      * duplicava round-trip IPC + setBounds e atrasava o primeiro paint do radial.
      */
-    if (
-      isDesktopModeRef.current &&
-      window.electron &&
-      !opts?.preSizedByMain
-    ) {
+    if (needsRendererFullscreenResize) {
       try {
         if (window.electron.applyWindowSize) {
           await window.electron.applyWindowSize('fullscreen', anchorForFullscreen);
@@ -2310,6 +2374,7 @@ export default function App() {
       config.activationThreshold,
       config.centerButton,
       config.showLabels,
+      config.alwaysShowAppLabels,
       config.showClock,
       config.showDate,
       config.showBattery,
