@@ -2,9 +2,10 @@ import React, { useEffect, useLayoutEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Coordinates, AppItem, UIConfig, Workspace } from '../types';
 import { getIcon } from '../iconMap';
-import { Settings2, CornerUpLeft, Cloud } from 'lucide-react';
+import { Settings2, CornerUpLeft } from 'lucide-react';
 import { SmartIcon } from './SmartIcon';
 import { getTranslation } from '../translations';
+import { RadialHud } from './RadialHud';
 import {
   getRootRadialApps,
   isWorkspacePickItem,
@@ -17,19 +18,6 @@ const weatherCache: { data: { temp: number; condition: string } | null; lastFetc
   data: null, lastFetch: 0, location: ''
 };
 const WEATHER_TTL_MS = 10 * 60 * 1000; // 10 minutes
-
-const CLOCK_HUD_POSITIONS = [
-  'top-left',
-  'top-center',
-  'top-right',
-  'bottom-left',
-  'bottom-right',
-] as const;
-
-/** HUD temporal no radial — sem card/blur (HWND transparente no Windows gera halo retangular). */
-const hudPanelClass = 'w-full min-w-0 border-0 bg-transparent px-0 py-0 shadow-none';
-
-const hudTextShadow = 'drop-shadow-[0_1px_3px_rgba(0,0,0,0.55)]';
 
 /** Subconjunto da API Battery — evita `BatteryManager` quando o TS/DOM local não o expõe. */
 type ZenithBattery = {
@@ -213,7 +201,7 @@ const RadialMenuItem = React.memo(({
               delay: isOpen ? staggerDelay : 0,
             }
       }
-      className="absolute top-0 left-0 pointer-events-auto cursor-pointer"
+      className={`absolute top-0 left-0 ${isOpen ? 'pointer-events-auto cursor-pointer' : 'pointer-events-none cursor-default'}`}
       style={{ zIndex: isActive ? 200 : 100, willChange: 'transform, opacity' }}
       onMouseDown={(e) => e.stopPropagation()}
       onMouseUp={(e) => e.stopPropagation()}
@@ -1075,66 +1063,6 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     }
   }, [onClose, onWorkspaceSwitch]);
 
-  /** Região do relógio — usada também para desviar o chip do workspace e evitar sobreposição. */
-  const hudRegion: (typeof CLOCK_HUD_POSITIONS)[number] = CLOCK_HUD_POSITIONS.includes(
-    config.clockPosition as (typeof CLOCK_HUD_POSITIONS)[number],
-  )
-    ? (config.clockPosition as (typeof CLOCK_HUD_POSITIONS)[number])
-    : 'top-center';
-
-  /** Só posicionamento + translate no ecrã — sem `motion` aqui para o Framer não pisar `-translate-x-1/2`. */
-  const hudShellClass = (() => {
-    const z = 'fixed z-[10] pointer-events-none text-white';
-    switch (hudRegion) {
-      case 'bottom-left':
-        return `${z} bottom-0 left-0`;
-      case 'bottom-right':
-        return `${z} bottom-0 right-0`;
-      case 'top-left':
-        return `${z} top-0 left-0`;
-      case 'top-center':
-        return `${z} top-0 left-1/2 -translate-x-1/2`;
-      case 'top-right':
-        return `${z} top-0 right-0`;
-      default:
-        return `${z} top-0 left-1/2 -translate-x-1/2`;
-    }
-  })();
-
-  const hudInnerClass = (() => {
-    const pad = 'p-5 sm:p-6 md:pt-7 md:px-8 md:pb-8';
-    const gap = 'gap-3 sm:gap-4';
-    switch (hudRegion) {
-      case 'bottom-left':
-        return `flex flex-col ${pad} ${gap} items-start text-left max-w-[min(92vw,440px)]`;
-      case 'bottom-right':
-        return `flex flex-col ${pad} ${gap} items-end text-right max-w-[min(92vw,440px)]`;
-      case 'top-left':
-        return `flex flex-col ${pad} ${gap} items-start text-left max-w-[min(92vw,440px)]`;
-      case 'top-center':
-        return `flex flex-col ${pad} ${gap} items-center text-center w-max max-w-[min(92vw,560px)] mx-auto`;
-      case 'top-right':
-        return `flex flex-col ${pad} ${gap} items-end text-right max-w-[min(92vw,440px)]`;
-      default:
-        return `flex flex-col ${pad} ${gap} items-center text-center w-max max-w-[min(92vw,560px)] mx-auto`;
-    }
-  })();
-
-  /** Chip do espaço: canto oposto ao HUD quando este está no topo-esquerda/direita. */
-  const workspaceShellClass =
-    hudRegion === 'top-left'
-      ? 'fixed top-6 right-6 sm:top-8 sm:right-8 z-[10] pointer-events-none'
-      : hudRegion === 'top-right'
-        ? 'fixed top-6 left-6 sm:top-8 sm:left-8 z-[10] pointer-events-none'
-        : 'fixed top-6 left-6 sm:top-8 sm:left-8 z-[10] pointer-events-none';
-
-  const hudStatusRowClass =
-    hudRegion === 'top-center'
-      ? 'flex flex-wrap items-center justify-center gap-x-5 gap-y-2 w-full'
-      : hudRegion === 'top-right' || hudRegion === 'bottom-right'
-        ? 'flex flex-wrap items-center justify-end gap-x-5 gap-y-2 w-full'
-        : 'flex flex-wrap items-center justify-start gap-x-5 gap-y-2 w-full';
-
   /** Fundo uniforme — gradientes radiais antigos criavam um “anel” mais claro à volta do menu. */
   const bo = config.backdropOpacity;
   const overlayAlpha = Math.min(0.88, 0.3 + bo * 0.58);
@@ -1169,135 +1097,16 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
             }}
           />
 
-          {/* HUD: shell estático (translate no ecrã) + motion só com opacity — evita Framer a pisar -translate-x-1/2 no centro. */}
-          {(config.showClock || config.showDate || config.showBattery || config.showWeather) && (
-            <div className={hudShellClass}>
-              <motion.div
-                initial={false}
-                animate={{
-                  opacity: isOpen ? 1 : 0,
-                  y: isOpen ? 0 : hudRegion.startsWith('bottom') ? 10 : -10,
-                }}
-                transition={{ duration: isOpen ? 0.26 : 0.14, ease: [0.22, 1, 0.36, 1] }}
-                className={hudInnerClass}
-              >
-                <div className={hudPanelClass}>
-                  {(config.showClock || config.showDate) && (
-                    <div
-                      className={
-                        hudRegion === 'top-center'
-                          ? 'flex flex-col items-center gap-1'
-                          : hudRegion === 'top-right' || hudRegion === 'bottom-right'
-                            ? 'flex flex-col items-end gap-1'
-                            : 'flex flex-col items-start gap-1'
-                      }
-                    >
-                      {config.showClock && (
-                        <div
-                          className="text-[clamp(2.25rem,5vw,3.25rem)] font-light tabular-nums leading-none tracking-[-0.02em] text-white drop-shadow-[0_2px_24px_rgba(0,0,0,0.45)]"
-                          style={{ fontFamily: 'Space Grotesk, ui-sans-serif, system-ui, sans-serif' }}
-                        >
-                          {currentTime.toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            hour12: false,
-                          })}
-                        </div>
-                      )}
-                      {config.showDate && (
-                        <p
-                          className={`max-w-[52ch] text-[0.8125rem] font-medium leading-snug tracking-wide text-white/55 sm:text-sm ${hudTextShadow} ${
-                            hudRegion === 'top-center'
-                              ? 'text-center'
-                              : hudRegion === 'top-right' || hudRegion === 'bottom-right'
-                                ? 'text-right'
-                                : 'text-left'
-                          }`}
-                        >
-                          {currentTime.toLocaleDateString([], {
-                            weekday: 'long',
-                            month: 'short',
-                            day: 'numeric',
-                          })}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {(config.showBattery || config.showWeather) && (
-                    <div
-                      className={`${config.showClock || config.showDate ? 'mt-2' : 'mt-0'} text-white/85 ${hudTextShadow} ${hudStatusRowClass}`}
-                    >
-                      {config.showBattery && batteryLevel !== null && (
-                        <div className="flex items-center gap-2.5">
-                          <div
-                            className="relative h-3.5 w-8 shrink-0 rounded-full border border-white/[0.22] bg-white/[0.06] p-[3px]"
-                            aria-hidden
-                          >
-                            <div
-                              className="h-full max-w-full rounded-full bg-white transition-[width] duration-500 ease-out"
-                              style={{
-                                width: `${batteryLevel}%`,
-                                backgroundColor: batteryLevel < 20 ? '#f87171' : undefined,
-                              }}
-                            />
-                          </div>
-                          <span className="text-[11px] font-semibold tabular-nums tracking-wide text-white/75">
-                            {batteryLevel}%
-                          </span>
-                        </div>
-                      )}
-                      {config.showWeather && !config.performanceMode && weather && (
-                        <div className="flex items-center gap-2">
-                          <Cloud className={`h-4 w-4 shrink-0 text-white/45 ${hudTextShadow}`} strokeWidth={1.75} aria-hidden />
-                          <div className="flex flex-col leading-none">
-                            <span className="text-sm font-semibold tabular-nums tracking-tight text-white/90">
-                              {weather.temp}°
-                            </span>
-                            {weather.condition && weather.condition !== '---' && (
-                              <span className="mt-0.5 max-w-[10rem] truncate text-[10px] font-medium uppercase tracking-wider text-white/40">
-                                {weather.condition}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-            </div>
-          )}
-
-          {/* Workspace Indicator */}
-          {currentWorkspace && (
-            <motion.div
-              initial={false}
-              animate={{ opacity: isOpen ? 1 : 0 }}
-              transition={{ duration: isOpen ? 0.24 : 0.12 }}
-              className={workspaceShellClass}
-            >
-              <div
-                className={`flex max-w-[min(88vw,280px)] items-center gap-2.5 rounded-2xl border border-white/[0.1] bg-black/30 px-3.5 py-2.5 shadow-lg backdrop-blur-xl supports-[backdrop-filter]:bg-black/20 sm:gap-3 sm:px-4 sm:py-3 ${
-                  hudRegion === 'top-left' ? 'flex-row-reverse' : ''
-                }`}
-              >
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/[0.12] text-xs font-bold text-white ring-1 ring-white/[0.06] sm:h-8 sm:w-8">
-                  {currentWorkspace.hotkey}
-                </div>
-                <div
-                  className={`min-w-0 flex-1 ${hudRegion === 'top-left' ? 'text-right' : 'text-left'}`}
-                >
-                  <div className="truncate text-xs font-semibold uppercase tracking-wide text-white/90 sm:text-[13px]">
-                    {currentWorkspace.name}
-                  </div>
-                  <div className="mt-0.5 text-[9px] font-semibold uppercase tracking-widest text-white/35">
-                    {apps.length} {t('workspaces.active_modules')}
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          )}
+          <RadialHud
+            isOpen={isOpen}
+            config={config}
+            currentTime={currentTime}
+            batteryLevel={batteryLevel}
+            weather={weather}
+            currentWorkspace={currentWorkspace}
+            moduleCount={apps.length}
+            moduleLabel={t('workspaces.active_modules')}
+          />
 
           {/* Menu Container */}
           <motion.div
@@ -1322,7 +1131,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
               className={`
                 absolute top-0 left-0
                 rounded-full flex items-center justify-center z-20
-                transition-all duration-300 pointer-events-auto cursor-pointer
+                transition-all duration-300 ${isOpen ? 'pointer-events-auto cursor-pointer' : 'pointer-events-none cursor-default'}
                 ${isCenterActive
                   ? 'text-black border-2'
                   : 'bg-[#0D0D0D] border border-white/10 text-white/50'

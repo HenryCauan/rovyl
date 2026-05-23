@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import type { CSSProperties } from 'react';
-import { motion, AnimatePresence, useDragControls } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Note, UIConfig, NoteWorkspace } from '../types';
 import type { Dispatch, SetStateAction } from 'react';
 import {
@@ -190,7 +190,6 @@ const NotePreviewCard: React.FC<NotePreviewCardProps> = ({
 }) => {
     const cardRef = useRef<HTMLDivElement>(null);
     const menuBtnRef = useRef<HTMLButtonElement>(null);
-    const dragControls = useDragControls();
     const [showMenu, setShowMenu] = useState(false);
     const [showColors, setShowColors] = useState(false);
     const [menuPos, setMenuPos] = useState({ top: 0, left: 0, width: 252 });
@@ -280,21 +279,29 @@ const NotePreviewCard: React.FC<NotePreviewCardProps> = ({
 
     const todoIntrinsic = isTodo && note.dimensions == null;
 
+    const isNoteActionTarget = (target: EventTarget | null) =>
+        target instanceof Element && !!target.closest('[data-note-action]');
+
+    const handleCardPointerDownCapture = (e: React.PointerEvent) => {
+        if (isEditingElsewhere || isNoteActionTarget(e.target)) return;
+        onBringToFront();
+    };
+
     return (
         <motion.div
             data-note-card
             ref={cardRef}
             drag={!isEditingElsewhere}
-            dragControls={dragControls}
-            dragListener={false}
+            dragListener={!isEditingElsewhere}
             dragMomentum={false}
             dragElastic={0}
             dragConstraints={dragConstraintsRef}
             dragSnapToOrigin={false}
+            onPointerDownCapture={handleCardPointerDownCapture}
             onDragStart={onBringToFront}
             onDragEnd={handleDragEnd}
             onMouseUp={handleMouseUp}
-            className={`group absolute flex flex-col rounded-2xl shadow-[0_12px_48px_rgba(0,0,0,0.45)] border border-white/[0.09] overflow-visible ${todoIntrinsic ? 'w-fit max-w-[min(92vw,400px)]' : ''}`}
+            className={`group absolute flex flex-col rounded-2xl shadow-[0_12px_48px_rgba(0,0,0,0.45)] border border-white/[0.09] overflow-visible cursor-grab active:cursor-grabbing ${todoIntrinsic ? 'w-fit max-w-[min(92vw,400px)]' : ''}`}
             style={{
                 background: getBgColor(note.color),
                 resize: todoIntrinsic ? 'none' : 'both',
@@ -313,22 +320,20 @@ const NotePreviewCard: React.FC<NotePreviewCardProps> = ({
             transition={{ opacity: { duration: 0.2 } }}
         >
             <div className="flex flex-col flex-1 min-h-0 rounded-2xl overflow-hidden backdrop-blur-3xl">
-                {/* Drag handle + chrome */}
-                <div
-                    className="flex items-center justify-between px-4 pt-3.5 pb-2 cursor-grab active:cursor-grabbing shrink-0 relative z-20"
-                    onPointerDown={(e) => { dragControls.start(e); onBringToFront(); }}
-                >
+                <div className="flex items-center justify-between px-4 pt-3.5 pb-2 shrink-0 relative z-20">
                     <div className="flex items-center gap-2 min-w-0 flex-1 pointer-events-none">
                         {IconComponent ? <IconComponent size={15} strokeWidth={2} className="text-white/45 shrink-0" /> : <AlignLeft size={15} className="text-white/35 shrink-0" />}
                         <span className="text-[14px] font-medium text-white/88 truncate pr-2">
                             {note.title?.trim() || 'Sem título'}
                         </span>
                     </div>
-                    <div className="flex items-center gap-0.5 pointer-events-auto">
+                    <div className="flex items-center gap-0.5">
                         <button
                             type="button"
+                            data-note-action
+                            onPointerDown={(e) => e.stopPropagation()}
                             onClick={(e) => { e.stopPropagation(); onExpand(); }}
-                            className="p-1.5 rounded-lg text-white/35 hover:text-white/80 hover:bg-white/10 transition-colors"
+                            className="p-1.5 rounded-lg text-white/35 hover:text-white/80 hover:bg-white/10 transition-colors cursor-pointer"
                             title="Abrir"
                         >
                             <Maximize2 size={14} strokeWidth={2} />
@@ -336,8 +341,10 @@ const NotePreviewCard: React.FC<NotePreviewCardProps> = ({
                         <button
                             ref={menuBtnRef}
                             type="button"
+                            data-note-action
+                            onPointerDown={(e) => e.stopPropagation()}
                             onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
-                            className="p-1.5 rounded-lg hover:bg-white/10 text-white/45"
+                            className="p-1.5 rounded-lg hover:bg-white/10 text-white/45 cursor-pointer"
                         >
                             <MoreVertical size={15} strokeWidth={2} />
                         </button>
@@ -346,10 +353,17 @@ const NotePreviewCard: React.FC<NotePreviewCardProps> = ({
 
                 {menuPortal}
 
-                <button
-                    type="button"
-                    className="relative flex-1 min-h-0 text-left px-4 pt-0 pb-9 flex flex-col overflow-x-hidden min-h-0 group/prev focus:outline-none focus-visible:ring-2 focus-visible:ring-white/20 rounded-b-2xl"
-                    onClick={(e) => { e.stopPropagation(); onExpand(); }}
+                <div
+                    role="button"
+                    tabIndex={0}
+                    className="relative flex-1 min-h-0 text-left px-4 pt-0 pb-9 flex flex-col overflow-x-hidden min-h-0 group/prev focus:outline-none focus-visible:ring-2 focus-visible:ring-white/20 rounded-b-2xl select-none"
+                    onDoubleClick={(e) => { e.stopPropagation(); onExpand(); }}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            onExpand();
+                        }
+                    }}
                 >
                     {isTodo ? (
                         <div className="w-full max-h-[7rem] overflow-hidden text-[12px] leading-snug pr-0.5 space-y-1.5 text-left">
@@ -374,7 +388,7 @@ const NotePreviewCard: React.FC<NotePreviewCardProps> = ({
                     >
                         {expandHint}
                     </span>
-                </button>
+                </div>
             </div>
         </motion.div>
     );
@@ -986,7 +1000,7 @@ export const NotesWidget: React.FC<NotesWidgetProps> = ({
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-[60] flex flex-col overflow-hidden text-white/90">
+        <div className="fixed inset-0 z-[85] flex flex-col overflow-hidden text-white/90 pointer-events-auto">
 
             <motion.div
                 initial={{ opacity: 0 }}

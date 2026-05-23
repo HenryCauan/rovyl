@@ -336,7 +336,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "notes.workspace_name": "Nome do quadro",
     "notes.workspace_untitled": "Quadro",
     "notes.workspace_remove": "Remover quadro (notas vão para Geral)",
-    "notes.expand_hint": "Abrir editor",
+    "notes.expand_hint": "Duplo clique para abrir · arraste em qualquer zona",
     "notes.preview_placeholder": "Clique para escrever…",
     "notes.focus_hint": "Esc para fechar · alterações salvas automaticamente",
     "notes.backdrop_opacity": "Opacidade do fundo do widget",
@@ -496,6 +496,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "hud.quadrant_bottom_left": "Inferior Esquerdo",
     "hud.quadrant_bottom_right": "Inferior Direito",
     "hud.quadrant_top_center": "Superior Centro",
+    "hud.quadrant_bottom_center": "Inferior Centro",
     "hud.island_label_pom": "POM",
     "hud.island_label_stop": "STW",
 
@@ -1049,7 +1050,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "notes.workspace_name": "Board name",
     "notes.workspace_untitled": "Board",
     "notes.workspace_remove": "Remove board (notes move to General)",
-    "notes.expand_hint": "Open editor",
+    "notes.expand_hint": "Double-click to open · drag anywhere",
     "notes.preview_placeholder": "Click to write…",
     "notes.focus_hint": "Esc to close · changes saved automatically",
     "notes.backdrop_opacity": "Notes widget background opacity",
@@ -1104,6 +1105,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "hud.quadrant_bottom_left": "Bottom Left",
     "hud.quadrant_bottom_right": "Bottom Right",
     "hud.quadrant_top_center": "Top Center",
+    "hud.quadrant_bottom_center": "Bottom Center",
     "hud.island_label_pom": "POM",
     "hud.island_label_stop": "STW",
 
@@ -1573,6 +1575,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "hud.quadrant_bottom_left": "Inferior Izquierda",
     "hud.quadrant_bottom_right": "Inferior Derecha",
     "hud.quadrant_top_center": "Superior Centro",
+    "hud.quadrant_bottom_center": "Inferior Centro",
     "hud.island_label_pom": "POM",
     "hud.island_label_stop": "STW",
 
@@ -1990,6 +1993,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "hud.quadrant_bottom_left": "Bas Gauche",
     "hud.quadrant_bottom_right": "Bas Droite",
     "hud.quadrant_top_center": "Haut Centre",
+    "hud.quadrant_bottom_center": "Bas Centre",
     "hud.island_label_pom": "POM",
     "hud.island_label_stop": "STW",
 
@@ -2416,6 +2420,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "hud.quadrant_bottom_left": "Unten Links",
     "hud.quadrant_bottom_right": "Unten Rechts",
     "hud.quadrant_top_center": "Oben Mitte",
+    "hud.quadrant_bottom_center": "Unten Mitte",
     "hud.island_label_pom": "POM",
     "hud.island_label_stop": "STW",
 
@@ -2842,6 +2847,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "hud.quadrant_bottom_left": "Basso Sinistra",
     "hud.quadrant_bottom_right": "Basso Destra",
     "hud.quadrant_top_center": "Alto Centro",
+    "hud.quadrant_bottom_center": "Basso Centro",
     "hud.island_label_pom": "POM",
     "hud.island_label_stop": "STW",
 
@@ -3266,6 +3272,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "hud.quadrant_bottom_left": "左下",
     "hud.quadrant_bottom_right": "右下",
     "hud.quadrant_top_center": "上中央",
+    "hud.quadrant_bottom_center": "下中央",
     "hud.island_label_pom": "POM",
     "hud.island_label_stop": "STW",
 
@@ -3686,6 +3693,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "hud.quadrant_bottom_left": "左下",
     "hud.quadrant_bottom_right": "右下",
     "hud.quadrant_top_center": "顶部居中",
+    "hud.quadrant_bottom_center": "底部居中",
     "hud.island_label_pom": "POM",
     "hud.island_label_stop": "STW",
 
@@ -4107,6 +4115,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "hud.quadrant_bottom_left": "왼쪽 하단",
     "hud.quadrant_bottom_right": "오른쪽 하단",
     "hud.quadrant_top_center": "상단 중앙",
+    "hud.quadrant_bottom_center": "하단 중앙",
     "hud.island_label_pom": "POM",
     "hud.island_label_stop": "STW",
 
@@ -4531,6 +4540,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "hud.quadrant_bottom_left": "Нижний Левый",
     "hud.quadrant_bottom_right": "Нижний Правый",
     "hud.quadrant_top_center": "Верх Центр",
+    "hud.quadrant_bottom_center": "Низ Центр",
     "hud.island_label_pom": "POM",
     "hud.island_label_stop": "STW",
 

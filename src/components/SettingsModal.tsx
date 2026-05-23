@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AppItem, UIConfig, UserProfile } from '../types';
+import { AppItem, UIConfig, UserProfile, CLOCK_HUD_POSITIONS } from '../types';
 import { ICON_MAP, getIcon } from '../iconMap';
 import { AVAILABLE_WIDGETS } from '../defaults';
 import { AppSelector } from './AppSelector';
@@ -2999,41 +2999,22 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
                                 description={getTranslation(config, 'tooltip.clock_position_desc')}
                             />
                         </div>
-                        <div className="flex flex-col gap-3">
-                            <div className="grid grid-cols-3 gap-2">
-                                {(['top-left', 'top-center', 'top-right'] as const).map((pos) => (
-                                    <button
-                                        key={pos}
-                                        type="button"
-                                        onClick={() => setConfig({ ...config, clockPosition: pos })}
-                                        className={`py-3 rounded-xl border flex flex-col items-center justify-center gap-2 transition-all duration-500 ${config.clockPosition === pos
-                                            ? 'bg-white text-black border-white shadow-xl translate-y-[-1px]'
-                                            : 'bg-black/40 border-white/5 text-white/30 hover:border-white/10 hover:text-white/60'}`}
-                                    >
-                                        <div className={`w-1.5 h-1.5 rounded-full transition-all duration-500 ${config.clockPosition === pos ? 'bg-black scale-125' : 'bg-white/10'}`} />
-                                        <span className="font-medium text-[8px] uppercase tracking-[0.18em] text-center leading-tight px-0.5">
-                                            {getTranslation(config, `hud.quadrant_${pos.replace(/-/g, '_')}`)}
-                                        </span>
-                                    </button>
-                                ))}
-                            </div>
-                            <div className="grid grid-cols-2 gap-2 w-full max-w-[14rem] mx-auto">
-                                {(['bottom-left', 'bottom-right'] as const).map((pos) => (
-                                    <button
-                                        key={pos}
-                                        type="button"
-                                        onClick={() => setConfig({ ...config, clockPosition: pos })}
-                                        className={`py-3 rounded-xl border flex flex-col items-center justify-center gap-2 transition-all duration-500 ${config.clockPosition === pos
-                                            ? 'bg-white text-black border-white shadow-xl translate-y-[-1px]'
-                                            : 'bg-black/40 border-white/5 text-white/30 hover:border-white/10 hover:text-white/60'}`}
-                                    >
-                                        <div className={`w-1.5 h-1.5 rounded-full transition-all duration-500 ${config.clockPosition === pos ? 'bg-black scale-125' : 'bg-white/10'}`} />
-                                        <span className="font-medium text-[8px] uppercase tracking-[0.18em] text-center leading-tight px-0.5">
-                                            {getTranslation(config, `hud.quadrant_${pos.replace(/-/g, '_')}`)}
-                                        </span>
-                                    </button>
-                                ))}
-                            </div>
+                        <div className="grid grid-cols-3 gap-2">
+                            {CLOCK_HUD_POSITIONS.map((pos) => (
+                                <button
+                                    key={pos}
+                                    type="button"
+                                    onClick={() => setConfig({ ...config, clockPosition: pos })}
+                                    className={`py-3 rounded-xl border flex flex-col items-center justify-center gap-2 transition-all duration-500 ${config.clockPosition === pos
+                                        ? 'bg-white text-black border-white shadow-xl translate-y-[-1px]'
+                                        : 'bg-black/40 border-white/5 text-white/30 hover:border-white/10 hover:text-white/60'}`}
+                                >
+                                    <div className={`w-1.5 h-1.5 rounded-full transition-all duration-500 ${config.clockPosition === pos ? 'bg-black scale-125' : 'bg-white/10'}`} />
+                                    <span className="font-medium text-[8px] uppercase tracking-[0.18em] text-center leading-tight px-0.5">
+                                        {getTranslation(config, `hud.quadrant_${pos.replace(/-/g, '_')}`)}
+                                    </span>
+                                </button>
+                            ))}
                         </div>
                     </motion.div>
                 </div>

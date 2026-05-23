@@ -249,7 +249,7 @@ export const AlarmWidget: React.FC<AlarmWidgetProps> = ({ isOpen, onClose, alarm
     const backdropAlpha = Math.min(1, Math.max(0, config.alarmsWidgetBackdropOpacity ?? 0.85));
 
     return (
-        <div className="pointer-events-none fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4">
+        <div className="pointer-events-none fixed inset-0 z-[85] flex items-center justify-center p-3 sm:p-4">
             <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}

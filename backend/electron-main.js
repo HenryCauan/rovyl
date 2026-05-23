@@ -4040,6 +4040,25 @@ ipcMain.handle("apply-window-size", (event, mode, anchorScreenPoint) => {
   return true;
 });
 
+/** Garante cliques no renderer após abrir widget/radial — limpa passthrough da ilha `small`. */
+ipcMain.handle("ensure-window-interactive", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  try {
+    if (typeof mainWindow.setShape === "function") {
+      mainWindow.setShape([]);
+    }
+  } catch (e) {
+    /* ignore */
+  }
+  lastWindowHitShapeKey = "__empty__";
+  try {
+    mainWindow.setIgnoreMouseEvents(false);
+  } catch (e) {
+    /* ignore */
+  }
+  return true;
+});
+
 /** Pré-aquece small↔fullscreen (HWND encolhido pela ilha) — 1.ª abertura do radial deixa de “travar” no DWM. */
 let radialTransitionWarmed = false;
 ipcMain.handle("warm-radial-transition", () => {
@@ -4094,6 +4113,15 @@ ipcMain.handle("reapply-small-overlay", () => {
     if (mainWindow.isMinimized()) return false;
   } catch (e) {
     return false;
+  }
+  /** Widget / radial / painel — nunca regredir fullscreen|windowed → small (deixa cliques “presos” até o useEffect realinhar). */
+  if (nativeWindowSizeMode === "fullscreen" || nativeWindowSizeMode === "windowed") {
+    try {
+      mainWindow.setIgnoreMouseEvents(false);
+    } catch (e) {
+      /* ignore */
+    }
+    return true;
   }
   const cur = mainWindow.getBounds();
   /** Centro do HWND — não usar o cursor: com vários monitores o rato pode estar noutro ecrã e “puxar” a ilha. */

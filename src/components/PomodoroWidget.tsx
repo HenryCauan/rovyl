@@ -303,7 +303,7 @@ export const PomodoroWidget: React.FC<PomodoroWidgetProps> = ({
     'bg-[rgba(12,12,14,0.88)] backdrop-blur-[48px] border border-white/[0.06] shadow-[0_40px_100px_-20px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.04)]';
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4">
+    <div className="pointer-events-none fixed inset-0 z-[85] flex items-center justify-center p-3 sm:p-4">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}

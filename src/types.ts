@@ -140,6 +140,17 @@ export interface Workspace {
   pickerIconName?: string;
 }
 
+export const CLOCK_HUD_POSITIONS = [
+  'top-left',
+  'top-center',
+  'top-right',
+  'bottom-left',
+  'bottom-center',
+  'bottom-right',
+] as const;
+
+export type ClockHudPosition = (typeof CLOCK_HUD_POSITIONS)[number];
+
 export interface UIConfig {
   accentColor: string;
   menuRadius: number;
@@ -160,12 +171,7 @@ export interface UIConfig {
   showBattery: boolean; // New
   showWeather: boolean; // New
   weatherLocation?: string; // New: CEP or city name for weather
-  clockPosition:
-    | "top-left"
-    | "top-center"
-    | "top-right"
-    | "bottom-left"
-    | "bottom-right";
+  clockPosition: ClockHudPosition;
   gameMode: GameModeConfig;
   globalShortcut: string; // New: Global keyboard shortcut (e.g. 'Alt+Space')
   workspaces: Workspace[]; // New: Workspace configurations
@@ -258,6 +264,8 @@ export interface ElectronAPI {
   warmRadialTransition?: () => Promise<boolean>;
   /** Re-applies desktop passthrough overlay after closing a fullscreen widget (fixes flaky clicks on Windows). */
   reapplySmallOverlay?: () => Promise<boolean>;
+  /** Clears island passthrough / hit-shape so widgets and panels receive clicks immediately. */
+  ensureWindowInteractive?: () => Promise<boolean>;
   /** Windows/Linux: ilha — `coordinateSpace: "screen"` encolhe o HWND; sem isso, coords de cliente + setShape. */
   setWindowHitShape?: (
     rects: Array<{ x: number; y: number; width: number; height: number }>,

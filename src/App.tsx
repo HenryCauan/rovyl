@@ -455,11 +455,11 @@ export default function App() {
       return;
     }
     const was = prevTimerHudActiveRef.current;
-    if (was && !timerHudActive && !panelSurfaceOpen && !isMenuOpen && !radialOpenAwaitingFullscreen) {
+    if (was && !timerHudActive && !panelSurfaceOpen && !isMenuOpen && !radialOpenAwaitingFullscreen && !anyFullscreenWidgetOpen) {
       void window.electron.reapplySmallOverlay();
     }
     prevTimerHudActiveRef.current = timerHudActive;
-  }, [isDesktopMode, timerHudActive, panelSurfaceOpen, isMenuOpen, radialOpenAwaitingFullscreen]);
+  }, [isDesktopMode, timerHudActive, panelSurfaceOpen, isMenuOpen, radialOpenAwaitingFullscreen, anyFullscreenWidgetOpen]);
 
   /**
    * Pré-aquece small↔fullscreen enquanto a ilha está visível — a 1.ª abertura do radial
@@ -2192,6 +2192,45 @@ export default function App() {
     }
   }, []);
 
+  const openFullscreenWidget = async (
+    command: 'internal:notes' | 'internal:alarm' | 'internal:stopwatch' | 'internal:pomodoro',
+  ) => {
+    if (isDesktopMode && window.electron) {
+      try {
+        const anchor = windowCenterScreenPoint();
+        if (window.electron.applyWindowSize) {
+          await window.electron.applyWindowSize('fullscreen', anchor);
+        } else {
+          window.electron.setWindowSize('fullscreen', anchor);
+        }
+        await window.electron.ensureWindowInteractive?.();
+        lastWindowState.current = 'fullscreen';
+        if (hideTimeout.current) {
+          clearTimeout(hideTimeout.current);
+          hideTimeout.current = null;
+        }
+        window.electron.showWindow();
+      } catch {
+        /* ignore */
+      }
+    }
+
+    switch (command) {
+      case 'internal:notes':
+        setIsNotesOpen(true);
+        break;
+      case 'internal:alarm':
+        setIsAlarmWidgetOpen(true);
+        break;
+      case 'internal:stopwatch':
+        setIsStopwatchOpen(true);
+        break;
+      case 'internal:pomodoro':
+        setIsPomodoroOpen(true);
+        break;
+    }
+  };
+
   const executeAction = (
     command: string,
     commandType: "app" | "url" | "folder",
@@ -2204,10 +2243,15 @@ export default function App() {
       return;
     }
 
-    if (command === 'internal:notes') { if (isDesktopMode) window.electron?.setWindowSize('fullscreen', windowCenterScreenPoint()); setIsNotesOpen(true); return; }
-    if (command === 'internal:alarm') { if (isDesktopMode) window.electron?.setWindowSize('fullscreen', windowCenterScreenPoint()); setIsAlarmWidgetOpen(true); return; }
-    if (command === 'internal:stopwatch') { if (isDesktopMode) window.electron?.setWindowSize('fullscreen', windowCenterScreenPoint()); setIsStopwatchOpen(true); return; }
-    if (command === 'internal:pomodoro') { if (isDesktopMode) window.electron?.setWindowSize('fullscreen', windowCenterScreenPoint()); setIsPomodoroOpen(true); return; }
+    if (
+      command === 'internal:notes' ||
+      command === 'internal:alarm' ||
+      command === 'internal:stopwatch' ||
+      command === 'internal:pomodoro'
+    ) {
+      void openFullscreenWidget(command);
+      return;
+    }
 
     if (itemForToast) {
       setLastLaunched(itemForToast);
@@ -2239,13 +2283,37 @@ export default function App() {
   executeActionRef.current = executeAction;
 
   const handleMenuClose = useCallback((selectedId: string | null, selectedApp?: AppItem | null) => {
-    setIsMenuOpen(false);
-    setRadialOpenAwaitingFullscreen(false);
-    setRadialPreShowSolidCover(false);
-    isHolding.current = false;
-
     const cfg = configRef.current;
     const currentWorkspaceApps = cfg.workspaces[cfg.activeWorkspaceIndex]?.apps || apps;
+    const app =
+      selectedId && selectedId !== '__CENTER__'
+        ? selectedApp ?? findAppRecursive(currentWorkspaceApps, selectedId)
+        : null;
+    const centerTargetCommand = (() => {
+      if (selectedId !== '__CENTER__') return null;
+      const centerConfig = cfg.centerButton;
+      if (centerConfig.type === 'app' || centerConfig.type === 'widget') {
+        const targetApp = findAppRecursive(currentWorkspaceApps, centerConfig.target);
+        return targetApp ? targetApp.command : centerConfig.target;
+      }
+      return null;
+    })();
+    const openingInternalWidget =
+      !!app?.command?.startsWith('internal:') ||
+      !!centerTargetCommand?.startsWith('internal:');
+
+    const closeMenu = () => {
+      setIsMenuOpen(false);
+      setRadialOpenAwaitingFullscreen(false);
+      setRadialPreShowSolidCover(false);
+      isHolding.current = false;
+    };
+
+    if (openingInternalWidget) {
+      flushSync(closeMenu);
+    } else {
+      closeMenu();
+    }
 
     if (
       !selectedId &&
@@ -2438,7 +2506,7 @@ export default function App() {
       <div className={`
         absolute inset-0 overflow-hidden
         ${isMenuOpen || radialOpenAwaitingFullscreen
-          ? 'hidden !transition-none'
+          ? 'hidden !transition-none pointer-events-none'
           : `${panelSurfaceOpen ? '!transition-none' : 'transition-all duration-300'} ${(panelSurfaceOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || alarmRinging || pomodoroEndOverlay) ? 'opacity-100 visible' : 'opacity-0 pointer-events-none invisible'}`
         }
         ${!isMenuOpen && !radialOpenAwaitingFullscreen && panelSurfaceOpen ? 'bg-[#0A0A0A]' : ''}
@@ -2562,54 +2630,54 @@ export default function App() {
           </AnimatePresence>
         )}
 
-        <NotesWidget
-          isOpen={isNotesOpen}
-          onClose={() => { setIsNotesOpen(false); }}
-          notes={notes}
-          setNotes={setNotes}
-          config={config}
-          setConfig={setConfig}
-          noteWorkspaces={noteWorkspaces}
-          setNoteWorkspaces={setNoteWorkspaces}
-          activeNoteWorkspaceId={activeNoteWorkspaceId}
-          setActiveNoteWorkspaceId={setActiveNoteWorkspaceId}
-        />
-        <AlarmWidget
-          isOpen={isAlarmWidgetOpen}
-          onClose={() => { setIsAlarmWidgetOpen(false); }}
-          alarms={alarms}
-          setAlarms={setAlarms}
-          config={config}
-          setConfig={setConfig}
-          onPreviewAlarm={(a) => setAlarmRinging({ alarm: a, isPreview: true })}
-        />
-        <StopwatchWidget
-          isOpen={isStopwatchOpen}
-          onClose={() => {
-            setIsStopwatchOpen(false);
-          }}
-          config={config}
-          setConfig={setConfig}
-        />
-        <PomodoroWidget
-          isOpen={isPomodoroOpen}
-          onClose={() => { setIsPomodoroOpen(false); }}
-          {...pomodoro}
-          uiConfig={config}
-          setConfig={setConfig}
-          onPreviewSessionEnd={(mode) => {
-            if (shouldPlayPomodoroSounds()) {
-              void resumePomodoroAudio();
-              if (loadPomodoroUiPrefs().ambientPreset === 'off') {
-                playPomodoroSegmentEnd();
-              }
-            }
-            setPomodoroEndOverlay({ endedMode: mode, isPreview: true });
-          }}
-        />
-
-
       </div>
+
+      {/* Widgets fullscreen — fora do wrapper opaco/hidden do painel para não ficarem `display:none` com o radial aberto */}
+      <NotesWidget
+        isOpen={isNotesOpen}
+        onClose={() => { setIsNotesOpen(false); }}
+        notes={notes}
+        setNotes={setNotes}
+        config={config}
+        setConfig={setConfig}
+        noteWorkspaces={noteWorkspaces}
+        setNoteWorkspaces={setNoteWorkspaces}
+        activeNoteWorkspaceId={activeNoteWorkspaceId}
+        setActiveNoteWorkspaceId={setActiveNoteWorkspaceId}
+      />
+      <AlarmWidget
+        isOpen={isAlarmWidgetOpen}
+        onClose={() => { setIsAlarmWidgetOpen(false); }}
+        alarms={alarms}
+        setAlarms={setAlarms}
+        config={config}
+        setConfig={setConfig}
+        onPreviewAlarm={(a) => setAlarmRinging({ alarm: a, isPreview: true })}
+      />
+      <StopwatchWidget
+        isOpen={isStopwatchOpen}
+        onClose={() => {
+          setIsStopwatchOpen(false);
+        }}
+        config={config}
+        setConfig={setConfig}
+      />
+      <PomodoroWidget
+        isOpen={isPomodoroOpen}
+        onClose={() => { setIsPomodoroOpen(false); }}
+        {...pomodoro}
+        uiConfig={config}
+        setConfig={setConfig}
+        onPreviewSessionEnd={(mode) => {
+          if (shouldPlayPomodoroSounds()) {
+            void resumePomodoroAudio();
+            if (loadPomodoroUiPrefs().ambientPreset === 'off') {
+              playPomodoroSegmentEnd();
+            }
+          }
+          setPomodoroEndOverlay({ endedMode: mode, isPreview: true });
+        }}
+      />
 
       {/* Durante `applyWindowSize` o painel já está oculto no React — fundo sólido evita flash do wallpaper / última textura do compositor. */}
       {isDesktopMode && radialOpenAwaitingFullscreen && (
@@ -2682,7 +2750,7 @@ export default function App() {
           )}
 
         {/* Durante `radialOpenAwaitingFullscreen` o menu não pode ficar montado com `isOpen={false}` — o Framer animava “fechar” e depois “abrir”, causando flash de saída/entrada. */}
-        {(!radialOpenAwaitingFullscreen || isMenuOpen) && (
+        {(!radialOpenAwaitingFullscreen || isMenuOpen) && !anyFullscreenWidgetOpen && (
           <RadialMenu
             isOpen={isMenuOpen}
             position={menuPosition}

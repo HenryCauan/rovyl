@@ -137,7 +137,7 @@ export const StopwatchWidget: React.FC<StopwatchWidgetProps> = ({ isOpen, onClos
   );
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4">
+    <div className="pointer-events-none fixed inset-0 z-[85] flex items-center justify-center p-3 sm:p-4">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
