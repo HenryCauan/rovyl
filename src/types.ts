@@ -74,6 +74,9 @@ export interface Note {
   todos?: TodoItem[]; // Payload for 'todo' list mode
   /** Which notes board this sticky belongs to (defaults to "default"). */
   workspaceId?: string;
+  pinned?: boolean;
+  archived?: boolean;
+  updatedAt?: string;
 }
 
 export interface Alarm {

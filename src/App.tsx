@@ -2504,7 +2504,7 @@ export default function App() {
       {/* RadialMenu renders OUTSIDE this wrapper to stay truly transparent */}
       {/* When radial opens: hide this layer instantly (no opacity transition) — otherwise the 300ms fade shows a flash of the last settings/dashboard frame */}
       <div className={`
-        absolute inset-0 overflow-hidden
+        absolute inset-0 overflow-hidden [--zenith-title-bar-h:38px]
         ${isMenuOpen || radialOpenAwaitingFullscreen
           ? 'hidden !transition-none pointer-events-none'
           : `${panelSurfaceOpen ? '!transition-none' : 'transition-all duration-300'} ${(panelSurfaceOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || alarmRinging || pomodoroEndOverlay) ? 'opacity-100 visible' : 'opacity-0 pointer-events-none invisible'}`
@@ -2515,7 +2515,7 @@ export default function App() {
         {/* CUSTOM TITLE BAR OVERLAY (for drag region + app name) */}
         {panelSurfaceOpen && !isMenuOpen && !radialOpenAwaitingFullscreen && (
           <div
-            className="absolute top-0 left-0 right-0 h-[38px] z-[999] flex items-center justify-between px-4 bg-[#0A0A0A]/80 backdrop-blur-xl border-b border-white/[0.05]"
+            className="absolute top-0 left-0 right-0 h-[var(--zenith-title-bar-h)] z-[999] flex items-center justify-between px-4 bg-[#0A0A0A]/80 backdrop-blur-xl border-b border-white/[0.05]"
             style={{ WebkitAppRegion: 'drag' } as any}
           >
             <div className="flex items-center gap-3 pointer-events-none">
@@ -2567,7 +2567,7 @@ export default function App() {
                 animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
                 exit={{ opacity: 0, x: -20, filter: 'blur(10px)' }}
                 transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-                className="absolute inset-0 z-10"
+                className="absolute inset-x-0 bottom-0 top-[var(--zenith-title-bar-h)] z-10 min-h-0"
                 id="dashboard-container"
               >
                 <WelcomeScreen

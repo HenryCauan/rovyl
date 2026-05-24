@@ -5,6 +5,11 @@ import { UIConfig } from '../types';
 import { getTranslation } from '../translations';
 import { setStopwatchHud } from '../stopwatchHudStore';
 import { WidgetBackdropOpacitySlider } from './WidgetBackdropOpacitySlider';
+import {
+  WIDGET_GLASS_CARD,
+  WIDGET_GLASS_CARD_BG,
+  WIDGET_GLASS_CARD_SHINE,
+} from './widgetGlassStyles';
 
 const FONT = "'Space Grotesk', ui-sans-serif, system-ui, sans-serif";
 
@@ -128,16 +133,13 @@ export const StopwatchWidget: React.FC<StopwatchWidgetProps> = ({ isOpen, onClos
   const bestLap = laps.length > 1 ? Math.min(...laps) : null;
   const worstLap = laps.length > 1 ? Math.max(...laps) : null;
 
-  const glassSurface =
-    'bg-[rgba(12,12,14,0.9)] backdrop-blur-[48px] border border-white/[0.06] shadow-[0_40px_100px_-20px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.04)]';
-
   const backdropAlpha = Math.min(
     1,
     Math.max(0, config.stopwatchWidgetBackdropOpacity ?? 0.85),
   );
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-[85] flex items-center justify-center p-3 sm:p-4">
+    <div className="pointer-events-none fixed inset-0 z-[85]">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -157,7 +159,7 @@ export const StopwatchWidget: React.FC<StopwatchWidgetProps> = ({ isOpen, onClos
         }
         label={t('stopwatch.backdrop_opacity')}
       />
-      <div className="relative z-[70] w-full max-w-[min(92vw,340px)] cursor-default pointer-events-auto">
+      <div className="fixed left-1/2 top-1/2 z-[70] w-[min(92%,340px)] -translate-x-1/2 -translate-y-1/2 cursor-default pointer-events-auto">
         <motion.div
           role="dialog"
           aria-modal="true"
@@ -166,9 +168,12 @@ export const StopwatchWidget: React.FC<StopwatchWidgetProps> = ({ isOpen, onClos
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.98, y: 6 }}
           transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
-          className={`relative z-[1] w-full overflow-hidden rounded-[28px] ${glassSurface}`}
+          className={`relative z-[1] w-full ${WIDGET_GLASS_CARD}`}
           onClick={(e) => e.stopPropagation()}
         >
+        <div className={WIDGET_GLASS_CARD_BG} aria-hidden />
+        <div className={WIDGET_GLASS_CARD_SHINE} aria-hidden />
+        <div className="relative z-[1]">
         <div className="flex items-center justify-between px-5 pt-5">
           <div className="flex min-w-0 items-center gap-3">
             <motion.span
@@ -344,6 +349,7 @@ export const StopwatchWidget: React.FC<StopwatchWidgetProps> = ({ isOpen, onClos
           )}
         </AnimatePresence>
 
+        </div>
         </motion.div>
       </div>
     </div>

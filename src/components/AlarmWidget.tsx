@@ -5,6 +5,11 @@ import { Alarm, UIConfig } from '../types';
 import { getTranslation } from '../translations';
 import { AlarmTimePicker } from './AlarmTimePicker';
 import { WidgetBackdropOpacitySlider } from './WidgetBackdropOpacitySlider';
+import {
+  WIDGET_GLASS_CARD,
+  WIDGET_GLASS_CARD_BG,
+  WIDGET_GLASS_CARD_SHINE,
+} from './widgetGlassStyles';
 
 interface AlarmWidgetProps {
     isOpen: boolean;
@@ -249,7 +254,7 @@ export const AlarmWidget: React.FC<AlarmWidgetProps> = ({ isOpen, onClose, alarm
     const backdropAlpha = Math.min(1, Math.max(0, config.alarmsWidgetBackdropOpacity ?? 0.85));
 
     return (
-        <div className="pointer-events-none fixed inset-0 z-[85] flex items-center justify-center p-3 sm:p-4">
+        <div className="pointer-events-none fixed inset-0 z-[85]">
             <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -275,13 +280,15 @@ export const AlarmWidget: React.FC<AlarmWidgetProps> = ({ isOpen, onClose, alarm
                 animate={{ scale: 1, opacity: 1, y: 0 }}
                 exit={{ scale: 0.98, opacity: 0, y: 8 }}
                 transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-                className={`relative z-[70] flex w-full overflow-hidden rounded-[28px] border border-white/[0.09] bg-black shadow-[0_40px_100px_-24px_rgba(0,0,0,0.9)] pointer-events-auto ${composerOpen ? 'max-w-[min(812px,96vw)]' : 'max-w-[min(460px,96vw)]'}`}
+                className={`fixed left-1/2 top-1/2 z-[70] flex -translate-x-1/2 -translate-y-1/2 overflow-hidden ${WIDGET_GLASS_CARD} pointer-events-auto ${composerOpen ? 'w-[min(812px,92%)]' : 'w-[min(460px,92%)]'}`}
                 style={{
                     maxHeight: 'min(calc(100dvh - 5.5rem), 660px)',
                     transition: 'max-width 0.38s cubic-bezier(0.22, 1, 0.36, 1)',
                 }}
                 onClick={e => e.stopPropagation()}
             >
+                <div className={WIDGET_GLASS_CARD_BG} aria-hidden />
+                <div className={WIDGET_GLASS_CARD_SHINE} aria-hidden />
                 <WidgetGrid />
                 <WidgetCornerFrame />
                 {/* === Lista === */}
@@ -516,7 +523,7 @@ export const AlarmWidget: React.FC<AlarmWidgetProps> = ({ isOpen, onClose, alarm
                                 whileHover={{ y: -1 }}
                                 whileTap={{ scale: 0.97 }}
                                 onClick={openNew}
-                                className="absolute bottom-6 right-6 z-30 flex h-[52px] w-[52px] items-center justify-center rounded-full border border-white/[0.12] bg-white text-black shadow-[0_16px_40px_-12px_rgba(0,0,0,0.85)] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
+                                className="absolute bottom-6 right-6 z-30 flex h-[52px] w-[52px] items-center justify-center rounded-full border border-white/20 bg-white/[0.14] text-white shadow-[0_8px_32px_rgba(0,0,0,0.45)] transition-colors hover:bg-white/[0.22] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
                                 aria-label={t('alarm.add_fab_aria')}
                             >
                                 <Plus size={20} strokeWidth={2.25} />
@@ -534,7 +541,7 @@ export const AlarmWidget: React.FC<AlarmWidgetProps> = ({ isOpen, onClose, alarm
                             animate={{ width: 328, opacity: 1 }}
                             exit={{ width: 0, opacity: 0 }}
                             transition={{ duration: 0.36, ease: [0.22, 1, 0.36, 1] }}
-                            className="relative z-[1] flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-white/[0.07] bg-black"
+                            className="relative z-[1] flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-white/[0.07] bg-[rgba(18,18,22,0.55)] backdrop-blur-xl"
                         >
                             <motion.div
                                 initial={{ opacity: 0, x: 10 }}

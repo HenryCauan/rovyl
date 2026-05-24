@@ -8,11 +8,6 @@
     />
     <meta name="theme-color" content="#000000" />
     <title>Zenith Radial Menu</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
     <link rel="icon" type="image/png" href="/icon.png" />
     <style>
       /* ============================================
@@ -37,8 +32,8 @@
         --opacity-intense: 0.2;
 
         /* Typography Scale */
-        --font-display: "Space Grotesk", sans-serif;
-        --font-ui: "Inter", sans-serif;
+        --font-display: "Space Grotesk Variable", "Space Grotesk", sans-serif;
+        --font-ui: "Inter Variable", "Inter", system-ui, sans-serif;
 
         --text-xs: 0.75rem; /* 12px */
         --text-sm: 0.875rem; /* 14px */
@@ -106,6 +101,13 @@
         --z-toast: 300;
       }
 
+      html {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        overscroll-behavior: none;
+      }
+
       html,
       body {
         background-color: transparent;
@@ -119,11 +121,10 @@
       }
 
       #root {
-        width: 100vw;
-        height: 100vh;
+        width: 100%;
+        height: 100%;
         background-color: transparent;
-        /* Evita retângulo sólido no arranque (CEF) antes do 1.º invalidate — ilha só com sombra “correta” após radial. */
-        /* Sombras do HUD (ilha) ficam fora da caixa; body continua overflow:hidden para não criar barras de scroll. */
+        /* Sombras do HUD radial podem pintar fora da caixa — não usar 100vw (gera scroll fantasma). */
         overflow: visible;
       }
 

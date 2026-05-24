@@ -9,6 +9,7 @@ const {
   Tray,
   shell,
   dialog,
+  session,
 } = require("electron");
 const path = require("path");
 const { exec, spawn, execFile, execFileSync } = require("child_process");
@@ -322,6 +323,21 @@ if (process.env.ZENITH_AGGRESSIVE_GPU === "1") {
   diagLog(
     "[GPU] Modo seguro: sem flags agressivas. Se o radial ficar estranho, experimente ZENITH_AGGRESSIVE_GPU=1 em .env.local",
   );
+}
+
+/**
+ * Packaged app: Chromium throttles occluded/background renderers aggressively on Windows.
+ * The transparent radial HUD must keep requestAnimationFrame + drag at full rate in production.
+ */
+if (!isDev) {
+  app.commandLine.appendSwitch("disable-renderer-backgrounding");
+  app.commandLine.appendSwitch("disable-background-timer-throttling");
+  app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
+  app.commandLine.appendSwitch(
+    "disable-features",
+    "CalculateNativeWinOcclusion,WindowOcclusionPrediction",
+  );
+  diagLog("[Perf] Production renderer throttling disabled (occlusion + background timers).");
 }
 
 // Fix Taskbar Icon Grouping
@@ -1590,6 +1606,15 @@ let tray = null;
 
 app.whenReady().then(async () => {
   if (!gotTheLock) return;
+
+  try {
+    const codeCacheDir = path.join(app.getPath("userData"), "v8-code-cache");
+    fs.mkdirSync(codeCacheDir, { recursive: true });
+    session.defaultSession.setCodeCachePath(codeCacheDir);
+    diagLog(`[Perf] V8 code cache: ${codeCacheDir}`);
+  } catch (e) {
+    diagLog(`[Perf] V8 code cache setup failed: ${e.message}`);
+  }
 
   try {
     diagLog(`[Persist] userData=${app.getPath("userData")}`);

@@ -11,12 +11,12 @@ import {
     Plus, Trash2, Clock, Keyboard, AlertTriangle, RotateCw, AlarmClock,
     Gamepad2, AppWindow, Settings2, Folder, ChevronRight, CornerUpLeft,
     Image as ImageIcon, Upload, Search, FileType,
-    Lock, LayoutDashboard, Box, Command, Ban, ChevronDown, Play, CheckCircle2,
+    LayoutDashboard, Box, Command, ChevronDown, Play, CheckCircle2,
     HelpCircle, User, MessageSquare, CreditCard, Globe, Eye, Zap, MousePointer2,
-    Hash, Download, ExternalLink, Moon, Sun, ArrowRight, ArrowLeft, TimerReset,
+    ExternalLink, Moon, Sun, ArrowRight, ArrowLeft, TimerReset,
     FolderPlus, FileText, Edit3, Calendar, Battery, CloudRain,
     Layout, Compass, Laptop, Smartphone, Bell, GripVertical, ChevronLeft, LogOut,
-    Layers, ArrowLeftRight, Shield, PackageX
+    Layers, Shield, PackageX
 } from 'lucide-react';
 import { ZenithLogo } from './ZenithLogo';
 import { IconPicker } from './IconPicker';
@@ -1141,312 +1141,397 @@ const WidgetsTab = React.memo(({ config, setConfig }: { config: UIConfig, setCon
     );
 });
 
-const BentoCard = React.memo(({ title, icon: Icon, children, description, className = '' }: any) => (
-    <motion.div
-        className={`p-6 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:border-white/20 transition-all duration-500 overflow-hidden relative group ${className}`}
-        initial={{ opacity: 0, y: 15 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-    >
-        <div className="flex items-center gap-3 mb-6 relative z-10">
-            <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-white/40 group-hover:text-white transition-all duration-500">
-                <Icon size={20} strokeWidth={1.5} />
-            </div>
-            <div>
-                <h4 className="text-[13px] font-semibold text-white tracking-tight leading-tight">{title}</h4>
-                {description && <p className="text-[10px] text-white/30 font-medium tracking-wide uppercase mt-0.5">{description}</p>}
-            </div>
-        </div>
-        <div className="relative z-10">
-            {children}
-        </div>
-        <div className="absolute -bottom-10 -right-10 w-32 h-32 bg-white/[0.02] rounded-full blur-3xl pointer-events-none group-hover:bg-white/[0.05] transition-colors duration-700" />
-    </motion.div>
-));
+const SETTINGS_RANGE =
+    'h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/[0.06] accent-white';
 
-const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig: (c: any) => void }) => {
+const SettingsValuePill = ({ children }: { children: React.ReactNode }) => (
+    <span className="shrink-0 rounded-lg bg-white/[0.06] px-2.5 py-1 text-[12px] font-medium tabular-nums text-white/72 ring-1 ring-white/[0.07]">
+        {children}
+    </span>
+);
+
+const SettingsSection = React.memo(
+    ({
+        title,
+        description,
+        children,
+        className = '',
+    }: {
+        title: string;
+        description?: string;
+        children: React.ReactNode;
+        className?: string;
+    }) => (
+        <section
+            className={`overflow-hidden rounded-[18px] border border-white/[0.07] bg-[rgba(10,10,12,0.55)] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] ${className}`}
+        >
+            <div className="border-b border-white/[0.06] px-5 py-4">
+                <h4 className="text-[13px] font-semibold tracking-[-0.02em] text-white/90">{title}</h4>
+                {description ? (
+                    <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-white/42">{description}</p>
+                ) : null}
+            </div>
+            <div className="space-y-6 p-5">{children}</div>
+        </section>
+    ),
+);
+
+const SettingsSliderField = React.memo(
+    ({
+        label,
+        hintTitle,
+        hintDescription,
+        valueLabel,
+        value,
+        min,
+        max,
+        step,
+        onChange,
+        helper,
+        minLabel,
+        maxLabel,
+        paired = false,
+    }: {
+        label: string;
+        hintTitle?: string;
+        hintDescription?: string;
+        valueLabel: string;
+        value: number;
+        min: number;
+        max: number;
+        step: number;
+        onChange: (value: number) => void;
+        helper?: string;
+        minLabel?: string;
+        maxLabel?: string;
+        paired?: boolean;
+    }) => (
+        <div className={`flex flex-col gap-3 ${paired ? 'h-full' : ''}`}>
+            <div className={`flex items-start justify-between gap-3 ${paired ? 'min-h-[28px]' : ''}`}>
+                <div className="flex min-w-0 items-center gap-1.5">
+                    <span className="text-[13px] font-medium text-white/78">{label}</span>
+                    {hintTitle && hintDescription ? (
+                        <InfoHint title={hintTitle} description={hintDescription} align="left" />
+                    ) : null}
+                </div>
+                <SettingsValuePill>{valueLabel}</SettingsValuePill>
+            </div>
+            {(helper || paired) ? (
+                <p className={`text-[12px] leading-relaxed text-white/38 ${paired ? 'min-h-[2.5rem]' : ''}`}>
+                    {helper || '\u00a0'}
+                </p>
+            ) : null}
+            <input
+                type="range"
+                min={min}
+                max={max}
+                step={step}
+                value={value}
+                onChange={(e) => onChange(Number(e.target.value))}
+                className={SETTINGS_RANGE}
+            />
+            {(minLabel || maxLabel || paired) ? (
+                <div
+                    className={`flex min-h-[1rem] justify-between text-[11px] text-white/30 ${minLabel || maxLabel ? '' : 'invisible'}`}
+                    aria-hidden={!(minLabel || maxLabel)}
+                >
+                    <span>{minLabel || '·'}</span>
+                    <span>{maxLabel || '·'}</span>
+                </div>
+            ) : null}
+        </div>
+    ),
+);
+
+const SettingsToggleRow = React.memo(
+    ({
+        label,
+        description,
+        hintTitle,
+        hintDescription,
+        enabled,
+        onToggle,
+        disabled = false,
+    }: {
+        label: string;
+        description?: string;
+        hintTitle?: string;
+        hintDescription?: string;
+        enabled: boolean;
+        onToggle: () => void;
+        disabled?: boolean;
+    }) => (
+        <button
+            type="button"
+            role="switch"
+            aria-checked={enabled}
+            disabled={disabled}
+            onClick={onToggle}
+            className="flex w-full items-center justify-between gap-4 rounded-xl border border-white/[0.06] bg-black/20 px-4 py-3.5 text-left transition-colors hover:border-white/[0.11] hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 disabled:pointer-events-none disabled:opacity-45"
+        >
+            <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                    <span className="text-[13px] font-medium text-white/82">{label}</span>
+                    {hintTitle && hintDescription ? (
+                        <InfoHint title={hintTitle} description={hintDescription} align="left" />
+                    ) : null}
+                </div>
+                {description ? (
+                    <p className="mt-1 text-[12px] leading-relaxed text-white/40">{description}</p>
+                ) : null}
+            </div>
+            <span
+                aria-hidden
+                className={`relative h-6 w-10 shrink-0 rounded-full transition-colors duration-200 ${enabled ? 'bg-white' : 'bg-white/12'}`}
+            >
+                <span
+                    className={`absolute top-0.5 h-5 w-5 rounded-full bg-[#101010] shadow-sm transition-transform duration-200 ${enabled ? 'translate-x-[18px]' : 'translate-x-0.5'}`}
+                />
+            </span>
+        </button>
+    ),
+);
+
+const SettingsSegmentGroup = React.memo(
+    ({
+        options,
+        value,
+        onChange,
+        pairedDescriptions = false,
+    }: {
+        options: { id: string; label: string; description?: string }[];
+        value: string;
+        onChange: (id: string) => void;
+        pairedDescriptions?: boolean;
+    }) => (
+        <div className="flex flex-col gap-1 rounded-xl border border-white/[0.07] bg-black/20 p-1 sm:flex-row">
+            {options.map((opt) => {
+                const active = value === opt.id;
+                return (
+                    <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => onChange(opt.id)}
+                        className={`flex-1 rounded-lg px-3 py-2.5 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 ${
+                            active
+                                ? 'bg-white/[0.12] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] ring-1 ring-white/10'
+                                : 'text-white/42 hover:bg-white/[0.04] hover:text-white/68'
+                        }`}
+                    >
+                        <span className="block text-[12px] font-medium">{opt.label}</span>
+                        {opt.description ? (
+                            <span
+                                className={`mt-0.5 block text-[11px] leading-relaxed ${
+                                    pairedDescriptions ? 'min-h-[2rem]' : ''
+                                } ${active ? 'text-white/50' : 'text-white/30'}`}
+                            >
+                                {opt.description}
+                            </span>
+                        ) : null}
+                    </button>
+                );
+            })}
+        </div>
+    ),
+);
+
+const CENTER_BUTTON_MODES = ['app', 'widget', 'command', 'none', 'cancel'] as const;
+
+const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig; setConfig: (c: any) => void }) => {
+    const t = (key: string) => getTranslation(config, key);
+
     return (
         <motion.div
-            className="pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
+            className="h-full overflow-y-auto custom-scrollbar pb-24 pt-20"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
             transition={{ duration: 0.3 }}
         >
-            <div className="max-w-4xl mx-auto px-6 md:px-10 lg:px-12">
+            <div className="mx-auto max-w-4xl px-6 md:px-10 lg:px-12">
                 <motion.div
                     className="mb-12"
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.1 }}
                 >
-                    <h3 className="text-xl font-semibold text-white mb-1 tracking-tight">{getTranslation(config, 'visuals.title')}</h3>
-                    <p className="text-[11px] text-white/30 font-medium tracking-wide leading-relaxed mt-1 max-w-2xl">
-                        {getTranslation(config, 'visuals.desc')}
+                    <h3 className="mb-1 text-xl font-semibold tracking-tight text-white">{t('visuals.title')}</h3>
+                    <p className="mt-1 max-w-2xl text-[11px] font-medium leading-relaxed tracking-wide text-white/30">
+                        {t('visuals.desc')}
                     </p>
                 </motion.div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <BentoCard
-                        title={getTranslation(config, 'visuals.menu_size')}
-                        icon={Layout}
-                        description={getTranslation(config, 'visuals.hub_expansion') || 'Expansão do Hub'}
-                        className="md:col-span-2 lg:col-span-2"
-                    >
-                        <div className="space-y-6">
-                            <div className="flex justify-between items-center text-[10px] font-black text-white/20 uppercase tracking-widest">
-                                <span>{getTranslation(config, 'visuals.min_range') || 'Alcance Mínimo'} (150px)</span>
-                                <span>{getTranslation(config, 'visuals.max_range') || 'Alcance Máximo'} (600px)</span>
-                            </div>
-                            <div className="relative pt-1">
-                                <input
-                                    type="range"
-                                    min="150"
-                                    max="600"
-                                    step="10"
-                                    value={config.menuRadius}
-                                    onChange={e => setConfig({ ...config, menuRadius: Number(e.target.value) })}
-                                    className="w-full h-1.5 bg-white/5 rounded-full appearance-none accent-white cursor-pointer"
-                                />
-                                <div className="absolute -top-10 left-1/2 -translate-x-1/2 px-3 py-1 bg-white text-black text-[10px] font-bold rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity">
-                                    {config.menuRadius}px
-                                </div>
-                            </div>
-                        </div>
-                    </BentoCard>
-
-                    <BentoCard title={getTranslation(config, 'visuals.icon_density')} icon={Box} description={getTranslation(config, 'visuals.icon_scale') || 'Escala dos Atalhos'} className="md:col-span-1 lg:col-span-1">
-                        <div className="space-y-6">
-                            <div className="flex items-end justify-between">
-                                <span className="text-3xl font-black text-white tabular-nums">{config.iconSize}</span>
-                                <span className="text-[10px] text-white/20 font-bold uppercase mb-1">{getTranslation(config, 'visuals.default_size') || 'Tamanho Padrão'}</span>
-                            </div>
-                            <input
-                                type="range"
-                                min="30"
-                                max="100"
-                                step="2"
+                <div className="flex flex-col gap-6">
+                    <SettingsSection title={t('visuals.section_menu')} description={t('visuals.section_menu_desc')}>
+                        <SettingsSliderField
+                            label={t('visuals.menu_size')}
+                            valueLabel={`${config.menuRadius}px`}
+                            value={config.menuRadius}
+                            min={150}
+                            max={600}
+                            step={10}
+                            onChange={(menuRadius) => setConfig({ ...config, menuRadius })}
+                            helper={t('visuals.menu_size_hint')}
+                            minLabel={`150px · ${t('visuals.min_range')}`}
+                            maxLabel={`600px · ${t('visuals.max_range')}`}
+                        />
+                        <div className="grid gap-6 md:grid-cols-2 md:items-stretch">
+                            <SettingsSliderField
+                                label={t('visuals.icon_density')}
+                                paired
+                                valueLabel={`${config.iconSize}px`}
                                 value={config.iconSize}
-                                onChange={e => setConfig({ ...config, iconSize: Number(e.target.value) })}
-                                className="w-full h-1 bg-white/10 rounded-full appearance-none accent-white cursor-pointer"
+                                min={30}
+                                max={100}
+                                step={2}
+                                onChange={(iconSize) => setConfig({ ...config, iconSize })}
+                                helper={t('visuals.icon_density_hint')}
                             />
-                        </div>
-                    </BentoCard>
-
-                    <BentoCard title={getTranslation(config, 'visuals.transparency')} icon={ImageIcon} description={getTranslation(config, 'visuals.glass_effect') || 'Efeito de Vidro'} className="md:col-span-1 lg:col-span-1">
-                        <div className="space-y-6">
-                            <div className="space-y-4">
-                                <div className="flex items-end justify-between">
-                                    <span className="text-2xl font-black text-white tabular-nums">{Math.round(config.backdropOpacity * 100)}%</span>
-                                    <span className="text-[9px] text-white/20 font-bold uppercase mb-1 tracking-widest">{getTranslation(config, 'visuals.opacity') || 'Opacidade'}</span>
-                                </div>
-                                <input
-                                    type="range"
-                                    min="0"
-                                    max="1"
-                                    step="0.05"
-                                    value={config.backdropOpacity}
-                                    onChange={e => setConfig({ ...config, backdropOpacity: Number(e.target.value) })}
-                                    className="w-full h-1 bg-white/10 rounded-full appearance-none accent-white cursor-pointer"
-                                />
-                            </div>
-
-                            <div className="space-y-4 pt-2 border-t border-white/5">
-                                <div className="flex items-end justify-between">
-                                    <span className="text-2xl font-black text-white tabular-nums">{config.backdropBlur}px</span>
-                                    <span className="text-[9px] text-white/20 font-bold uppercase mb-1 tracking-widest">{getTranslation(config, 'visuals.blur_radius') || 'Raio de Desfoque'}</span>
-                                </div>
-                                <input
-                                    type="range"
-                                    min="0"
-                                    max="60"
-                                    step="1"
-                                    value={config.backdropBlur}
-                                    onChange={e => setConfig({ ...config, backdropBlur: Number(e.target.value) })}
-                                    className="w-full h-1 bg-white/10 rounded-full appearance-none accent-white cursor-pointer"
-                                />
-                                <div className="flex items-center justify-between mt-2">
-                                    <span className="text-[8px] text-white/40 uppercase font-bold tracking-tighter">{getTranslation(config, 'visuals.native_acrylic') || 'Acrylic Nativo (Windows)'}</span>
-                                    <button
-                                        onClick={() => setConfig({ ...config, backdropBlur: config.backdropBlur > 0 ? 0 : 20 })}
-                                        className={`px-2 py-1 rounded border text-[8px] font-bold uppercase transition-all ${config.backdropBlur > 0 ? 'bg-white text-black border-white' : 'bg-transparent text-white/20 border-white/5'}`}
-                                    >
-                                        {config.backdropBlur > 0 ? getTranslation(config, 'status.activated') || 'Ativado' : getTranslation(config, 'status.default') || 'Padrão'}
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </BentoCard>
-
-                    <BentoCard
-                        title={getTranslation(config, 'visuals.accent_color')}
-                        icon={Palette}
-                        description={getTranslation(config, 'visuals.accent_custom') || 'Personalização de Tom'}
-                        className="md:col-span-2 lg:col-span-2"
-                    >
-                        <div className="flex gap-6 items-center">
-                            <div className="relative group/color p-2 rounded-xl bg-black/40 border border-white/10">
-                                <input
-                                    type="color"
-                                    value={config.accentColor}
-                                    onChange={e => setConfig({ ...config, accentColor: e.target.value })}
-                                    className="w-16 h-16 rounded-xl cursor-pointer bg-transparent border-none outline-none scale-95 group-hover/color:scale-100 transition-transform"
-                                />
-                                <div className="absolute inset-2 rounded-lg ring-1 ring-white/10 pointer-events-none" />
-                            </div>
-                            <div className="flex-1 space-y-3">
-                                <div className="flex items-center justify-between">
-                                    <span className="text-[9px] font-black text-white/20 uppercase tracking-[0.2em]">{getTranslation(config, 'visuals.hex_code') || 'Hex Code'}</span>
-                                    <CheckCircle2 size={14} className="text-white/20" />
-                                </div>
-                                <input
-                                    type="text"
-                                    value={config.accentColor}
-                                    onChange={e => setConfig({ ...config, accentColor: e.target.value })}
-                                    className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 text-sm text-white font-mono focus:border-white/40 focus:bg-white/[0.05] outline-none transition-all"
-                                    placeholder="#FFFFFF"
-                                />
-                            </div>
-                        </div>
-                    </BentoCard>
-
-
-                    <BentoCard title={getTranslation(config, 'visuals.spacing')} icon={GripVertical} description={getTranslation(config, 'visuals.visual_rhythm') || 'Ritmo Visual'} className="md:col-span-1 lg:col-span-1">
-                        <div className="space-y-6">
-                            <div className="flex items-center justify-between">
-                                <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/20">Distância entre itens</span>
-                                <InfoHint
-                                    title={getTranslation(config, 'tooltip.visual_spacing_title')}
-                                    description={getTranslation(config, 'tooltip.visual_spacing_desc')}
-                                    align="left"
-                                />
-                            </div>
-                            <div className="flex items-end justify-between">
-                                <span className="text-3xl font-black text-white tabular-nums">{config.appSpacing}</span>
-                                <span className="text-[10px] text-white/20 font-bold uppercase mb-1">{getTranslation(config, 'visuals.distance') || 'Distância (px)'}</span>
-                            </div>
-                            <input
-                                type="range"
-                                min="0"
-                                max="50"
-                                step="2"
+                            <SettingsSliderField
+                                label={t('visuals.spacing_field')}
+                                paired
+                                valueLabel={`${config.appSpacing}px`}
                                 value={config.appSpacing}
-                                onChange={e => setConfig({ ...config, appSpacing: Number(e.target.value) })}
-                                className="w-full h-1 bg-white/10 rounded-full appearance-none accent-white cursor-pointer"
+                                min={0}
+                                max={50}
+                                step={2}
+                                onChange={(appSpacing) => setConfig({ ...config, appSpacing })}
+                                helper={t('visuals.spacing_hint')}
                             />
                         </div>
-                    </BentoCard>
+                    </SettingsSection>
 
-                    <BentoCard title={getTranslation(config, 'visuals.activation_limit')} icon={Zap} description={getTranslation(config, 'visuals.sensitivity') || 'Sensibilidade'} className="md:col-span-1 lg:col-span-1">
-                        <div className="space-y-6">
-                            <div className="flex items-center justify-between">
-                                <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/20">Arrasto para ativar</span>
-                                <InfoHint
-                                    title={getTranslation(config, 'tooltip.activation_limit_title')}
-                                    description={getTranslation(config, 'tooltip.activation_limit_desc')}
-                                    align="left"
-                                />
-                            </div>
-                            <div className="flex items-end justify-between">
-                                <span className="text-3xl font-black text-white tabular-nums">{config.activationThreshold}</span>
-                                <span className="text-[10px] text-white/20 font-bold uppercase mb-1">{getTranslation(config, 'visuals.trigger_pixels') || 'Pixels de Gatilho'}</span>
-                            </div>
-                            <input
-                                type="range"
-                                min="10"
-                                max="150"
-                                step="5"
-                                value={config.activationThreshold}
-                                onChange={e => setConfig({ ...config, activationThreshold: Number(e.target.value) })}
-                                className="w-full h-1 bg-white/10 rounded-full appearance-none accent-white cursor-pointer"
+                    <div className="grid gap-6 lg:grid-cols-2">
+                        <SettingsSection
+                            title={t('visuals.section_appearance')}
+                            description={t('visuals.section_appearance_desc')}
+                        >
+                            <SettingsSliderField
+                                label={t('visuals.opacity')}
+                                valueLabel={`${Math.round(config.backdropOpacity * 100)}%`}
+                                value={config.backdropOpacity}
+                                min={0}
+                                max={1}
+                                step={0.05}
+                                onChange={(backdropOpacity) => setConfig({ ...config, backdropOpacity })}
                             />
-                        </div>
-                    </BentoCard>
+                            <SettingsSliderField
+                                label={t('visuals.blur_radius')}
+                                valueLabel={`${config.backdropBlur}px`}
+                                value={config.backdropBlur}
+                                min={0}
+                                max={60}
+                                step={1}
+                                onChange={(backdropBlur) => setConfig({ ...config, backdropBlur })}
+                            />
+                            <SettingsToggleRow
+                                label={t('visuals.blur_enabled')}
+                                description={t('visuals.blur_enabled_hint')}
+                                enabled={config.backdropBlur > 0}
+                                onToggle={() =>
+                                    setConfig({
+                                        ...config,
+                                        backdropBlur: config.backdropBlur > 0 ? 0 : 20,
+                                    })
+                                }
+                            />
 
-                    <BentoCard title={getTranslation(config, 'visuals.labels') || 'Legendas'} icon={FileType} description={getTranslation(config, 'visuals.text_labels') || 'Rótulos de Texto'} className="md:col-span-1 lg:col-span-1">
-                        <div className="flex flex-col gap-4">
-                            <div className="flex items-center justify-between">
-                                <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/20">Texto dos atalhos</span>
-                                <InfoHint
-                                    title={getTranslation(config, 'tooltip.app_labels_title')}
-                                    description={getTranslation(config, 'tooltip.app_labels_desc')}
-                                    align="left"
-                                />
-                            </div>
-                            <button
-                                onClick={() => setConfig({ ...config, showLabels: !config.showLabels })}
-                                className={`w-full flex items-center justify-between p-3.5 rounded-xl border transition-all duration-500 ${config.showLabels ? 'bg-white border-white' : 'bg-white/[0.02] border-white/10'}`}
-                            >
-                                <span className={`text-[10px] font-bold uppercase tracking-widest ${config.showLabels ? 'text-black' : 'text-white/40'}`}>
-                                    {config.showLabels ? getTranslation(config, 'status.visible') || 'Visível' : getTranslation(config, 'status.hidden') || 'Oculto'}
-                                </span>
-                                <div className={`w-2 h-2 rounded-full ${config.showLabels ? 'bg-black animate-pulse' : 'bg-white/10'}`} />
-                            </button>
-                            <div className={`flex flex-col gap-3 transition-opacity duration-300 ${config.showLabels ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
-                                <div className="flex items-center justify-between">
-                                    <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/20">
-                                        {getTranslation(config, 'visuals.labels_always')}
-                                    </span>
-                                    <InfoHint
-                                        title={getTranslation(config, 'tooltip.app_labels_always_title')}
-                                        description={getTranslation(config, 'tooltip.app_labels_always_desc')}
-                                        align="left"
+                            <div className="space-y-2.5 border-t border-white/[0.06] pt-5">
+                                <div className="flex items-center gap-1.5">
+                                    <span className="text-[13px] font-medium text-white/78">{t('visuals.accent_color')}</span>
+                                </div>
+                                <p className="text-[12px] leading-relaxed text-white/38">{t('visuals.accent_custom')}</p>
+                                <div className="flex items-center gap-3 rounded-xl border border-white/[0.07] bg-black/20 p-3">
+                                    <div className="relative shrink-0 rounded-xl border border-white/[0.1] bg-black/30 p-1.5">
+                                        <input
+                                            type="color"
+                                            value={config.accentColor}
+                                            onChange={(e) => setConfig({ ...config, accentColor: e.target.value })}
+                                            className="h-10 w-10 cursor-pointer rounded-lg border-none bg-transparent outline-none"
+                                        />
+                                    </div>
+                                    <input
+                                        type="text"
+                                        value={config.accentColor}
+                                        onChange={(e) => setConfig({ ...config, accentColor: e.target.value })}
+                                        className="min-w-0 flex-1 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 font-mono text-[13px] text-white/88 outline-none transition-colors focus:border-white/20 focus:bg-white/[0.05]"
+                                        placeholder="#FFFFFF"
+                                        spellCheck={false}
                                     />
                                 </div>
-                                <button
-                                    onClick={() => setConfig({ ...config, alwaysShowAppLabels: !(config.alwaysShowAppLabels ?? false) })}
-                                    disabled={!config.showLabels}
-                                    className={`w-full flex items-center justify-between p-3.5 rounded-xl border transition-all duration-500 ${(config.alwaysShowAppLabels ?? false) ? 'bg-white border-white' : 'bg-white/[0.02] border-white/10'}`}
-                                >
-                                    <span className={`text-[10px] font-bold uppercase tracking-widest ${(config.alwaysShowAppLabels ?? false) ? 'text-black' : 'text-white/40'}`}>
-                                        {(config.alwaysShowAppLabels ?? false) ? getTranslation(config, 'status.visible') || 'Visível' : getTranslation(config, 'status.hidden') || 'Oculto'}
-                                    </span>
-                                    <div className={`w-2 h-2 rounded-full ${(config.alwaysShowAppLabels ?? false) ? 'bg-black animate-pulse' : 'bg-white/10'}`} />
-                                </button>
                             </div>
-                        </div>
-                    </BentoCard>
 
-                    <BentoCard title={getTranslation(config, 'performance.title')} icon={Zap} description={getTranslation(config, 'performance.desc')} className="md:col-span-1 lg:col-span-3">
-                        <div className="flex flex-col gap-3">
-                        <div className="flex items-center justify-between p-4 bg-white/[0.03] border border-white/5 rounded-2xl cursor-pointer group hover:bg-white/[0.05]" onClick={() => setConfig({ ...config, performanceMode: !config.performanceMode })}>
-                            <div className="space-y-1">
-                                <span className="flex items-center gap-2 text-sm font-semibold text-white/80 group-hover:text-white">
-                                    {getTranslation(config, 'performance.strict')}
-                                    <InfoHint
-                                        title={getTranslation(config, 'tooltip.performance_strict_title')}
-                                        description={getTranslation(config, 'tooltip.performance_strict_desc')}
+                            <div className="space-y-3 border-t border-white/[0.06] pt-5">
+                                <SettingsToggleRow
+                                    label={t('visuals.labels_field')}
+                                    description={t('visuals.labels_hint')}
+                                    hintTitle={t('tooltip.app_labels_title')}
+                                    hintDescription={t('tooltip.app_labels_desc')}
+                                    enabled={config.showLabels}
+                                    onToggle={() => setConfig({ ...config, showLabels: !config.showLabels })}
+                                />
+                                <SettingsToggleRow
+                                    label={t('visuals.labels_always')}
+                                    hintTitle={t('tooltip.app_labels_always_title')}
+                                    hintDescription={t('tooltip.app_labels_always_desc')}
+                                    enabled={config.alwaysShowAppLabels ?? false}
+                                    disabled={!config.showLabels}
+                                    onToggle={() =>
+                                        setConfig({
+                                            ...config,
+                                            alwaysShowAppLabels: !(config.alwaysShowAppLabels ?? false),
+                                        })
+                                    }
+                                />
+                            </div>
+                        </SettingsSection>
+
+                        <div className="flex flex-col gap-6">
+                            <SettingsSection
+                                title={t('visuals.section_interaction')}
+                                description={t('visuals.section_interaction_desc')}
+                            >
+                                <SettingsSliderField
+                                    label={t('visuals.activation_field')}
+                                    hintTitle={t('tooltip.activation_limit_title')}
+                                    hintDescription={t('tooltip.activation_limit_desc')}
+                                    valueLabel={`${config.activationThreshold}px`}
+                                    value={config.activationThreshold}
+                                    min={10}
+                                    max={150}
+                                    step={5}
+                                    onChange={(activationThreshold) => setConfig({ ...config, activationThreshold })}
+                                    helper={t('visuals.activation_hint')}
+                                    minLabel="10px"
+                                    maxLabel="150px"
+                                />
+                            </SettingsSection>
+
+                            <SettingsSection title={t('performance.title')} description={t('performance.desc')}>
+                                <div className="space-y-3">
+                                    <SettingsToggleRow
+                                        label={t('performance.strict')}
+                                        description={t('performance.strict_desc')}
+                                        hintTitle={t('tooltip.performance_strict_title')}
+                                        hintDescription={t('tooltip.performance_strict_desc')}
+                                        enabled={config.performanceMode}
+                                        onToggle={() => setConfig({ ...config, performanceMode: !config.performanceMode })}
                                     />
-                                </span>
-                                <span className="text-[10px] text-white/30 uppercase tracking-wider block font-bold leading-tight">{getTranslation(config, 'performance.strict_desc')}</span>
-                            </div>
-                            <div className={`w-11 h-6 rounded-full relative transition-all duration-500 ${config.performanceMode ? 'bg-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.3)]' : 'bg-white/10'}`}>
-                                <div className={`absolute top-1 w-4 h-4 rounded-full transition-all duration-500 ${config.performanceMode ? 'left-6 bg-black' : 'left-1 bg-white/40'}`} />
-                            </div>
-                        </div>
-                        <div
-                            className="flex items-center justify-between p-4 bg-white/[0.03] border border-white/5 rounded-2xl cursor-pointer group hover:bg-white/[0.05]"
-                            onClick={() => {
-                              const on = config.deskIslandClockWhileIdle !== false;
-                              setConfig({ ...config, deskIslandClockWhileIdle: !on });
-                            }}
-                        >
-                            <div className="space-y-1 pr-4">
-                                <span className="flex items-center gap-2 text-sm font-semibold text-white/80 group-hover:text-white">
-                                    {getTranslation(config, 'performance.idle_island')}
-                                    <InfoHint
-                                        title={getTranslation(config, 'tooltip.idle_island_title')}
-                                        description={getTranslation(config, 'tooltip.idle_island_desc')}
+                                    <SettingsToggleRow
+                                        label={t('performance.idle_island')}
+                                        description={t('performance.idle_island_desc')}
+                                        hintTitle={t('tooltip.idle_island_title')}
+                                        hintDescription={t('tooltip.idle_island_desc')}
+                                        enabled={config.deskIslandClockWhileIdle !== false}
+                                        onToggle={() => {
+                                            const on = config.deskIslandClockWhileIdle !== false;
+                                            setConfig({ ...config, deskIslandClockWhileIdle: !on });
+                                        }}
                                     />
-                                </span>
-                                <span className="text-[10px] text-white/30 uppercase tracking-wider block font-bold leading-tight">{getTranslation(config, 'performance.idle_island_desc')}</span>
-                            </div>
-                            <div className={`w-11 h-6 shrink-0 rounded-full relative transition-all duration-500 ${config.deskIslandClockWhileIdle !== false ? 'bg-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.3)]' : 'bg-white/10'}`}>
-                                <div className={`absolute top-1 w-4 h-4 rounded-full transition-all duration-500 ${config.deskIslandClockWhileIdle !== false ? 'left-6 bg-black' : 'left-1 bg-white/40'}`} />
-                            </div>
+                                </div>
+                            </SettingsSection>
                         </div>
-                        </div>
-                    </BentoCard>
+                    </div>
                 </div>
             </div>
         </motion.div>
@@ -1705,10 +1790,17 @@ const WorkspacesTab = React.memo(({
     handleAddApp: (type: 'app' | 'folder') => void
 }) => {
     const [workspaceWheelIconModalOpen, setWorkspaceWheelIconModalOpen] = useState(false);
-    const [workspaceSwitchOpen, setWorkspaceSwitchOpen] = useState(false);
+    const [workspaceSwitchModalOpen, setWorkspaceSwitchModalOpen] = useState(false);
+
+    const workspaceSwitchMode = config.workspaceSwitchMode ?? 'hotkeys';
+    const workspaceSwitchModeLabel =
+        workspaceSwitchMode === 'hotkeys'
+            ? getTranslation(config, 'workspaces.switch_mode_hotkeys')
+            : getTranslation(config, 'workspaces.switch_mode_picker');
 
     useEffect(() => {
         setWorkspaceWheelIconModalOpen(false);
+        setWorkspaceSwitchModalOpen(false);
     }, [selectedWorkspaceIndex, workspaceFolderPath]);
 
     useEffect(() => {
@@ -1720,45 +1812,14 @@ const WorkspacesTab = React.memo(({
         return () => window.removeEventListener('keydown', onKey);
     }, [workspaceWheelIconModalOpen]);
 
-    const renderWorkspaceWheelIconBlock = () => {
-        if (
-            selectedWorkspaceIndex === null ||
-            workspaceFolderPath.length > 0 ||
-            (config.workspaceSwitchMode ?? 'hotkeys') !== 'picker'
-        ) {
-            return null;
-        }
-        const ws = config.workspaces[selectedWorkspaceIndex];
-        if (!ws) return null;
-        const pickName = ws.pickerIconName || 'Layers';
-        const PreviewIcon = getIcon(pickName);
-        return (
-            <div className="mb-4 flex items-center gap-3 rounded-xl border border-white/[0.07] bg-[#0a0a0a]/90 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                <div
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/[0.1] bg-gradient-to-b from-white/[0.08] to-transparent shadow-inner ring-1 ring-white/[0.05]"
-                    aria-hidden
-                >
-                    <PreviewIcon className="text-white/[0.92]" size={22} strokeWidth={1.5} />
-                </div>
-                <div className="min-w-0 flex-1">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/55">
-                        {getTranslation(config, 'workspaces.picker_wheel_icon')}
-                    </p>
-                    <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-white/38">
-                        {getTranslation(config, 'workspaces.picker_wheel_icon_hint') || ''}
-                    </p>
-                </div>
-                <button
-                    type="button"
-                    onClick={() => setWorkspaceWheelIconModalOpen(true)}
-                    className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-white/[0.12] bg-white/[0.06] px-3.5 py-2 text-xs font-medium tracking-tight text-white/90 transition-colors hover:border-white/22 hover:bg-white/[0.1] active:scale-[0.98]"
-                >
-                    <Edit3 size={15} strokeWidth={1.5} className="text-white/50" aria-hidden />
-                    {getTranslation(config, 'workspaces.picker_wheel_icon_open')}
-                </button>
-            </div>
-        );
-    };
+    useEffect(() => {
+        if (!workspaceSwitchModalOpen) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setWorkspaceSwitchModalOpen(false);
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [workspaceSwitchModalOpen]);
 
     const workspaceWheelIconModal =
         typeof document !== 'undefined' &&
@@ -1846,12 +1907,101 @@ const WorkspacesTab = React.memo(({
               )
             : null;
 
+    const workspaceSwitchModal =
+        typeof document !== 'undefined' && workspaceSwitchModalOpen && selectedWorkspaceIndex === null
+            ? createPortal(
+                  <AnimatePresence>
+                      <motion.div
+                          key="ws-switch-mode-modal"
+                          role="presentation"
+                          className="fixed inset-0 z-[500] flex items-center justify-center bg-black/80 p-4 backdrop-blur-md sm:p-6"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.18 }}
+                          onClick={() => setWorkspaceSwitchModalOpen(false)}
+                      >
+                          <motion.div
+                              role="dialog"
+                              aria-modal="true"
+                              aria-labelledby="ws-switch-mode-modal-title"
+                              initial={{ opacity: 0, scale: 0.96, y: 12 }}
+                              animate={{ opacity: 1, scale: 1, y: 0 }}
+                              exit={{ opacity: 0, scale: 0.98, y: 8 }}
+                              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                              className="relative z-10 w-full max-w-md overflow-hidden rounded-2xl border border-white/[0.1] bg-[#0c0c0c] shadow-[0_28px_100px_rgba(0,0,0,0.75)]"
+                              onClick={(e) => e.stopPropagation()}
+                          >
+                              <div className="flex items-start justify-between gap-4 border-b border-white/[0.06] px-5 py-4">
+                                  <div className="min-w-0 space-y-2 pt-0.5">
+                                      <h4
+                                          id="ws-switch-mode-modal-title"
+                                          className="text-base font-semibold tracking-tight text-white"
+                                      >
+                                          {getTranslation(config, 'workspaces.switch_mode')}
+                                      </h4>
+                                      <p className="text-sm leading-relaxed text-white/45">
+                                          {getTranslation(config, 'workspaces.switch_mode_modal_description') || ''}
+                                      </p>
+                                  </div>
+                                  <button
+                                      type="button"
+                                      onClick={() => setWorkspaceSwitchModalOpen(false)}
+                                      className="shrink-0 rounded-lg p-2 text-white/35 transition-colors hover:bg-white/[0.08] hover:text-white"
+                                      aria-label={getTranslation(config, 'action.dismiss')}
+                                  >
+                                      <X size={18} strokeWidth={1.5} />
+                                  </button>
+                              </div>
+                              <div className="px-5 py-4">
+                                  <SettingsSegmentGroup
+                                      pairedDescriptions
+                                      value={workspaceSwitchMode}
+                                      onChange={(mode) =>
+                                          setConfig({
+                                              ...config,
+                                              workspaceSwitchMode: mode as 'hotkeys' | 'picker',
+                                          })
+                                      }
+                                      options={[
+                                          {
+                                              id: 'hotkeys',
+                                              label: getTranslation(config, 'workspaces.switch_mode_hotkeys'),
+                                              description: getTranslation(config, 'workspaces.switch_mode_hotkeys_hint'),
+                                          },
+                                          {
+                                              id: 'picker',
+                                              label: getTranslation(config, 'workspaces.switch_mode_picker'),
+                                              description: getTranslation(config, 'workspaces.switch_mode_picker_hint'),
+                                          },
+                                      ]}
+                                  />
+                                  <p className="mt-4 border-t border-white/[0.06] pt-3.5 text-[11px] leading-relaxed text-white/36">
+                                      {getTranslation(config, 'workspaces.switch_mode_compact_hint')}
+                                  </p>
+                              </div>
+                              <div className="flex justify-end border-t border-white/[0.06] px-5 py-3.5">
+                                  <button
+                                      type="button"
+                                      onClick={() => setWorkspaceSwitchModalOpen(false)}
+                                      className="rounded-lg bg-white/[0.08] px-4 py-2 text-sm font-medium text-white/90 transition-colors hover:bg-white/[0.14]"
+                                  >
+                                      {getTranslation(config, 'action.dismiss')}
+                                  </button>
+                              </div>
+                          </motion.div>
+                      </motion.div>
+                  </AnimatePresence>,
+                  document.body,
+              )
+            : null;
+
     return (
         <>
             <div className="h-full w-full flex flex-col overflow-hidden relative">
             <div className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar pt-20`}>
                 <div className="max-w-4xl mx-auto flex flex-col px-6 md:px-10 lg:px-12">
-                    <div className={`flex items-center gap-6 ${selectedWorkspaceIndex !== null ? 'mb-6' : 'mb-12'} group/header`}>
+                    <div className={`flex items-center gap-6 ${selectedWorkspaceIndex !== null ? 'mb-8' : 'mb-12'} group/header`}>
                         {selectedWorkspaceIndex !== null && (
                             <motion.button
                                 onClick={() => setSelectedWorkspaceIndex(null)}
@@ -1870,16 +2020,44 @@ const WorkspacesTab = React.memo(({
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ duration: 0.3 }}
-                            className="flex-1"
+                            className="flex-1 min-w-0"
                         >
-                            <h3 className="text-xl font-medium text-white/90 mb-1 tracking-tight">
-                                {selectedWorkspaceIndex === null ? getTranslation(config, 'workspaces.title') || 'Meus Espaços' : null}
-                            </h3>
-                            {selectedWorkspaceIndex === null && (
-                                <p className="text-[11px] text-white/30 font-medium tracking-wide leading-relaxed mt-1 max-w-2xl">
-                                    {getTranslation(config, 'workspaces.desc') || 'Crie e gerencie diferentes ambientes de trabalho com atalhos personalizados.'}
-                                </p>
-                            )}
+                            {selectedWorkspaceIndex === null ? (
+                                <>
+                                    <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                                        <div className="min-w-0">
+                                            <h3 className="mb-1 text-xl font-medium tracking-tight text-white/90">
+                                                {getTranslation(config, 'workspaces.title') || 'Meus Espaços'}
+                                            </h3>
+                                            <p className="mt-1 max-w-2xl text-[11px] font-medium leading-relaxed tracking-wide text-white/30">
+                                                {getTranslation(config, 'workspaces.desc') ||
+                                                    'Crie e gerencie diferentes ambientes de trabalho com atalhos personalizados.'}
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setWorkspaceSwitchModalOpen(true)}
+                                            className="group/switch inline-flex shrink-0 items-center gap-1.5 rounded-lg px-1 py-0.5 text-[12px] text-white/42 transition-colors hover:text-white/78 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
+                                            aria-haspopup="dialog"
+                                            aria-expanded={workspaceSwitchModalOpen}
+                                        >
+                                            <span>{getTranslation(config, 'workspaces.switch_mode_short')}</span>
+                                            <span className="text-white/22" aria-hidden>
+                                                ·
+                                            </span>
+                                            <span className="font-medium text-white/68 group-hover/switch:text-white/88">
+                                                {workspaceSwitchModeLabel}
+                                            </span>
+                                            <ChevronRight
+                                                size={13}
+                                                strokeWidth={2}
+                                                className="text-white/28 transition-transform group-hover/switch:translate-x-0.5 group-hover/switch:text-white/50"
+                                                aria-hidden
+                                            />
+                                        </button>
+                                    </div>
+                                </>
+                            ) : null}
                         </motion.div>
                     </div>
 
@@ -1891,159 +2069,8 @@ const WorkspacesTab = React.memo(({
                                 animate={{ opacity: 1, scale: 1 }}
                                 exit={{ opacity: 0, scale: 0.95 }}
                                 transition={{ duration: 0.3 }}
-                                className="flex flex-col gap-8"
+                                className="flex flex-col"
                             >
-
-                                <div className="w-full">
-                                    <button
-                                        type="button"
-                                        id="workspace-switch-heading"
-                                        aria-expanded={workspaceSwitchOpen}
-                                        aria-controls="workspace-switch-panel"
-                                        onClick={() => setWorkspaceSwitchOpen(o => !o)}
-                                        className="group/trigger flex w-full items-center gap-3 rounded-2xl border border-white/[0.07] bg-gradient-to-b from-white/[0.06] to-white/[0.02] px-4 py-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-all duration-200 hover:border-white/[0.12] hover:from-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050505]"
-                                    >
-                                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.06] text-white/55 ring-1 ring-white/[0.06] transition-colors group-hover/trigger:bg-white/[0.09] group-hover/trigger:text-white/75">
-                                            <ArrowLeftRight size={17} strokeWidth={1.65} aria-hidden />
-                                        </span>
-                                        <div className="min-w-0 flex-1">
-                                            <p className="text-[11px] font-medium tracking-wide text-white/42">
-                                                {getTranslation(config, 'workspaces.switch_mode_short')}
-                                            </p>
-                                            <p className="mt-0.5 truncate text-[13px] font-semibold tracking-tight text-white/95">
-                                                {(config.workspaceSwitchMode ?? 'hotkeys') === 'hotkeys'
-                                                    ? getTranslation(config, 'workspaces.switch_mode_hotkeys')
-                                                    : getTranslation(config, 'workspaces.switch_mode_picker')}
-                                            </p>
-                                        </div>
-                                        <span
-                                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black/30 text-white/40 ring-1 ring-white/[0.06] transition-all duration-200 group-hover/trigger:bg-black/40 group-hover/trigger:text-white/55 ${workspaceSwitchOpen ? 'bg-black/45 text-white/65' : ''}`}
-                                        >
-                                            <ChevronDown
-                                                size={16}
-                                                strokeWidth={2}
-                                                className={`transition-transform duration-200 ${workspaceSwitchOpen ? 'rotate-180' : ''}`}
-                                                aria-hidden
-                                            />
-                                        </span>
-                                    </button>
-
-                                    <AnimatePresence initial={false}>
-                                        {workspaceSwitchOpen && (
-                                            <motion.div
-                                                id="workspace-switch-panel"
-                                                role="region"
-                                                aria-labelledby="workspace-switch-heading"
-                                                initial={{ opacity: 0, y: -4 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                exit={{ opacity: 0, y: -4 }}
-                                                transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-                                            >
-                                                <div className="mt-3 rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4 backdrop-blur-sm">
-                                                    <div
-                                                        className="flex flex-col gap-2.5"
-                                                        role="radiogroup"
-                                                        aria-label={getTranslation(config, 'workspaces.switch_mode')}
-                                                    >
-                                                        <button
-                                                            type="button"
-                                                            role="radio"
-                                                            aria-checked={(config.workspaceSwitchMode ?? 'hotkeys') === 'hotkeys'}
-                                                            onClick={() =>
-                                                                setConfig({ ...config, workspaceSwitchMode: 'hotkeys' })
-                                                            }
-                                                            className={`group/opt relative w-full rounded-xl border px-4 py-3.5 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0a0a] ${
-                                                                (config.workspaceSwitchMode ?? 'hotkeys') === 'hotkeys'
-                                                                    ? 'border-white/20 bg-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
-                                                                    : 'border-white/[0.06] bg-black/20 hover:border-white/12 hover:bg-white/[0.04]'
-                                                            }`}
-                                                        >
-                                                            <div className="flex gap-3">
-                                                                <span
-                                                                    className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ring-1 transition-colors ${
-                                                                        (config.workspaceSwitchMode ?? 'hotkeys') === 'hotkeys'
-                                                                            ? 'bg-white/[0.12] text-white ring-white/15'
-                                                                            : 'bg-white/[0.04] text-white/45 ring-white/[0.06] group-hover/opt:text-white/70'
-                                                                    }`}
-                                                                    aria-hidden
-                                                                >
-                                                                    <Keyboard size={18} strokeWidth={1.5} />
-                                                                </span>
-                                                                <div className="min-w-0 flex-1 pt-0.5">
-                                                                    <div className="flex items-start justify-between gap-2">
-                                                                        <span className="text-sm font-semibold leading-snug text-white">
-                                                                            {getTranslation(config, 'workspaces.switch_mode_hotkeys')}
-                                                                        </span>
-                                                                        {(config.workspaceSwitchMode ?? 'hotkeys') === 'hotkeys' && (
-                                                                            <Check
-                                                                                size={16}
-                                                                                strokeWidth={2.5}
-                                                                                className="mt-0.5 shrink-0 text-emerald-400/95"
-                                                                                aria-hidden
-                                                                            />
-                                                                        )}
-                                                                    </div>
-                                                                    <p className="mt-2 text-[12px] leading-relaxed text-white/48">
-                                                                        {getTranslation(config, 'workspaces.switch_mode_hotkeys_hint')}
-                                                                    </p>
-                                                                </div>
-                                                            </div>
-                                                        </button>
-
-                                                        <button
-                                                            type="button"
-                                                            role="radio"
-                                                            aria-checked={config.workspaceSwitchMode === 'picker'}
-                                                            onClick={() =>
-                                                                setConfig({ ...config, workspaceSwitchMode: 'picker' })
-                                                            }
-                                                            className={`group/opt relative w-full rounded-xl border px-4 py-3.5 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0a0a] ${
-                                                                config.workspaceSwitchMode === 'picker'
-                                                                    ? 'border-white/20 bg-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
-                                                                    : 'border-white/[0.06] bg-black/20 hover:border-white/12 hover:bg-white/[0.04]'
-                                                            }`}
-                                                        >
-                                                            <div className="flex gap-3">
-                                                                <span
-                                                                    className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ring-1 transition-colors ${
-                                                                        config.workspaceSwitchMode === 'picker'
-                                                                            ? 'bg-white/[0.12] text-white ring-white/15'
-                                                                            : 'bg-white/[0.04] text-white/45 ring-white/[0.06] group-hover/opt:text-white/70'
-                                                                    }`}
-                                                                    aria-hidden
-                                                                >
-                                                                    <Layers size={18} strokeWidth={1.5} />
-                                                                </span>
-                                                                <div className="min-w-0 flex-1 pt-0.5">
-                                                                    <div className="flex items-start justify-between gap-2">
-                                                                        <span className="text-sm font-semibold leading-snug text-white">
-                                                                            {getTranslation(config, 'workspaces.switch_mode_picker')}
-                                                                        </span>
-                                                                        {config.workspaceSwitchMode === 'picker' && (
-                                                                            <Check
-                                                                                size={16}
-                                                                                strokeWidth={2.5}
-                                                                                className="mt-0.5 shrink-0 text-emerald-400/95"
-                                                                                aria-hidden
-                                                                            />
-                                                                        )}
-                                                                    </div>
-                                                                    <p className="mt-2 text-[12px] leading-relaxed text-white/48">
-                                                                        {getTranslation(config, 'workspaces.switch_mode_picker_hint')}
-                                                                    </p>
-                                                                </div>
-                                                            </div>
-                                                        </button>
-                                                    </div>
-                                                    <p className="mt-4 border-t border-white/[0.06] pt-3.5 text-[11px] leading-relaxed text-white/36">
-                                                        {getTranslation(config, 'workspaces.switch_mode_compact_hint')}
-                                                    </p>
-                                                </div>
-                                            </motion.div>
-                                        )}
-                                    </AnimatePresence>
-                                </div>
-
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 auto-rows-[200px] pb-12">
                                     {config.workspaces.map((workspace, index) => (
                                         <WorkspaceCard
@@ -2072,56 +2099,102 @@ const WorkspacesTab = React.memo(({
                                 className="flex-1 flex flex-col"
                             >
                                 {selectedWorkspaceIndex !== null && config.workspaces[selectedWorkspaceIndex] && (
-                                    <div className="flex items-center gap-6 mb-6 bg-white/[0.015] p-4 rounded-xl border border-white/5 backdrop-blur-3xl">
-                                        <div className="flex-1">
-                                            {workspaceFolderPath.length === 0 && (
-                                                <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.3em] block mb-3 ml-1">{getTranslation(config, 'workspaces.id') || 'Identificação do Espaço'}</label>
+                                    <div className="mb-6 flex items-center gap-3">
+                                        <div className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl border border-white/[0.07] bg-[#0a0a0a]/60 px-3 py-2.5">
+                                            {workspaceFolderPath.length === 0 &&
+                                            (config.workspaceSwitchMode ?? 'hotkeys') === 'picker' ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setWorkspaceWheelIconModalOpen(true)}
+                                                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.1] bg-white/[0.06] transition-colors hover:bg-white/[0.11] hover:border-white/20"
+                                                    title={getTranslation(config, 'workspaces.picker_wheel_icon_open')}
+                                                >
+                                                    {(() => {
+                                                        const pickName =
+                                                            config.workspaces[selectedWorkspaceIndex].pickerIconName ||
+                                                            'Layers';
+                                                        const PreviewIcon = getIcon(pickName);
+                                                        return (
+                                                            <PreviewIcon
+                                                                size={18}
+                                                                strokeWidth={1.5}
+                                                                className="text-white/85"
+                                                            />
+                                                        );
+                                                    })()}
+                                                </button>
+                                            ) : (
+                                                <div
+                                                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.06] text-[10px] font-bold tabular-nums text-white/45"
+                                                    aria-hidden
+                                                >
+                                                    {workspaceFolderPath.length > 0 ? (
+                                                        <Folder size={16} strokeWidth={1.5} className="text-white/40" />
+                                                    ) : (
+                                                        config.workspaces[selectedWorkspaceIndex].hotkey
+                                                    )}
+                                                </div>
                                             )}
                                             <input
                                                 type="text"
                                                 value={config.workspaces[selectedWorkspaceIndex].name}
-                                                onChange={e => {
+                                                onChange={(e) => {
                                                     const nw = [...config.workspaces];
-                                                    nw[selectedWorkspaceIndex] = { ...nw[selectedWorkspaceIndex], name: e.target.value };
+                                                    nw[selectedWorkspaceIndex] = {
+                                                        ...nw[selectedWorkspaceIndex],
+                                                        name: e.target.value,
+                                                    };
                                                     setConfig({ ...config, workspaces: nw });
                                                 }}
-                                                className={`w-full bg-transparent ${workspaceFolderPath.length > 0 ? 'text-lg' : 'text-2xl'} font-medium text-white/90 border-none outline-none placeholder-white/10 focus:placeholder-transparent transition-all tracking-tight`}
-                                                placeholder="Neural Network..."
+                                                className={`min-w-0 flex-1 bg-transparent px-1 ${
+                                                    workspaceFolderPath.length > 0 ? 'text-base' : 'text-lg'
+                                                } font-medium text-white/90 border-none outline-none placeholder-white/20 tracking-tight`}
+                                                placeholder={getTranslation(config, 'workspaces.id') || 'Workspace'}
                                             />
+                                            {workspaceFolderPath.length === 0 && (
+                                                <span className="hidden shrink-0 rounded-lg bg-white/[0.05] px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-white/30 sm:inline">
+                                                    {config.workspaces[selectedWorkspaceIndex].hotkey}
+                                                </span>
+                                            )}
                                         </div>
                                         {workspaceFolderPath.length === 0 && (
-                                            <>
-                                                <div className="h-10 w-px bg-white/5 mx-2" />
-                                                <div className="flex items-center gap-2.5">
-                                                    <button
-                                                        onClick={() => {
-                                                            const nw = [...config.workspaces];
-                                                            nw[selectedWorkspaceIndex] = {
-                                                                ...nw[selectedWorkspaceIndex],
-                                                                enabled: !nw[selectedWorkspaceIndex].enabled
-                                                            };
-                                                            setConfig({ ...config, workspaces: nw });
-                                                        }}
-                                                        className={`h-10 px-5 rounded-xl text-[9px] font-semibold uppercase tracking-[0.2em] transition-all border duration-500 ${config.workspaces[selectedWorkspaceIndex].enabled ? 'bg-white text-black border-white shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-white/[0.02] text-white/30 border-white/5 hover:bg-white/10 hover:text-white'}`}
-                                                    >
-                                                        {config.workspaces[selectedWorkspaceIndex].enabled ? getTranslation(config, 'status.online') || 'Online' : getTranslation(config, 'status.offline') || 'Offline'}
-                                                    </button>
-                                                    <button
-                                                        onClick={() => {
-                                                            if (selectedWorkspaceIndex !== null) deleteWorkspace(selectedWorkspaceIndex);
-                                                        }}
-                                                        className="h-10 w-10 flex items-center justify-center bg-red-500/5 hover:bg-red-500/10 text-red-500/60 hover:text-red-500 rounded-xl border border-red-500/10 hover:border-red-500/20 transition-all duration-300 shrink-0"
-                                                        title={getTranslation(config, 'workspaces.confirm_delete') || 'Remove workspace'}
-                                                    >
-                                                        <Trash2 size={18} strokeWidth={1.5} />
-                                                    </button>
-                                                </div>
-                                            </>
+                                            <div className="flex shrink-0 items-center gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const nw = [...config.workspaces];
+                                                        nw[selectedWorkspaceIndex] = {
+                                                            ...nw[selectedWorkspaceIndex],
+                                                            enabled: !nw[selectedWorkspaceIndex].enabled,
+                                                        };
+                                                        setConfig({ ...config, workspaces: nw });
+                                                    }}
+                                                    className={`h-10 shrink-0 rounded-xl px-4 text-[9px] font-semibold uppercase tracking-[0.16em] transition-all border ${
+                                                        config.workspaces[selectedWorkspaceIndex].enabled
+                                                            ? 'bg-white text-black border-white'
+                                                            : 'bg-white/[0.03] text-white/35 border-white/10 hover:bg-white/[0.08] hover:text-white/70'
+                                                    }`}
+                                                >
+                                                    {config.workspaces[selectedWorkspaceIndex].enabled
+                                                        ? getTranslation(config, 'status.online') || 'Online'
+                                                        : getTranslation(config, 'status.offline') || 'Offline'}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        if (selectedWorkspaceIndex !== null) {
+                                                            deleteWorkspace(selectedWorkspaceIndex);
+                                                        }
+                                                    }}
+                                                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-red-500/10 bg-red-500/5 text-red-500/60 transition-all hover:border-red-500/20 hover:bg-red-500/10 hover:text-red-500"
+                                                    title={getTranslation(config, 'workspaces.confirm_delete') || 'Remove workspace'}
+                                                >
+                                                    <Trash2 size={16} strokeWidth={1.5} />
+                                                </button>
+                                            </div>
                                         )}
                                     </div>
                                 )}
-
-                                {renderWorkspaceWheelIconBlock()}
 
                                 {/* App Grid - Refined 2026 */}
                                 <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar bg-black/40 rounded-xl border border-white/5 p-5 pb-4 mb-4 shadow-inner" style={{ maxHeight: 'clamp(260px, 55vh, 640px)' }}>
@@ -2223,6 +2296,7 @@ const WorkspacesTab = React.memo(({
             </div>
         </div>
             {workspaceWheelIconModal}
+            {workspaceSwitchModal}
         </>
     );
 });
@@ -2326,7 +2400,7 @@ const ShortcutRecorderField: React.FC<{
 
     return (
         <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em] ml-1">{label}</label>
+            <label className="text-[13px] font-medium text-white/78">{label}</label>
             <div className="flex gap-3">
                 <div
                     ref={inputRef}
@@ -2438,394 +2512,279 @@ const InterfaceTab = React.memo((props: {
     setShowAppSelector: (show: boolean) => void
 }) => {
     const { config, setConfig, handleCenterTypeChange, handleCenterTargetChange, setAppSelectorMode, setShowAppSelector } = props;
+    const t = (key: string) => getTranslation(config, key);
+
+    const pushMouseSettings = (patch: { enableMouseTrigger?: boolean; mouseTriggerMode?: 'click' | 'hold' }) => {
+        window.electron?.setSettings?.({
+            enableMouseTrigger: patch.enableMouseTrigger ?? config.enableMouseTrigger,
+            mouseTriggerMode: patch.mouseTriggerMode ?? config.mouseTriggerMode ?? 'click',
+            globalShortcut: config.globalShortcut,
+        });
+    };
+
     return (
         <motion.div
-            className="pt-20 overflow-y-auto custom-scrollbar"
+            className="h-full overflow-y-auto custom-scrollbar pb-24 pt-20"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
             transition={{ duration: 0.3 }}
         >
-            <div className="max-w-4xl mx-auto px-6 md:px-10 lg:px-12">
+            <div className="mx-auto max-w-4xl px-6 md:px-10 lg:px-12">
                 <motion.div
                     className="mb-12"
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.1 }}
                 >
-                    <h3 className="text-xl font-semibold text-white mb-1 tracking-tight">{getTranslation(config, 'settings.interface_title')}</h3>
-                    <p className="text-[11px] text-white/30 font-medium tracking-wide leading-relaxed mt-1 max-w-2xl">
-                        {getTranslation(config, 'settings.interface_desc')}
+                    <h3 className="mb-1 text-xl font-semibold tracking-tight text-white">{t('settings.interface_title')}</h3>
+                    <p className="mt-1 max-w-2xl text-[11px] font-medium leading-relaxed tracking-wide text-white/30">
+                        {t('settings.interface_desc')}
                     </p>
                 </motion.div>
 
-                <div className="space-y-5">
-                    {/* GLOBAL SHORTCUT - Refined 2026 */}
-                    <motion.div
-                        className="space-y-4 bg-white/[0.04] border border-white/[0.08] p-5 rounded-xl hover:bg-white/[0.06] transition-colors duration-500"
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.3, delay: 0.2 }}
-                    >
-                        <div className="bg-white/5 rounded-2xl p-6 border border-white/10 space-y-6">
-                            <ShortcutRecorderField
-                                label={getTranslation(config, 'interface.global_shortcut') || 'Global Shortcut'}
-                                value={config.globalShortcut || 'Alt+Space'}
-                                config={config}
-                                onRecord={(shortcut) => setConfig(prev => ({ ...prev, globalShortcut: shortcut }))}
-                            />
-                            <div className="flex items-start gap-3 rounded-xl border border-white/[0.06] bg-black/20 px-4 py-3">
-                                <AlertTriangle size={14} className="mt-0.5 shrink-0 text-white/30" />
-                                <p className="text-[11px] leading-relaxed text-white/38">
-                                    {getTranslation(config, 'interface.shortcut_conflict_hint')}
-                                </p>
-                            </div>
+                <div className="flex flex-col gap-6">
+                    <SettingsSection title={t('interface.section_activation')} description={t('interface.section_activation_desc')}>
+                        <ShortcutRecorderField
+                            label={t('interface.global_shortcut') || 'Global Shortcut'}
+                            value={config.globalShortcut || 'Alt+Space'}
+                            config={config}
+                            onRecord={(shortcut) => setConfig((prev: UIConfig) => ({ ...prev, globalShortcut: shortcut }))}
+                        />
+                        <div className="flex items-start gap-3 rounded-xl border border-white/[0.06] bg-black/20 px-4 py-3">
+                            <AlertTriangle size={14} className="mt-0.5 shrink-0 text-white/30" />
+                            <p className="text-[12px] leading-relaxed text-white/40">{t('interface.shortcut_conflict_hint')}</p>
                         </div>
-                    </motion.div>
+                    </SettingsSection>
 
-                    {/* SYSTEM STARTUP - Refined 2026 */}
-                    <motion.div
-                        className="p-5 rounded-xl bg-gradient-to-br from-white/[0.04] to-transparent border border-white/[0.08] flex items-center justify-between hover:bg-white/[0.07] transition-all duration-500 group"
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.3, delay: 0.25 }}
-                    >
-                        <div className="relative z-10 pr-4">
-                            <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.25em] block ml-0.5 mb-0.5">{getTranslation(config, 'interface.system_integration')}</label>
-                            <div className="flex items-center gap-2">
-                                <h4 className="text-[13px] font-medium text-white">{getTranslation(config, 'interface.autostart')}</h4>
-                                <InfoHint
-                                    title={getTranslation(config, 'tooltip.autostart_title')}
-                                    description={getTranslation(config, 'tooltip.autostart_desc')}
-                                />
-                            </div>
-                        </div>
-                        <motion.button
-                            onClick={() => {
+                    <SettingsSection title={t('interface.section_system')} description={t('interface.section_system_desc')}>
+                        <SettingsToggleRow
+                            label={t('interface.autostart')}
+                            description={t('interface.autostart_hint')}
+                            hintTitle={t('tooltip.autostart_title')}
+                            hintDescription={t('tooltip.autostart_desc')}
+                            enabled={config.openAtLogin}
+                            onToggle={() => {
                                 const newValue = !config.openAtLogin;
                                 setConfig({ ...config, openAtLogin: newValue });
-                                if (window.electron && window.electron.setLoginItemSettings) {
-                                    window.electron.setLoginItemSettings({ openAtLogin: newValue });
-                                }
+                                window.electron?.setLoginItemSettings?.({ openAtLogin: newValue });
                             }}
-                            className={`relative w-16 h-10 rounded-2xl transition-all duration-500 p-1.5 shadow-lg ${config.openAtLogin ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                        >
-                            <motion.div
-                                className={`w-7 h-7 rounded-[0.8rem] shadow-xl ${config.openAtLogin ? 'bg-black' : 'bg-white/20'}`}
-                                animate={{ x: config.openAtLogin ? 26 : 0 }}
-                                transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                            />
-                        </motion.button>
-                    </motion.div>
+                        />
 
-                    {/* MOUSE TRIGGER - New 2026 */}
-                    <motion.div
-                        className="p-5 rounded-xl bg-gradient-to-br from-white/[0.04] to-transparent border border-white/[0.08] hover:bg-white/[0.07] transition-all duration-500 group"
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.3, delay: 0.28 }}
-                    >
-                        <div className="flex items-center justify-between gap-4">
-                            <div className="relative z-10 pr-4">
-                                <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.25em] block ml-0.5 mb-0.5">{getTranslation(config, 'interface.somatic_input')}</label>
-                                <div className="flex items-center gap-2">
-                                    <h4 className="text-[13px] font-medium text-white">{getTranslation(config, 'interface.mouse_trigger')}</h4>
-                                    <InfoHint
-                                        title={getTranslation(config, 'tooltip.mouse_trigger_title')}
-                                        description={getTranslation(config, 'tooltip.mouse_trigger_desc')}
-                                    />
-                                </div>
-                            </div>
-                            <motion.button
-                                onClick={() => {
+                        <div className="space-y-4 border-t border-white/[0.06] pt-5">
+                            <SettingsToggleRow
+                                label={t('interface.mouse_trigger')}
+                                description={t('interface.mouse_trigger_hint')}
+                                hintTitle={t('tooltip.mouse_trigger_title')}
+                                hintDescription={t('tooltip.mouse_trigger_desc')}
+                                enabled={config.enableMouseTrigger}
+                                onToggle={() => {
                                     const newValue = !config.enableMouseTrigger;
                                     setConfig({ ...config, enableMouseTrigger: newValue });
-                                    if (window.electron && window.electron.setSettings) {
-                                        window.electron.setSettings({
-                                            enableMouseTrigger: newValue,
-                                            mouseTriggerMode: config.mouseTriggerMode || 'click',
-                                            globalShortcut: config.globalShortcut,
-                                        });
-                                    }
+                                    pushMouseSettings({ enableMouseTrigger: newValue });
                                 }}
-                                className={`relative w-16 h-10 shrink-0 rounded-2xl transition-all duration-500 p-1.5 shadow-lg ${config.enableMouseTrigger ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.95 }}
-                            >
-                                <motion.div
-                                    className={`w-7 h-7 rounded-[0.8rem] shadow-xl ${config.enableMouseTrigger ? 'bg-black' : 'bg-white/20'}`}
-                                    animate={{ x: config.enableMouseTrigger ? 26 : 0 }}
-                                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                                />
-                            </motion.button>
+                            />
+
+                            <AnimatePresence initial={false}>
+                                {config.enableMouseTrigger ? (
+                                    <motion.div
+                                        initial={{ opacity: 0, height: 0 }}
+                                        animate={{ opacity: 1, height: 'auto' }}
+                                        exit={{ opacity: 0, height: 0 }}
+                                        className="overflow-hidden"
+                                    >
+                                        <SettingsSegmentGroup
+                                            pairedDescriptions
+                                            value={config.mouseTriggerMode || 'click'}
+                                            onChange={(mode) => {
+                                                const next = mode as 'click' | 'hold';
+                                                setConfig({ ...config, mouseTriggerMode: next });
+                                                pushMouseSettings({ mouseTriggerMode: next });
+                                            }}
+                                            options={[
+                                                {
+                                                    id: 'click',
+                                                    label: t('interface.mouse_mode_click'),
+                                                    description: t('interface.mouse_mode_click_desc'),
+                                                },
+                                                {
+                                                    id: 'hold',
+                                                    label: t('interface.mouse_mode_hold'),
+                                                    description: t('interface.mouse_mode_hold_desc'),
+                                                },
+                                            ]}
+                                        />
+                                    </motion.div>
+                                ) : null}
+                            </AnimatePresence>
                         </div>
+                    </SettingsSection>
 
-                        <AnimatePresence>
-                            {config.enableMouseTrigger && (
-                                <motion.div
-                                    initial={{ opacity: 0, height: 0, y: -6 }}
-                                    animate={{ opacity: 1, height: 'auto', y: 0 }}
-                                    exit={{ opacity: 0, height: 0, y: -6 }}
-                                    className="overflow-hidden"
-                                >
-                                    <div className="mt-5 flex gap-1.5 rounded-2xl border border-white/[0.07] bg-black/20 p-1.5">
-                                        {(['click', 'hold'] as const).map((mode) => {
-                                            const active = (config.mouseTriggerMode || 'click') === mode;
-                                            return (
-                                                <button
-                                                    key={mode}
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setConfig({ ...config, mouseTriggerMode: mode });
-                                                        window.electron?.setSettings?.({
-                                                            enableMouseTrigger: config.enableMouseTrigger,
-                                                            mouseTriggerMode: mode,
-                                                            globalShortcut: config.globalShortcut,
-                                                        });
-                                                    }}
-                                                    className={`w-1/2 rounded-xl px-4 py-3 text-left transition-all duration-300 ${
-                                                        active
-                                                            ? 'bg-white text-black shadow-lg'
-                                                            : 'text-white/35 hover:bg-white/[0.05] hover:text-white/70'
-                                                    }`}
-                                                >
-                                                    <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em]">
-                                                        {getTranslation(config, mode === 'click' ? 'interface.mouse_mode_click' : 'interface.mouse_mode_hold')}
-                                                        {active && <Check size={12} strokeWidth={3} />}
-                                                    </div>
-                                                    <div className={`mt-1 text-[10px] leading-relaxed ${active ? 'text-black/55' : 'text-white/28'}`}>
-                                                        {getTranslation(config, mode === 'click' ? 'interface.mouse_mode_click_desc' : 'interface.mouse_mode_hold_desc')}
-                                                    </div>
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-                    </motion.div>
-
-                    <div className="h-px bg-white/[0.08]" />
-
-                    {/* CENTER BUTTON - Refined 2026 */}
-                    <motion.div
-                        className="space-y-5 bg-white/[0.04] border border-white/[0.08] p-5 rounded-xl shadow-[0_12px_40px_-10px_rgba(0,0,0,0.5)]"
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.3, delay: 0.3 }}
+                    <SettingsSection
+                        title={t('interface.section_center')}
+                        description={t('interface.section_center_desc')}
                     >
-                        <div>
-                            <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.25em] block ml-0.5 mb-4">{getTranslation(config, 'interface.center_button_func')}</label>
-                            <div className="flex items-center gap-2">
-                                <h4 className="text-sm font-medium text-white tracking-tight">{getTranslation(config, 'interface.neural_center')}</h4>
-                                <InfoHint
-                                    title={getTranslation(config, 'tooltip.radial_center_title')}
-                                    description={getTranslation(config, 'tooltip.radial_center_desc')}
-                                />
-                            </div>
-                        </div>
+                        <SettingsSegmentGroup
+                            value={config.centerButton.type}
+                            onChange={(mode) => handleCenterTypeChange(mode as (typeof CENTER_BUTTON_MODES)[number])}
+                            options={CENTER_BUTTON_MODES.map((mode) => ({
+                                id: mode,
+                                label: t(`interface.center_mode_${mode}`),
+                            }))}
+                        />
 
-                        <div className="flex bg-black/40 p-1 rounded-xl border border-white/5 shadow-inner">
-                            {(['app', 'widget', 'command', 'none', 'cancel'] as const).map(mode => (
-                                <button
-                                    key={mode}
-                                    onClick={() => handleCenterTypeChange(mode)}
-                                    className={`flex-1 py-3 rounded-lg text-[10px] font-semibold uppercase tracking-[0.1em] transition-all duration-500 ${config.centerButton.type === mode
-                                        ? 'bg-white text-black shadow-lg'
-                                        : 'text-white/20 hover:text-white/60 hover:bg-white/5'
-                                        }`}
-                                >
-                                    {mode}
-                                </button>
-                            ))}
-                        </div>
                         <AnimatePresence mode="wait">
-                            {config.centerButton.type === 'app' && (
+                            {config.centerButton.type === 'app' ? (
                                 <motion.div
+                                    key="center-app"
                                     initial={{ opacity: 0, height: 0 }}
                                     animate={{ opacity: 1, height: 'auto' }}
                                     exit={{ opacity: 0, height: 0 }}
-                                    className="pt-4"
+                                    className="overflow-hidden"
                                 >
-                                    <div className="flex items-center gap-3 p-3 bg-white/5 rounded-xl border border-white/10">
+                                    <div className="flex items-center gap-3 rounded-xl border border-white/[0.07] bg-black/20 p-3">
                                         {config.centerButton.target ? (
                                             <>
-                                                <div className="w-10 h-10 bg-black/50 rounded-lg flex items-center justify-center text-white border border-white/10 text-lg">
+                                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-black/40 text-white">
                                                     {(() => {
                                                         const Icon = getIcon(config.centerButton.iconName);
                                                         return <Icon size={20} />;
                                                     })()}
                                                 </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="text-sm font-bold text-white truncate">{config.centerButton.label}</div>
-                                                    <div className="text-xs text-white/40 truncate">{config.centerButton.target}</div>
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="truncate text-sm font-medium text-white/90">
+                                                        {config.centerButton.label}
+                                                    </div>
+                                                    <div className="truncate text-[11px] text-white/40">
+                                                        {config.centerButton.target}
+                                                    </div>
                                                 </div>
                                             </>
                                         ) : (
-                                            <div className="flex-1 text-sm text-white/40 italic pl-1">{getTranslation(config, 'status.no_app_selected')}</div>
+                                            <div className="flex-1 pl-1 text-sm text-white/40 italic">
+                                                {t('status.no_app_selected')}
+                                            </div>
                                         )}
                                         <button
+                                            type="button"
                                             onClick={() => {
                                                 setAppSelectorMode('center');
                                                 setShowAppSelector(true);
                                             }}
-                                            className="px-4 py-2 bg-white text-black text-xs font-bold rounded-lg hover:scale-105 transition-transform shadow-lg"
+                                            className="shrink-0 rounded-lg bg-white px-4 py-2 text-xs font-semibold text-black transition-transform hover:scale-[1.02]"
                                         >
-                                            {getTranslation(config, 'action.select_app')}
+                                            {t('action.select_app')}
                                         </button>
                                     </div>
                                 </motion.div>
-                            )}
+                            ) : null}
 
-                            {config.centerButton.type === 'widget' && (
+                            {config.centerButton.type === 'widget' ? (
                                 <motion.div
+                                    key="center-widget"
                                     initial={{ opacity: 0, height: 0 }}
                                     animate={{ opacity: 1, height: 'auto' }}
                                     exit={{ opacity: 0, height: 0 }}
-                                    className="pt-4"
+                                    className="overflow-hidden"
                                 >
                                     <select
-                                        value={AVAILABLE_WIDGETS.find(w => w.command === config.centerButton.target)?.id || ''}
+                                        value={AVAILABLE_WIDGETS.find((w) => w.command === config.centerButton.target)?.id || ''}
                                         onChange={(e) => handleCenterTargetChange(e.target.value, 'widget')}
-                                        className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white focus:border-white/30 outline-none hover:bg-white/[0.08] transition-colors cursor-pointer"
+                                        className="w-full cursor-pointer rounded-xl border border-white/[0.08] bg-black/20 p-3 text-sm text-white outline-none transition-colors hover:bg-white/[0.04] focus:border-white/20"
                                     >
-                                        <option value="" disabled className="bg-[#111] text-white/50">{getTranslation(config, 'interface.select_module')}</option>
-                                        {AVAILABLE_WIDGETS.map(w => (
-                                            <option key={w.id} value={w.id} className="bg-[#111] text-white">{w.name}</option>
+                                        <option value="" disabled className="bg-[#111] text-white/50">
+                                            {t('interface.select_module')}
+                                        </option>
+                                        {AVAILABLE_WIDGETS.map((w) => (
+                                            <option key={w.id} value={w.id} className="bg-[#111] text-white">
+                                                {w.name}
+                                            </option>
                                         ))}
                                     </select>
                                 </motion.div>
-                            )}
+                            ) : null}
 
-                            {config.centerButton.type === 'command' && (
+                            {config.centerButton.type === 'command' ? (
                                 <motion.div
+                                    key="center-command"
                                     initial={{ opacity: 0, height: 0 }}
                                     animate={{ opacity: 1, height: 'auto' }}
                                     exit={{ opacity: 0, height: 0 }}
-                                    className="pt-4 space-y-3"
+                                    className="space-y-4 overflow-hidden"
                                 >
-                                    <div className="space-y-6">
-                                        <ShortcutRecorderField
-                                            label={getTranslation(config, 'interface.shortcut_center') || 'Neural Shortcut'}
-                                            value={config.centerButton.target.startsWith('shortcut:') ? config.centerButton.target.replace('shortcut:', '') : 'NONE'}
-                                            config={config}
-                                            onRecord={(shortcut) => setConfig(prev => ({
+                                    <ShortcutRecorderField
+                                        label={t('interface.shortcut_center') || 'Neural Shortcut'}
+                                        value={
+                                            config.centerButton.target.startsWith('shortcut:')
+                                                ? config.centerButton.target.replace('shortcut:', '')
+                                                : 'NONE'
+                                        }
+                                        config={config}
+                                        onRecord={(shortcut) =>
+                                            setConfig((prev: UIConfig) => ({
                                                 ...prev,
                                                 centerButton: {
                                                     ...prev.centerButton,
                                                     target: `shortcut:${shortcut}`,
-                                                    label: shortcut
-                                                }
-                                            }))}
+                                                    label: shortcut,
+                                                },
+                                            }))
+                                        }
+                                    />
+                                    <div className="space-y-2">
+                                        <label className="text-[13px] font-medium text-white/78">{t('interface.button_label')}</label>
+                                        <input
+                                            type="text"
+                                            value={config.centerButton.label}
+                                            onChange={(e) =>
+                                                setConfig((prev: UIConfig) => ({
+                                                    ...prev,
+                                                    centerButton: { ...prev.centerButton, label: e.target.value },
+                                                }))
+                                            }
+                                            placeholder={t('interface.button_label_placeholder')}
+                                            maxLength={10}
+                                            className="h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-4 text-sm text-white outline-none transition-colors focus:border-white/20 focus:bg-white/[0.04]"
                                         />
-                                        <div>
-                                            <label className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em] ml-1 block mb-2">{getTranslation(config, 'interface.button_label')}</label>
-                                            <input
-                                                type="text"
-                                                value={config.centerButton.label}
-                                                onChange={(e) => setConfig(prev => ({ ...prev, centerButton: { ...prev.centerButton, label: e.target.value } }))}
-                                                placeholder={getTranslation(config, 'interface.button_label_placeholder')}
-                                                maxLength={10}
-                                                className="w-full h-12 bg-white/5 border border-white/10 rounded-xl px-5 text-sm text-white focus:border-white/30 outline-none transition-all"
-                                            />
-                                        </div>
                                     </div>
                                 </motion.div>
-                            )}
+                            ) : null}
                         </AnimatePresence>
-                    </motion.div>
+                    </SettingsSection>
 
-                    <div className="h-px bg-white/[0.08]" />
+                    <SettingsSection title={t('interface.section_general')} description={t('interface.section_general_desc')}>
+                        <SettingsToggleRow
+                            label={t('interface.center_screen')}
+                            description={t('interface.center_screen_hint')}
+                            hintTitle={t('tooltip.fixed_position_title')}
+                            hintDescription={t('tooltip.fixed_position_desc')}
+                            enabled={config.fixedPosition}
+                            onToggle={() => setConfig({ ...config, fixedPosition: !config.fixedPosition })}
+                        />
 
-                    {/* MENU POSITION */}
-                    <motion.div
-                        className="space-y-4"
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.3, delay: 0.35 }}
-                    >
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                <label className="text-sm font-normal text-white">{getTranslation(config, 'interface.center_screen')}</label>
-                                <InfoHint
-                                    title={getTranslation(config, 'tooltip.fixed_position_title')}
-                                    description={getTranslation(config, 'tooltip.fixed_position_desc')}
-                                />
-                            </div>
-                            <motion.button
-                                onClick={() => setConfig({ ...config, fixedPosition: !config.fixedPosition })}
-                                className={`relative w-14 h-8 rounded-xl transition-all duration-500 p-1.5 ${config.fixedPosition ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.98 }}
-                            >
-                                <motion.div
-                                    className={`w-5 h-5 rounded-lg shadow-lg ${config.fixedPosition ? 'bg-black' : 'bg-white/20'}`}
-                                    animate={{ x: config.fixedPosition ? 24 : 0 }}
-                                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                                />
-                            </motion.button>
-                        </div>
-                    </motion.div>
-
-                    <div className="h-px bg-white/[0.08]" />
-
-                    {/* LANGUAGE SELECTION - Professional Dropdown Redesign 2026 */}
-                    <motion.div
-                        className="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6 hover:bg-white/[0.03] transition-all duration-500 overflow-hidden relative group"
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.3, delay: 0.4 }}
-                    >
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-white/[0.02] rounded-full blur-3xl -mr-16 -mt-16 group-hover:bg-white/[0.04] transition-colors duration-700" />
-
-                        <div className="flex items-center gap-4 mb-8 relative z-10">
-                            <div className="w-10 h-10 rounded-xl bg-black/40 border border-white/10 flex items-center justify-center text-white/40 group-hover:text-white group-hover:border-white/20 transition-all duration-500">
-                                <Globe size={22} strokeWidth={1.5} />
-                            </div>
-                            <div>
-                                <label className="text-[9px] font-bold text-white/20 uppercase tracking-[0.25em] block mb-0.5">{getTranslation(config, 'interface.language_selection')}</label>
-                                <h4 className="text-sm font-semibold text-white/90 tracking-tight">{getTranslation(config, 'interface.language_desc')}</h4>
-                            </div>
-                        </div>
-
-                        <div className="relative z-10">
+                        <div className="space-y-2 border-t border-white/[0.06] pt-5">
+                            <label className="text-[13px] font-medium text-white/78">{t('interface.language_selection')}</label>
+                            <p className="text-[12px] leading-relaxed text-white/40">{t('interface.language_desc')}</p>
                             <div className="relative">
                                 <select
                                     value={config.language || 'pt'}
-                                    onChange={(e) => setConfig({ ...config, language: e.target.value as any })}
-                                    className="w-full bg-black/40 border border-white/10 rounded-xl p-4 text-sm text-white focus:border-white/30 outline-none hover:bg-black/60 transition-all cursor-pointer appearance-none pr-12 font-medium"
+                                    onChange={(e) => setConfig({ ...config, language: e.target.value as UIConfig['language'] })}
+                                    className="w-full cursor-pointer appearance-none rounded-xl border border-white/[0.08] bg-black/20 p-3.5 pr-12 text-sm font-medium text-white outline-none transition-colors hover:bg-white/[0.04] focus:border-white/20"
                                 >
                                     {LANGUAGES.map((lang) => (
-                                        <option key={lang.code} value={lang.code} className="bg-[#111] text-white py-2">
+                                        <option key={lang.code} value={lang.code} className="bg-[#111] text-white">
                                             {lang.nativeName} ({lang.name})
                                         </option>
                                     ))}
                                 </select>
-                                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-white/20">
-                                    <ChevronDown size={18} />
-                                </div>
-                            </div>
-
-                            <div className="mt-4 flex flex-wrap gap-2">
-                                {LANGUAGES.map((lang) => (
-                                    <button
-                                        key={lang.code}
-                                        onClick={() => setConfig({ ...config, language: lang.code })}
-                                        className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border ${config.language === lang.code
-                                            ? 'bg-white text-black border-white shadow-lg scale-105'
-                                            : 'bg-white/5 border-white/5 text-white/30 hover:bg-white/10 hover:text-white/60'
-                                            }`}
-                                    >
-                                        {lang.code}
-                                    </button>
-                                ))}
+                                <ChevronDown
+                                    size={18}
+                                    className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-white/30"
+                                    aria-hidden
+                                />
                             </div>
                         </div>
-                    </motion.div>
-
-                    <div className="h-24" />
+                    </SettingsSection>
                 </div>
             </div>
         </motion.div>
@@ -3164,10 +3123,11 @@ const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setCo
     };
 
     const protectionOn = config.gameMode?.enabled ?? false;
+    const t = (key: string) => getTranslation(config, key);
 
     return (
         <motion.div
-            className="h-full overflow-y-auto pb-24 pt-20 custom-scrollbar"
+            className="h-full overflow-y-auto custom-scrollbar pb-24 pt-20"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
@@ -3180,214 +3140,117 @@ const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setCo
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.1 }}
                 >
-                    <h3 className="text-xl font-semibold text-white mb-1 tracking-tight">
-                        {getTranslation(config, 'settings.gamemode_title')}
-                    </h3>
+                    <h3 className="mb-1 text-xl font-semibold tracking-tight text-white">{t('settings.gamemode_title')}</h3>
                     <p className="mt-1 max-w-2xl text-[11px] font-medium leading-relaxed tracking-wide text-white/30">
-                        {getTranslation(config, 'settings.gamemode_desc')}
+                        {t('settings.gamemode_desc')}
                     </p>
                 </motion.div>
 
-                <div className="flex flex-col space-y-5">
-                    <motion.section
-                        className={`rounded-xl border bg-gradient-to-br from-white/[0.04] to-transparent p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors ${
-                            protectionOn ? 'border-white/[0.10]' : 'border-white/[0.08]'
-                        }`}
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.35, delay: 0.1 }}
-                    >
-                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-                            <div className="min-w-0 flex-1 space-y-1">
-                                <p className="text-[8px] font-medium uppercase tracking-[0.25em] text-white/25">
-                                    {getTranslation(config, 'gamemode.operational_logic')}
-                                </p>
-                                <h4 className="text-[13px] font-medium leading-snug text-white">
-                                    {getTranslation(config, 'gamemode.stealth_mode')}
-                                </h4>
-                                <p className="max-w-xl pt-1 text-[11px] leading-relaxed text-white/35">
-                                    {getTranslation(config, 'gamemode.primary_caption')}
-                                </p>
-                            </div>
-                            <button
-                                type="button"
-                                role="switch"
-                                aria-checked={protectionOn}
-                                onClick={() =>
-                                    setConfig({
-                                        ...config,
-                                        gameMode: { ...config.gameMode, enabled: !config.gameMode?.enabled },
-                                    })
-                                }
-                                className={`relative h-10 w-16 shrink-0 rounded-2xl p-1.5 shadow-lg transition-colors duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-2 focus-visible:ring-offset-black ${
-                                    protectionOn
-                                        ? 'bg-white shadow-[0_0_0_1px_rgba(255,255,255,0.12)]'
-                                        : 'border border-white/10 bg-white/[0.05]'
-                                }`}
-                            >
-                                <motion.span
-                                    className={`block h-7 w-7 rounded-[0.8rem] shadow-xl ${
-                                        protectionOn ? 'bg-neutral-950' : 'bg-white/25'
-                                    }`}
-                                    animate={{ x: protectionOn ? 26 : 0 }}
-                                    transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                                />
-                            </button>
-                        </div>
-                    </motion.section>
+                <div className="flex flex-col gap-6">
+                    <SettingsSection title={t('settings.gamemode_title')} description={t('settings.gamemode_desc')}>
+                        <SettingsToggleRow
+                            label={t('gamemode.stealth_mode')}
+                            description={t('gamemode.primary_caption')}
+                            enabled={protectionOn}
+                            onToggle={() =>
+                                setConfig({
+                                    ...config,
+                                    gameMode: { ...config.gameMode, enabled: !config.gameMode?.enabled },
+                                })
+                            }
+                        />
+                    </SettingsSection>
 
-                    <AnimatePresence mode="wait">
-                        {protectionOn && (
+                    <AnimatePresence initial={false}>
+                        {protectionOn ? (
                             <motion.div
-                                initial={{ opacity: 0, y: 12 }}
+                                key="gamemode-scope"
+                                initial={{ opacity: 0, y: 8 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: 8 }}
-                                transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-                                className="flex flex-col space-y-5"
+                                transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                                className="flex flex-col gap-6"
                             >
-                                <section className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-5">
-                                    <p className="text-[8px] font-medium uppercase tracking-[0.25em] text-white/25">
-                                        {getTranslation(config, 'gamemode.isolation_strategy')}
-                                    </p>
-                                    <p className="mt-1 max-w-2xl text-[11px] font-medium leading-relaxed tracking-wide text-white/30">
-                                        {getTranslation(config, 'gamemode.scope_intro')}
-                                    </p>
+                                <SettingsSection
+                                    title={t('gamemode.section_scope')}
+                                    description={t('gamemode.scope_intro')}
+                                >
+                                    <SettingsSegmentGroup
+                                        pairedDescriptions
+                                        value={config.gameMode?.mode || 'all'}
+                                        onChange={(mode) =>
+                                            setConfig({
+                                                ...config,
+                                                gameMode: { ...config.gameMode, mode: mode as 'all' | 'list' },
+                                            })
+                                        }
+                                        options={[
+                                            {
+                                                id: 'all',
+                                                label: t('gamemode.always_absolute'),
+                                                description: t('gamemode.mode_all_summary'),
+                                            },
+                                            {
+                                                id: 'list',
+                                                label: t('gamemode.targeted_list'),
+                                                description: t('gamemode.mode_list_summary'),
+                                            },
+                                        ]}
+                                    />
+                                </SettingsSection>
 
-                                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                setConfig({ ...config, gameMode: { ...config.gameMode, mode: 'all' } })
-                                            }
-                                            className={`rounded-xl border px-4 py-3.5 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050505] ${
-                                                config.gameMode?.mode === 'all'
-                                                    ? 'border-white/18 bg-white/[0.07] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]'
-                                                    : 'border-white/[0.06] bg-black/20 hover:border-white/10 hover:bg-white/[0.03]'
-                                            }`}
-                                        >
-                                            <div className="flex items-start gap-3">
-                                                <span
-                                                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ${
-                                                        config.gameMode?.mode === 'all'
-                                                            ? 'bg-white/[0.08] text-white ring-white/12'
-                                                            : 'bg-white/[0.03] text-white/40 ring-white/[0.06]'
-                                                    }`}
-                                                    aria-hidden
-                                                >
-                                                    <Ban size={16} strokeWidth={1.5} />
-                                                </span>
-                                                <div className="min-w-0 space-y-1">
-                                                    <p className="text-[13px] font-medium leading-snug text-white">
-                                                        {getTranslation(config, 'gamemode.always_absolute')}
-                                                    </p>
-                                                    <p className="text-[11px] leading-relaxed text-white/35">
-                                                        {getTranslation(config, 'gamemode.mode_all_summary')}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        </button>
-
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                setConfig({ ...config, gameMode: { ...config.gameMode, mode: 'list' } })
-                                            }
-                                            className={`rounded-xl border px-4 py-3.5 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050505] ${
-                                                config.gameMode?.mode === 'list'
-                                                    ? 'border-white/18 bg-white/[0.07] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]'
-                                                    : 'border-white/[0.06] bg-black/20 hover:border-white/10 hover:bg-white/[0.03]'
-                                            }`}
-                                        >
-                                            <div className="flex items-start gap-3">
-                                                <span
-                                                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ${
-                                                        config.gameMode?.mode === 'list'
-                                                            ? 'bg-white/[0.08] text-white ring-white/12'
-                                                            : 'bg-white/[0.03] text-white/40 ring-white/[0.06]'
-                                                    }`}
-                                                    aria-hidden
-                                                >
-                                                    <Hash size={16} strokeWidth={1.5} />
-                                                </span>
-                                                <div className="min-w-0 space-y-1">
-                                                    <p className="text-[13px] font-medium leading-snug text-white">
-                                                        {getTranslation(config, 'gamemode.targeted_list')}
-                                                    </p>
-                                                    <p className="text-[11px] leading-relaxed text-white/35">
-                                                        {getTranslation(config, 'gamemode.mode_list_summary')}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        </button>
-                                    </div>
-                                </section>
-
-                                {config.gameMode?.mode === 'list' && (
-                                    <motion.section
-                                        initial={{ opacity: 0, height: 0 }}
-                                        animate={{ opacity: 1, height: 'auto' }}
-                                        className="overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.03] p-5"
+                                {config.gameMode?.mode === 'list' ? (
+                                    <SettingsSection
+                                        title={t('gamemode.process_list')}
+                                        description={t('gamemode.block_list_hint_list_only')}
                                     >
-                                        <div className="space-y-3">
-                                            <div>
-                                                <p className="text-[8px] font-medium uppercase tracking-[0.25em] text-white/25">
-                                                    {getTranslation(config, 'gamemode.process_list')}
-                                                </p>
-                                                <p className="mt-1 text-[11px] leading-relaxed text-white/35">
-                                                    {getTranslation(config, 'gamemode.block_list_hint_list_only')}
-                                                </p>
-                                            </div>
-
-                                            <div className="flex min-h-[2rem] flex-wrap gap-2">
-                                                {blockedRows.length === 0 ? (
-                                                    <span className="py-0.5 text-[11px] text-white/28">
-                                                        {getTranslation(config, 'gamemode.no_blocked_apps')}
-                                                    </span>
-                                                ) : (
-                                                    blockedRows.map((row) => (
-                                                        <span
-                                                            key={row.raw}
-                                                            title={row.raw}
-                                                            className="inline-flex max-w-[min(100%,16rem)] items-center gap-1 rounded-lg border border-white/[0.08] bg-black/35 py-1 pl-2.5 pr-0.5 text-[11px] font-medium tracking-tight text-white/85"
+                                        <div className="flex min-h-[2rem] flex-wrap gap-2">
+                                            {blockedRows.length === 0 ? (
+                                                <span className="py-0.5 text-[12px] text-white/38">
+                                                    {t('gamemode.no_blocked_apps')}
+                                                </span>
+                                            ) : (
+                                                blockedRows.map((row) => (
+                                                    <span
+                                                        key={row.raw}
+                                                        title={row.raw}
+                                                        className="inline-flex max-w-[min(100%,16rem)] items-center gap-1 rounded-lg border border-white/[0.08] bg-black/35 py-1 pl-2.5 pr-0.5 text-[11px] font-medium tracking-tight text-white/85"
+                                                    >
+                                                        <span className="truncate">{row.label}</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeBlockedSegment(row.raw)}
+                                                            className="shrink-0 rounded-md p-1 text-white/35 transition-colors hover:bg-white/10 hover:text-white"
+                                                            aria-label={t('action.remove') || 'Remove'}
                                                         >
-                                                            <span className="truncate">{row.label}</span>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => removeBlockedSegment(row.raw)}
-                                                                className="shrink-0 rounded-md p-1 text-white/35 transition-colors hover:bg-white/10 hover:text-white"
-                                                                aria-label={
-                                                                    getTranslation(config, 'action.remove') || 'Remove'
-                                                                }
-                                                            >
-                                                                <X size={12} strokeWidth={2} />
-                                                            </button>
-                                                        </span>
-                                                    ))
-                                                )}
-                                            </div>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => setGameBlockPickerOpen(true)}
-                                                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.06] px-3.5 py-2 text-[12px] font-semibold tracking-tight text-white/90 transition-colors hover:border-white/16 hover:bg-white/[0.09]"
-                                            >
-                                                <Plus size={14} strokeWidth={2.25} />
-                                                {getTranslation(config, 'gamemode.add_blocked_app')}
-                                            </button>
-
-                                            <AppSelector
-                                                isOpen={gameBlockPickerOpen}
-                                                onClose={() => setGameBlockPickerOpen(false)}
-                                                onAppSelect={onBlockedAppSelected}
-                                                appsOnly
-                                                title={getTranslation(config, 'gamemode.pick_app_title_fullscreen')}
-                                                subtitle={getTranslation(config, 'gamemode.pick_app_subtitle')}
-                                            />
+                                                            <X size={12} strokeWidth={2} />
+                                                        </button>
+                                                    </span>
+                                                ))
+                                            )}
                                         </div>
-                                    </motion.section>
-                                )}
+
+                                        <button
+                                            type="button"
+                                            onClick={() => setGameBlockPickerOpen(true)}
+                                            className="inline-flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3.5 py-2 text-[12px] font-medium text-white/85 transition-colors hover:border-white/14 hover:bg-white/[0.07]"
+                                        >
+                                            <Plus size={14} strokeWidth={2.25} />
+                                            {t('gamemode.add_blocked_app')}
+                                        </button>
+
+                                        <AppSelector
+                                            isOpen={gameBlockPickerOpen}
+                                            onClose={() => setGameBlockPickerOpen(false)}
+                                            onAppSelect={onBlockedAppSelected}
+                                            appsOnly
+                                            title={t('gamemode.pick_app_title_fullscreen')}
+                                            subtitle={t('gamemode.pick_app_subtitle')}
+                                        />
+                                    </SettingsSection>
+                                ) : null}
                             </motion.div>
-                        )}
+                        ) : null}
                     </AnimatePresence>
                 </div>
             </div>
@@ -3414,202 +3277,171 @@ const UserTab = React.memo(({
     status: { type: 'success' | 'error', message: string } | null,
     onLogout: () => void
 }) => {
+    const t = (key: string) => getTranslation(config, key);
+
     return (
         <motion.div
-            className="pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
+            className="h-full overflow-y-auto custom-scrollbar pb-24 pt-20"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
             transition={{ duration: 0.3 }}
         >
-            <div className="max-w-3xl mx-auto px-6 md:px-10 lg:px-12">
+            <div className="mx-auto max-w-4xl px-6 md:px-10 lg:px-12">
                 <motion.div
-                    className="mb-10 text-center sm:text-left"
+                    className="mb-12"
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.1 }}
                 >
-                    <h3 className="text-xl font-semibold text-white mb-1 tracking-tight">{getTranslation(config, 'user.profile_title')}</h3>
-                    <p className="text-[11px] text-white/30 font-medium tracking-wide leading-relaxed mt-1 max-w-2xl">
-                        {getTranslation(config, 'user.profile_desc')}
+                    <h3 className="mb-1 text-xl font-semibold tracking-tight text-white">{t('settings.user_title')}</h3>
+                    <p className="mt-1 max-w-2xl text-[11px] font-medium leading-relaxed tracking-wide text-white/30">
+                        {t('settings.user_desc')}
                     </p>
                 </motion.div>
 
-                <div className="space-y-6">
-                    {/* 1. Identity & Subscription */}
-                    <motion.div
-                        className="bg-white/[0.02] border border-white/[0.06] rounded-2xl overflow-hidden shadow-xl relative"
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.2 }}
-                    >
-                        {/* Glow effect */}
-                        <div className="absolute top-0 right-0 w-80 h-80 bg-white/[0.015] rounded-full blur-[100px] -mr-40 -mt-40 pointer-events-none" />
-
-                        {/* Top: Identity */}
-                        <div className="p-6 md:p-8 flex flex-col sm:flex-row items-center gap-6 relative z-10">
-                            <div className="relative group">
-                                <div className="w-20 h-20 rounded-full bg-black/60 border border-white/10 flex items-center justify-center overflow-hidden shadow-xl transition-all duration-300 group-hover:border-white/30">
+                <div className="flex flex-col gap-6">
+                    <SettingsSection title={t('user.section_identity')} description={t('user.profile_desc')}>
+                        <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
+                            <div className="relative shrink-0">
+                                <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-white/[0.1] bg-black/40">
                                     {user?.avatarUrl ? (
-                                        <img src={user.avatarUrl} className="w-full h-full object-cover" alt="Avatar" />
+                                        <img src={user.avatarUrl} className="h-full w-full object-cover" alt="" />
                                     ) : (
-                                        <div className="text-3xl font-semibold text-white/20 uppercase tracking-widest">{user?.name?.substring(0, 2) || 'ZN'}</div>
+                                        <span className="text-lg font-semibold uppercase tracking-wide text-white/25">
+                                            {user?.name?.substring(0, 2) || 'ZN'}
+                                        </span>
                                     )}
                                 </div>
-                                <button className="absolute bottom-0 right-0 w-7 h-7 bg-[#222] border border-white/10 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-white hover:text-black hover:scale-105 active:scale-95 transition-all">
+                                <button
+                                    type="button"
+                                    className="absolute -bottom-0.5 -right-0.5 flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-[#1a1a1a] text-white/70 transition-colors hover:bg-white hover:text-black"
+                                    aria-label={t('user.manage_credentials')}
+                                >
                                     <Edit3 size={12} strokeWidth={2.5} />
                                 </button>
                             </div>
-                            <div className="flex-1 text-center sm:text-left">
-                                <h4 className="text-2xl font-bold text-white tracking-tight leading-none mb-2">{user?.name || 'Zenith User'}</h4>
-                                <p className="text-[13px] text-white/40 font-medium tracking-wide">{user?.email || 'unlinked_identity@zenith.os'}</p>
-                            </div>
-                            <div className="sm:ml-auto self-center">
-                                {user?.isAdmin && (
-                                    <div className="px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-[9px] font-bold tracking-[0.2em] uppercase">
-                                        {getTranslation(config, 'user.admin_badge')}
-                                    </div>
-                                )}
+                            <div className="min-w-0 flex-1 text-center sm:text-left">
+                                <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
+                                    <h4 className="text-lg font-semibold tracking-tight text-white/95">
+                                        {user?.name || 'Zenith User'}
+                                    </h4>
+                                    {user?.isAdmin ? (
+                                        <span className="rounded-md border border-red-500/20 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-400">
+                                            {t('user.admin_badge')}
+                                        </span>
+                                    ) : null}
+                                </div>
+                                <p className="mt-1 truncate text-[13px] text-white/42">
+                                    {user?.email || 'unlinked_identity@zenith.os'}
+                                </p>
                             </div>
                         </div>
 
-                        {/* Bottom: Subscription */}
-                        <div className="px-6 md:px-8 py-5 border-t border-white/[0.04] bg-white/[0.01] flex flex-col sm:flex-row items-center justify-between gap-4 relative z-10">
-                            <div className="text-center sm:text-left">
-                                <div className="text-[9px] font-bold text-white/30 uppercase tracking-[0.2em] mb-1.5">
-                                    Plano Atual
-                                </div>
-                                <div className="flex items-center justify-center sm:justify-start gap-2">
-                                    <span className="text-[15px] font-semibold text-white/90">
-                                        {user?.isPremium ? getTranslation(config, 'user.zenith_pro') : getTranslation(config, 'user.free_plan')}
+                        <div className="flex flex-col gap-3 border-t border-white/[0.06] pt-5 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <p className="text-[12px] text-white/38">{t('user.current_plan')}</p>
+                                <div className="mt-1 flex items-center gap-2">
+                                    <span className="text-[13px] font-medium text-white/88">
+                                        {user?.isPremium ? t('user.zenith_pro') : t('user.free_plan')}
                                     </span>
-                                    {user?.isPremium && <Zap size={14} className="text-yellow-400" />}
+                                    {user?.isPremium ? <Zap size={14} className="text-amber-400/90" /> : null}
                                 </div>
                             </div>
-                            <button className="px-5 py-2.5 bg-white text-black text-[10px] font-bold uppercase tracking-widest rounded-xl hover:bg-white/90 hover:scale-[1.02] active:scale-95 transition-all shadow-[0_0_20px_rgba(255,255,255,0.1)]">
-                                {user?.isPremium ? 'Gerenciar Assinatura' : 'Fazer Upgrade'}
+                            <button
+                                type="button"
+                                className="shrink-0 rounded-xl bg-white px-4 py-2.5 text-[12px] font-semibold text-black transition-colors hover:bg-white/90"
+                            >
+                                {user?.isPremium ? t('user.manage_subscription') : t('user.upgrade_plan')}
                             </button>
                         </div>
-                    </motion.div>
+                    </SettingsSection>
 
-                    {/* 2. Preferences / Settings Grp */}
-                    <motion.div
-                        className="bg-white/[0.02] border border-white/[0.06] rounded-2xl overflow-hidden shadow-lg"
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.3 }}
-                    >
-                        <div className="px-6 py-4 border-b border-white/[0.04] bg-white/[0.01]">
-                            <h4 className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em]">Sistemas Ativos</h4>
-                        </div>
-                        <div className="flex flex-col">
-                            <div className="flex items-center justify-between px-6 py-5 border-b border-white/[0.02] hover:bg-white/[0.01] transition-colors">
-                                <div className="flex items-center gap-4">
-                                    <div className="w-10 h-10 rounded-xl bg-black/40 border border-white/5 flex items-center justify-center">
-                                        <Zap size={16} className="text-white/40" />
-                                    </div>
-                                    <div>
-                                        <div className="text-[13px] font-semibold text-white/90">{getTranslation(config, 'user.high_priority')}</div>
-                                        <div className="text-[11px] text-white/40 font-medium tracking-wide mt-0.5">{getTranslation(config, 'user.performance')}</div>
-                                    </div>
+                    <SettingsSection title={t('user.section_systems')} description={t('user.section_systems_desc')}>
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between gap-4 rounded-xl border border-white/[0.06] bg-black/20 px-4 py-3.5">
+                                <div className="min-w-0">
+                                    <p className="text-[13px] font-medium text-white/82">{t('user.high_priority')}</p>
+                                    <p className="mt-1 text-[12px] text-white/40">{t('user.performance')}</p>
                                 </div>
-                                <span className="text-[9px] font-bold text-green-400/80 uppercase tracking-widest">Online</span>
+                                <span className="shrink-0 text-[11px] font-medium text-emerald-400/80">
+                                    {t('status.online')}
+                                </span>
                             </div>
-                            <div className="flex items-center justify-between px-6 py-5 hover:bg-white/[0.01] transition-colors">
-                                <div className="flex items-center gap-4">
-                                    <div className="w-10 h-10 rounded-xl bg-black/40 border border-white/5 flex items-center justify-center">
-                                        <Globe size={16} className="text-white/40" />
-                                    </div>
-                                    <div>
-                                        <div className="text-[13px] font-semibold text-white/90">{getTranslation(config, 'user.local_kernel')}</div>
-                                        <div className="text-[11px] text-white/40 font-medium tracking-wide mt-0.5">{getTranslation(config, 'user.server')}</div>
-                                    </div>
+                            <div className="flex items-center justify-between gap-4 rounded-xl border border-white/[0.06] bg-black/20 px-4 py-3.5">
+                                <div className="min-w-0">
+                                    <p className="text-[13px] font-medium text-white/82">{t('user.local_kernel')}</p>
+                                    <p className="mt-1 text-[12px] text-white/40">{t('user.server')}</p>
                                 </div>
-                                <span className="text-[9px] font-bold text-green-400/80 uppercase tracking-widest">Online</span>
+                                <span className="shrink-0 text-[11px] font-medium text-emerald-400/80">
+                                    {t('status.online')}
+                                </span>
                             </div>
                         </div>
-                    </motion.div>
+                    </SettingsSection>
 
-                    {/* 3. Security & Backup */}
-                    <motion.div
-                        className="bg-white/[0.02] border border-white/[0.06] rounded-2xl overflow-hidden shadow-lg"
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.35 }}
-                    >
-                         <div className="flex flex-col sm:flex-row sm:items-center justify-between px-6 py-5 border-b border-white/[0.04] bg-white/[0.01] gap-4">
-                            <div className="flex items-center gap-4">
-                                <div className="w-10 h-10 rounded-xl bg-black/40 border border-white/5 flex items-center justify-center">
-                                    <Lock size={16} className="text-white/40" />
-                                </div>
-                                <div>
-                                    <div className="text-[13px] font-semibold text-white/90">{getTranslation(config, 'user.access_security')}</div>
-                                    <div className="text-[11px] text-white/40 font-medium tracking-wide mt-0.5">{getTranslation(config, 'user.authentication')}</div>
-                                </div>
+                    <SettingsSection title={t('user.section_security')} description={t('user.backup_desc')}>
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="min-w-0">
+                                <p className="text-[13px] font-medium text-white/82">{t('user.access_security')}</p>
+                                <p className="mt-1 text-[12px] text-white/40">{t('user.authentication')}</p>
                             </div>
-                            <button className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/5 text-white/80 hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all">
-                                {getTranslation(config, 'user.manage_credentials')}
+                            <button
+                                type="button"
+                                className="shrink-0 rounded-xl border border-white/[0.08] bg-white/[0.04] px-4 py-2.5 text-[12px] font-medium text-white/78 transition-colors hover:border-white/14 hover:bg-white/[0.07] hover:text-white"
+                            >
+                                {t('user.manage_credentials')}
                             </button>
                         </div>
-                        <div className="px-6 py-5">
-                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                <div className="flex items-center gap-4">
-                                    <div className="w-10 h-10 rounded-xl bg-black/40 border border-white/5 flex items-center justify-center">
-                                        <Download size={16} className="text-white/40" />
-                                    </div>
-                                    <div>
-                                        <div className="text-[13px] font-semibold text-white/90">{getTranslation(config, 'user.backup_title')}</div>
-                                        <div className="text-[11px] text-white/40 font-medium tracking-wide mt-0.5">{getTranslation(config, 'user.security_data')}</div>
-                                    </div>
-                                </div>
-                                <div className="flex gap-2.5">
-                                    <button
-                                        onClick={handleExport}
-                                        disabled={isExporting}
-                                        className="px-4 py-2.5 bg-white/[0.04] border border-white/10 rounded-lg text-[10px] font-bold uppercase tracking-widest text-white/70 hover:text-white hover:bg-white/10 transition-all disabled:opacity-50"
-                                    >
-                                        {isExporting ? '...' : getTranslation(config, 'user.export_btn')}
-                                    </button>
-                                    <button
-                                        onClick={handleImport}
-                                        disabled={isImporting}
-                                        className="px-4 py-2.5 bg-white/[0.04] border border-white/10 rounded-lg text-[10px] font-bold uppercase tracking-widest text-white/70 hover:text-white hover:bg-white/10 transition-all disabled:opacity-50"
-                                    >
-                                        {isImporting ? '...' : getTranslation(config, 'user.import_btn')}
-                                    </button>
-                                </div>
+
+                        <div className="space-y-3 border-t border-white/[0.06] pt-5">
+                            <div className="min-w-0">
+                                <p className="text-[13px] font-medium text-white/82">{t('user.backup_title')}</p>
+                                <p className="mt-1 text-[12px] text-white/40">{t('user.security_data')}</p>
                             </div>
-                            {status && (
-                                <motion.div
-                                    initial={{ opacity: 0, height: 0 }}
-                                    animate={{ opacity: 1, height: 'auto' }}
-                                    className={`mt-4 pt-3 border-t border-white/[0.02] text-[11px] font-medium text-center ${status.type === 'success' ? 'text-green-400' : 'text-red-400'}`}
+                            <div className="flex flex-wrap gap-2.5">
+                                <button
+                                    type="button"
+                                    onClick={handleExport}
+                                    disabled={isExporting}
+                                    className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-4 py-2.5 text-[12px] font-medium text-white/78 transition-colors hover:border-white/14 hover:bg-white/[0.07] hover:text-white disabled:opacity-50"
+                                >
+                                    {isExporting ? '…' : t('user.export_btn')}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleImport}
+                                    disabled={isImporting}
+                                    className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-4 py-2.5 text-[12px] font-medium text-white/78 transition-colors hover:border-white/14 hover:bg-white/[0.07] hover:text-white disabled:opacity-50"
+                                >
+                                    {isImporting ? '…' : t('user.import_btn')}
+                                </button>
+                            </div>
+                            {status ? (
+                                <p
+                                    className={`text-[12px] ${status.type === 'success' ? 'text-emerald-400/90' : 'text-red-400/90'}`}
                                 >
                                     {status.message}
-                                </motion.div>
-                            )}
+                                </p>
+                            ) : null}
                         </div>
-                    </motion.div>
+                    </SettingsSection>
 
-                    {/* 4. Account Actions */}
-                    <motion.div
-                        className="bg-white/[0.02] border border-white/[0.06] rounded-2xl overflow-hidden mt-8 shadow-lg"
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.4 }}
-                    >
-                        <div className="flex items-center justify-between px-6 py-5 hover:bg-white/[0.02] transition-colors cursor-pointer group" onClick={onLogout}>
-                            <div className="flex items-center gap-4">
-                                <div className="w-10 h-10 rounded-xl bg-black/40 border border-white/5 flex items-center justify-center group-hover:bg-white/5 transition-colors">
-                                    <LogOut size={16} className="text-white/40 group-hover:text-white/80 transition-colors" />
-                                </div>
-                                <div className="text-[13px] font-semibold text-white/90 group-hover:text-white transition-colors">
-                                    {getTranslation(config, 'user.sign_out') || 'Sign Out'}
-                                </div>
+                    <SettingsSection title={t('user.section_session')}>
+                        <button
+                            type="button"
+                            onClick={onLogout}
+                            className="flex w-full items-center justify-between gap-4 rounded-xl border border-white/[0.06] bg-black/20 px-4 py-3.5 text-left transition-colors hover:border-white/[0.11] hover:bg-white/[0.03]"
+                        >
+                            <div className="flex items-center gap-3">
+                                <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.03] text-white/45">
+                                    <LogOut size={16} strokeWidth={1.75} />
+                                </span>
+                                <span className="text-[13px] font-medium text-white/82">{t('user.sign_out')}</span>
                             </div>
-                            <ChevronRight size={16} className="text-white/20 group-hover:text-white/50 transition-colors" />
-                        </div>
-                    </motion.div>
+                            <ChevronRight size={16} className="shrink-0 text-white/28" aria-hidden />
+                        </button>
+                    </SettingsSection>
                 </div>
             </div>
         </motion.div>
@@ -4984,7 +4816,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     />
                 )}
                 <motion.div
-                    className={`relative z-[101] bg-black/95 backdrop-blur-3xl overflow-hidden flex flex-row ${!isPage ? 'mx-auto rounded-xl shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_50px_120px_-30px_rgba(0,0,0,0.95)] border border-white/5' : 'w-full h-full border-none'}`}
+                    className={`relative z-[101] bg-black/95 backdrop-blur-3xl overflow-hidden flex flex-row min-h-0 ${!isPage ? 'mx-auto rounded-xl shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_50px_120px_-30px_rgba(0,0,0,0.95)] border border-white/5' : 'h-full w-full border-none'}`}
                     style={!isPage ? { width: isCompact ? '96%' : '90%', maxWidth: 1200, marginTop: isCompact ? 32 : 32, height: isCompact ? 'calc(100% - 64px)' : 'calc(100% - 64px)' } : { width: '100%', height: '100%', paddingTop: 0 }}
                     onClick={(e) => e.stopPropagation()}
                     initial={!isPage ? { opacity: 0, scale: 0.96, y: 40, filter: 'blur(10px)' } : { opacity: 0, x: 20 }}
@@ -5007,17 +4839,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         </motion.button>
                     </Tooltip>
 
-                    {/* Sidebar */}
+                    {/* Sidebar — header fixo, nav scrollável, footer fixo (padrão desktop) */}
                     <motion.div
-                        className={`bg-white/[0.01] border-r p-4 pt-[52px] flex-col border-white/[0.06] shrink-0 flex gap-1.5 relative`}
+                        className="relative flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-white/[0.06] bg-white/[0.01] pt-[52px]"
                         animate={{ width: isCompact ? 80 : (isSidebarExpanded ? 240 : 80) }}
                         transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
                         onMouseEnter={() => setIsHoveringSidebar(true)}
                         onMouseLeave={() => setIsHoveringSidebar(false)}
                     >
+                        <div className="flex shrink-0 flex-col gap-1.5 px-4 pb-3">
                         {!isCompact && (
                             <motion.div
-                                className="mb-6 flex items-center justify-between px-1"
+                                className="mb-3 flex items-center justify-between px-1"
                                 initial={{ opacity: 0, y: -10 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ duration: 0.5, delay: 0.2 }}
@@ -5071,7 +4904,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                         initial={{ opacity: 0, y: -5 }}
                                         animate={{ opacity: 1, y: 0 }}
                                         exit={{ opacity: 0, y: -5 }}
-                                        className="px-1 mb-4"
+                                        className="px-1"
                                     >
                                         <div className="relative group">
                                             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/10 group-focus-within:text-white/40 transition-colors" size={14} />
@@ -5087,9 +4920,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 )}
                             </AnimatePresence>
                         )}
+                        </div>
 
-                        {/* Navigation Groups */}
-                        <div className="flex flex-col gap-0.5">
+                        {/* Navigation — scroll independente quando a janela fica baixa */}
+                        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain custom-scrollbar px-4 py-1">
+                        <div className="flex flex-col gap-0.5 pb-2">
                             {/* Dashboard Button — Always at the top for easy navigation */}
                             <NavButton 
                                 tab="dashboard" 
@@ -5117,9 +4952,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             <NavButton tab="gamemode" label={getTranslation(config, 'sidebar.gamemode')} icon={Shield} isSidebarExpanded={isCompact ? false : isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} isCompact={isCompact} />
                             <NavButton tab="user" label={getTranslation(config, 'sidebar.profile')} icon={User} isSidebarExpanded={isCompact ? false : isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} isCompact={isCompact} />
                         </div>
+                        </div>
 
                         {!isCompact && (
-                            <div className="mt-auto pt-6 border-t border-white/[0.08] space-y-2.5">
+                            <div className="shrink-0 space-y-2.5 border-t border-white/[0.08] px-4 pb-4 pt-4">
                                 <button
                                     onClick={() => setConfirmDialog({
                                         type: 'reset',
@@ -5267,7 +5103,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </motion.div>
 
                     {/* Content */}
-                    <div className="flex-1 bg-[#0D0D0D] overflow-hidden flex flex-col relative">
+                    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-[#0D0D0D]">
                         <AnimatePresence mode="wait">
                             {searchTerm.trim() ? (
                                 <SearchResultsView

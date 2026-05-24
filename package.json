@@ -16,6 +16,9 @@
     "verify:radial-windowing": "node scripts/verify-radial-windowing.mjs"
   },
   "dependencies": {
+    "@fontsource-variable/inter": "^5.2.8",
+    "@fontsource-variable/space-grotesk": "^5.2.10",
+    "@tailwindcss/vite": "^4.3.0",
     "active-win": "^8.2.1",
     "framer-motion": "^10.16.4",
     "loudness": "^0.4.2",
@@ -23,7 +26,8 @@
     "node-global-key-listener": "^0.1.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "sql.js": "^1.14.1"
+    "sql.js": "^1.14.1",
+    "tailwindcss": "^4.3.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.37",

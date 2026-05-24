@@ -125,10 +125,10 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
     const t = (key: string) => getTranslation(config, key);
 
     return (
-        <div className={`absolute inset-0 w-full h-full z-0 grid place-items-center p-8 select-none overflow-hidden rounded-xl ${className || ''}`}>
+        <div className={`absolute inset-0 z-0 flex min-h-0 w-full flex-col overflow-x-hidden overflow-y-auto custom-scrollbar select-none rounded-xl ${className || ''}`}>
 
             {/* BACKGROUND LAYERS */}
-            <div className="absolute inset-0 z-[-1] pointer-events-none">
+            <div className="pointer-events-none absolute inset-0 z-[-1]">
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-[#141414] via-[#050505] to-[#000000]" />
                 <div
                     className="absolute inset-0 opacity-[0.04]"
@@ -140,6 +140,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
             </div>
 
             {/* CENTRAL APP WIDGET (LAUNCHER CARD) */}
+            <div className="relative z-10 flex min-h-0 flex-1 items-center justify-center px-4 py-4 sm:px-6 sm:py-6">
             <AnimatePresence mode="wait">
                 <motion.div
                     key="welcome-home"
@@ -147,7 +148,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                     animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
                     exit={{ opacity: 0, y: -12, filter: 'blur(6px)' }}
                     transition={{ duration: 0.35, ease: 'easeOut' }}
-                    className="relative z-10 w-full sm:w-[95%] min-w-[300px] sm:min-w-[400px] max-w-lg max-h-[90vh] overflow-y-auto custom-scrollbar bg-[#0A0A0A]/95 backdrop-blur-xl border border-white/20 rounded-xl shadow-[0_0_120px_rgba(0,0,0,0.5)] flex flex-col items-center text-center pointer-events-auto"
+                    className="relative w-full min-w-[300px] max-h-full overflow-y-auto custom-scrollbar bg-[#0A0A0A]/95 backdrop-blur-xl border border-white/20 rounded-xl shadow-[0_0_120px_rgba(0,0,0,0.5)] flex flex-col items-center text-center pointer-events-auto sm:w-[95%] sm:min-w-[400px] sm:max-w-lg"
                 >
                     {/* Top Glow */}
                     <div className="absolute top-0 w-full h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
@@ -224,13 +225,14 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                     </div>
                 </motion.div>
             </AnimatePresence>
+            </div>
 
             {/* BOTTOM: ACTION DOCK */}
             <motion.div
                 initial={{ y: 50, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ delay: 0.3, duration: 0.5 }}
-                className="fixed bottom-12 pointer-events-auto min-w-fit z-20"
+                className="sticky bottom-0 z-20 mx-auto w-max max-w-[calc(100%-1.5rem)] shrink-0 px-2 pb-4 pt-2 pointer-events-auto"
             >
                 <div className="flex items-center gap-3 p-2 bg-[#0A0A0A]/60 border border-white/10 rounded-2xl shadow-2xl flex-wrap justify-center min-w-fit">
 
