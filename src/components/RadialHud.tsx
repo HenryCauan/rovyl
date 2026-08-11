@@ -1,11 +1,9 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Cloud } from 'lucide-react';
-import { CLOCK_HUD_POSITIONS, ClockHudPosition, UIConfig, Workspace } from '../types';
+import { CLOCK_HUD_POSITIONS, ClockHudPosition, UIConfig } from '../types';
 
 export type ClockHudRegion = ClockHudPosition;
-
-const hudTextShadow = 'drop-shadow-[0_1px_3px_rgba(0,0,0,0.55)]';
 
 type HudAlign = 'start' | 'center' | 'end';
 
@@ -68,78 +66,12 @@ function getHudLayout(region: ClockHudRegion) {
     return `${cluster} ${pad} ${width}`;
   })();
 
-  const workspaceShellClass =
-    region === 'top-left' || region === 'bottom-left'
-      ? 'fixed top-6 right-6 sm:top-8 sm:right-8 z-[10] pointer-events-none'
-      : region === 'top-right' || region === 'bottom-right'
-        ? 'fixed top-6 left-6 sm:top-8 sm:left-8 z-[10] pointer-events-none'
-        : 'fixed top-6 left-6 sm:top-8 sm:left-8 z-[10] pointer-events-none';
-
-  return { region, isBottom, align, shellClass, innerClass, workspaceShellClass };
+  return { region, isBottom, align, shellClass, innerClass };
 }
 
 /** Ghost pill — sem backdrop-blur (HWND transparente no Windows). */
 const hudPillClass =
   'inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-[rgba(8,8,10,0.72)] px-3 py-1.5 shadow-[0_4px_20px_rgba(0,0,0,0.35)]';
-
-interface HudDividerProps {
-  align: HudAlign;
-}
-
-const HudDivider: React.FC<HudDividerProps> = ({ align }) => (
-  <div
-    className={`h-px w-full max-w-[140px] bg-gradient-to-r from-transparent via-white/14 to-transparent ${
-      align === 'center' ? 'mx-auto' : align === 'end' ? 'ml-auto' : 'mr-auto'
-    }`}
-    aria-hidden
-  />
-);
-
-interface HudTemporalBlockProps {
-  align: HudAlign;
-  showClock: boolean;
-  showDate: boolean;
-  currentTime: Date;
-}
-
-const HudTemporalBlock: React.FC<HudTemporalBlockProps> = ({
-  align,
-  showClock,
-  showDate,
-  currentTime,
-}) => {
-  if (!showClock && !showDate) return null;
-
-  return (
-    <div className={`flex flex-col gap-1 ${alignToFlex(align)}`}>
-      {showClock && (
-        <div
-          className={`text-[clamp(2.125rem,4.8vw,3rem)] font-light tabular-nums leading-none tracking-[-0.03em] text-white drop-shadow-[0_2px_20px_rgba(0,0,0,0.5)] ${hudTextShadow}`}
-          style={{ fontFamily: 'Space Grotesk, ui-sans-serif, system-ui, sans-serif' }}
-        >
-          {currentTime.toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false,
-          })}
-        </div>
-      )}
-      {showDate && (
-        <p
-          className={`max-w-[48ch] text-[0.75rem] font-medium uppercase tracking-[0.14em] text-white/50 sm:text-[0.8125rem] ${hudTextShadow} ${
-            align === 'center' ? 'text-center' : align === 'end' ? 'text-right' : 'text-left'
-          }`}
-        >
-          {currentTime.toLocaleDateString([], {
-            weekday: 'long',
-            month: 'short',
-            day: 'numeric',
-          })}
-        </p>
-      )}
-    </div>
-  );
-};
 
 interface HudStatusStripProps {
   align: HudAlign;
@@ -208,123 +140,53 @@ const HudStatusStrip: React.FC<HudStatusStripProps> = ({
   );
 };
 
-interface HudWorkspaceChipProps {
-  workspace: Workspace;
-  moduleCount: number;
-  moduleLabel: string;
-  alignRight: boolean;
-}
-
-const HudWorkspaceChip: React.FC<HudWorkspaceChipProps> = ({
-  workspace,
-  moduleCount,
-  moduleLabel,
-  alignRight,
-}) => (
-  <div
-    className={`flex max-w-[min(88vw,260px)] items-center gap-2.5 rounded-full border border-white/[0.1] bg-[rgba(8,8,10,0.72)] px-3 py-2 shadow-[0_4px_20px_rgba(0,0,0,0.35)] sm:gap-3 sm:px-3.5 sm:py-2.5 ${
-      alignRight ? 'flex-row-reverse' : ''
-    }`}
-  >
-    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/[0.1] text-[11px] font-bold text-white ring-1 ring-white/[0.08] sm:h-7 sm:w-7">
-      {workspace.hotkey}
-    </div>
-    <div className={`min-w-0 flex-1 ${alignRight ? 'text-right' : 'text-left'}`}>
-      <div className="truncate text-[11px] font-semibold uppercase tracking-[0.12em] text-white/88 sm:text-xs">
-        {workspace.name}
-      </div>
-      <div className="mt-0.5 truncate text-[9px] font-medium uppercase tracking-[0.18em] text-white/38">
-        {moduleCount} {moduleLabel}
-      </div>
-    </div>
-  </div>
-);
-
+/**
+ * Sobreposição do radial: só bateria/clima (desligados por defeito). Relógio, data e chip do workspace
+ * foram removidos — a janela do radial mostra apenas a roda, e nada é desenhado fora dela.
+ */
 export interface RadialHudProps {
   isOpen: boolean;
   config: UIConfig;
-  currentTime: Date;
   batteryLevel: number | null;
   weather: { temp: number; condition: string } | null;
-  currentWorkspace?: Workspace;
-  moduleCount: number;
-  moduleLabel: string;
 }
 
 export const RadialHud: React.FC<RadialHudProps> = ({
   isOpen,
   config,
-  currentTime,
   batteryLevel,
   weather,
-  currentWorkspace,
-  moduleCount,
-  moduleLabel,
 }) => {
   const region = resolveHudRegion(config.clockPosition);
-  const { isBottom, align, shellClass, innerClass, workspaceShellClass } = getHudLayout(region);
+  const { isBottom, align, shellClass, innerClass } = getHudLayout(region);
 
-  const showTemporal = config.showClock || config.showDate;
   const showStatus =
     (config.showBattery && batteryLevel !== null) ||
     (config.showWeather && !config.performanceMode && !!weather);
-  const showHud = showTemporal || showStatus;
+  if (!showStatus) return null;
 
   const enterY = isBottom ? 10 : -10;
 
   return (
-    <>
-      {showHud && (
-        <div className={shellClass}>
-          <motion.div
-            initial={false}
-            animate={{
-              opacity: isOpen ? 1 : 0,
-              y: isOpen ? 0 : enterY,
-            }}
-            transition={{ duration: isOpen ? 0.26 : 0.14, ease: [0.22, 1, 0.36, 1] }}
-            className={innerClass}
-          >
-            {showTemporal && (
-              <HudTemporalBlock
-                align={align}
-                showClock={config.showClock}
-                showDate={config.showDate}
-                currentTime={currentTime}
-              />
-            )}
-
-            {showTemporal && showStatus && <HudDivider align={align} />}
-
-            {showStatus && (
-              <HudStatusStrip
-                align={align}
-                showBattery={config.showBattery}
-                showWeather={config.showWeather}
-                performanceMode={config.performanceMode}
-                batteryLevel={batteryLevel}
-                weather={weather}
-              />
-            )}
-          </motion.div>
-        </div>
-      )}
-
-      {currentWorkspace && (
-        <motion.div
-          initial={false}
-          animate={{ opacity: isOpen ? 1 : 0, y: isOpen ? 0 : -6 }}
-          transition={{ duration: isOpen ? 0.24 : 0.12, delay: isOpen ? 0.04 : 0 }}
-          className={workspaceShellClass}
-        >
-          <HudWorkspaceChip
-            workspace={currentWorkspace}
-            moduleCount={moduleCount}
-            moduleLabel={moduleLabel}
-            alignRight={region === 'top-left' || region === 'bottom-left'}
-          />
-        </motion.div>
-      )}
-    </>
+    <div className={shellClass}>
+      <motion.div
+        initial={false}
+        animate={{
+          opacity: isOpen ? 1 : 0,
+          y: isOpen ? 0 : enterY,
+        }}
+        transition={{ duration: isOpen ? 0.26 : 0.14, ease: [0.22, 1, 0.36, 1] }}
+        className={innerClass}
+      >
+        <HudStatusStrip
+          align={align}
+          showBattery={config.showBattery}
+          showWeather={config.showWeather}
+          performanceMode={config.performanceMode}
+          batteryLevel={batteryLevel}
+          weather={weather}
+        />
+      </motion.div>
+    </div>
   );
 };

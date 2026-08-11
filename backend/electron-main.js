@@ -187,10 +187,15 @@ function loadEnvLocalFiles() {
 ensureUnifiedUserDataDirectory();
 loadEnvLocalFiles();
 
-/** Último recurso se GPU partilhada continuar a travar Edge/outros browsers com o Zenith aberto. */
+// Software rendering makes the transparent radial and its blur contend with the UI thread, which
+// presents as a slow-motion pointer. The idle HWND is now truly hidden, so GPU is the safe default.
 if (process.env.ZENITH_DISABLE_HARDWARE_ACCELERATION === "1") {
   app.disableHardwareAcceleration();
-  diagLog("[GPU] ZENITH_DISABLE_HARDWARE_ACCELERATION=1 — renderização por software.");
+  diagLog(
+    "[GPU] ZENITH_DISABLE_HARDWARE_ACCELERATION=1 — renderização por software.",
+  );
+} else {
+  diagLog("[GPU] Aceleração de hardware ativa para o radial transparente.");
 }
 
 // Periodic flush to ensure logs aren't stuck in queue
@@ -656,8 +661,9 @@ async function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       devTools: true,
-      // true caused broken hit-testing / "frozen" UI after minimize→restore on Windows (transparent frameless window).
-      backgroundThrottling: false,
+      // Let Chromium fully suspend animation/timers while the transparent window is hidden.
+      // Keeping an invisible renderer at full frame rate can contend with high-polling-rate mice.
+      backgroundThrottling: true,
     },
   });
 
@@ -986,6 +992,17 @@ function showMenuAtCursor(source = "shortcut") {
     return;
   }
 
+  /** A janela ociosa fica oculta e throttled. Acordá-la antes dos dois rAF do handshake evita
+   * o estado "abriu mas invisível" e permite ao Chromium entregar a primeira textura do radial. */
+  try {
+    if (typeof wc.setBackgroundThrottling === "function") {
+      wc.setBackgroundThrottling(false);
+    }
+    mainWindow.showInactive();
+  } catch (e) {
+    /* ignore */
+  }
+
   /**
    * Frame neutro antes de `open-menu` + `show` — sobretudo restore da minimização / HWND escondido.
    */
@@ -1008,6 +1025,70 @@ function showMenuAtCursor(source = "shortcut") {
 }
 
 /** Modo `small` passivo: HWND ao tamanho do monitor — forward fora do HUD (histórico). */
+/**
+ * Em `small` só existe janela para desenhar o HUD (faixa de Pomodoro/Cronómetro). Sem HUD, expandir ao
+ * monitor deixa uma janela layered topmost a ecrã inteiro que o DWM compõe em cada frame e que recebe
+ * todo o hit-testing do rato — medido em ~22% de `dwm|3d`, com cursor e arrasto lentos em todo o sistema.
+ * O renderer mantém esta flag; todos os caminhos que repõem `small` respeitam-na (ver `smallModeBounds`).
+ */
+const IDLE_OVERLAY_COLLAPSED_SIZE = 8;
+let overlayHudActive = false;
+ipcMain.on("set-overlay-hud-active", (_event, active) => {
+  overlayHudActive = !!active;
+});
+
+/**
+ * Radial aberto: caixa quadrada à volta do menu em vez do monitor inteiro — menos área layered para o DWM.
+ * `size` vem do renderer (raio + ícone + rótulo + margem de gesto); o fallback cobre a config padrão.
+ * A margem importa: o ângulo e o clique de seleção são lidos de eventos de rato da JANELA, por isso a caixa
+ * tem de ser bem maior que o círculo, senão um gesto largo sai da janela e a seleção não confirma.
+ */
+let radialViewportSize = 988;
+let radialViewportFixed = true;
+ipcMain.on("set-radial-viewport", (_event, payload) => {
+  if (!payload || typeof payload !== "object") return;
+  const n = Number(payload.size);
+  if (Number.isFinite(n) && n >= 320 && n <= 4096) {
+    radialViewportSize = Math.round(n);
+  }
+  if (typeof payload.fixed === "boolean") radialViewportFixed = payload.fixed;
+});
+
+/** Caixa do radial centrada na âncora (ou no centro do ecrã com `fixedPosition`), limitada ao monitor. */
+function radialModeBounds(displayBounds, point) {
+  const side = Math.min(
+    radialViewportSize,
+    displayBounds.width,
+    displayBounds.height,
+  );
+  const center = radialViewportFixed
+    ? {
+        x: displayBounds.x + displayBounds.width / 2,
+        y: displayBounds.y + displayBounds.height / 2,
+      }
+    : point;
+  const half = side / 2;
+  const maxX = displayBounds.x + displayBounds.width - side;
+  const maxY = displayBounds.y + displayBounds.height - side;
+  return {
+    x: Math.round(Math.max(displayBounds.x, Math.min(center.x - half, maxX))),
+    y: Math.round(Math.max(displayBounds.y, Math.min(center.y - half, maxY))),
+    width: Math.round(side),
+    height: Math.round(side),
+  };
+}
+
+/** Rect de `small`: monitor inteiro quando há HUD, canto mínimo quando não há. */
+function smallModeBounds(displayBounds) {
+  if (overlayHudActive) return { ...displayBounds };
+  return {
+    x: displayBounds.x,
+    y: displayBounds.y,
+    width: IDLE_OVERLAY_COLLAPSED_SIZE,
+    height: IDLE_OVERLAY_COLLAPSED_SIZE,
+  };
+}
+
 function applySmallModeFullMonitorBounds(anchorScreenPoint) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const point =
@@ -1019,13 +1100,7 @@ function applySmallModeFullMonitorBounds(anchorScreenPoint) {
       ? anchorScreenPoint
       : screen.getCursorScreenPoint();
   const targetDisplay = screen.getDisplayNearestPoint(point);
-  const b = targetDisplay.bounds;
-  mainWindow.setBounds({
-    x: b.x,
-    y: b.y,
-    width: b.width,
-    height: b.height,
-  });
+  mainWindow.setBounds(smallModeBounds(targetDisplay.bounds));
 }
 
 function unionScreenRects(rects) {
@@ -1109,24 +1184,23 @@ function updateWindowSize(mode, anchorScreenPoint) {
   const b = targetDisplay.bounds;
 
   if (mode === "fullscreen") {
-    try {
-      if (typeof mainWindow.setShape === "function") {
-        mainWindow.setShape([]);
-      }
-    } catch (e) {
-      /* ignore */
-    }
     lastWindowHitShapeKey = "__empty__";
-    mainWindow.setBounds({
-      x: b.x,
-      y: b.y,
-      width: b.width,
-      height: b.height,
-    });
+    /** Só a caixa do radial — o renderer remapeia a âncora de ecrã para coordenadas do cliente. */
+    const radialRect = radialModeBounds(b, point);
+    mainWindow.setBounds(radialRect);
     mainWindow.setResizable(true);
     mainWindow.setBackgroundColor("#00000000"); // FORCE TRANSPARENCY
     mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
     mainWindow.setIgnoreMouseEvents(false);
+    /**
+     * Não usar centenas de rects em `setShape` para imitar o círculo: o DWM recalcula essas regiões
+     * durante o movimento e pode atrasar o cursor global. O círculo visual já é desenhado em CSS.
+     */
+    try {
+      if (typeof mainWindow.setShape === "function") mainWindow.setShape([]);
+    } catch (e) {
+      /* ignore */
+    }
   } else if (mode === "windowed") {
     if (mainWindow.isFullScreen()) {
       mainWindow.setFullScreen(false);
@@ -1197,7 +1271,15 @@ function updateWindowSize(mode, anchorScreenPoint) {
       /* ignore */
     }
     try {
-      mainWindow.setIgnoreMouseEvents(true, { forward: true });
+      if (overlayHudActive) {
+        mainWindow.setIgnoreMouseEvents(true, { forward: true });
+        mainWindow.showInactive();
+      } else {
+        // No HUD means there is nothing to composite or hit-test. A truly hidden HWND is safer
+        // than a transparent 8x8 forwarding window for high polling-rate mouse drivers.
+        mainWindow.setIgnoreMouseEvents(true);
+        mainWindow.hide();
+      }
     } catch (e) {
       /* ignore */
     }
@@ -1703,7 +1785,7 @@ app.whenReady().then(async () => {
     syncLoginItemSettings(currentSettings.openAtLogin);
   }
 
-  /** Used with start/stop global MMB hook (PowerShell + WH_MOUSE_LL). */
+  /** Used with the non-blocking middle-button state monitor. */
   const cachedRadialFlags = {
     enableMouseTrigger: currentSettings.enableMouseTrigger !== false,
     mouseTriggerMode:
@@ -2388,9 +2470,36 @@ app.whenReady().then(async () => {
     return "";
   };
 
-  const registerGlobalShortcut = () => {
+  let lastShortcutRegistrationSignature = null;
+  const shortcutRegistrationSignature = () => {
+    const entries = [String(currentSettings.globalShortcut || "Alt+Z")];
+    const visit = (apps) => {
+      if (!Array.isArray(apps)) return;
+      for (const item of apps) {
+        if (item && item.shortcut && item.command) {
+          entries.push(`${item.shortcut}\u0000${item.command}`);
+        }
+        visit(item?.children);
+      }
+    };
+    for (const workspace of currentSettings.workspaces || []) visit(workspace?.apps);
+    return entries.join("\u0001");
+  };
+
+  const registerGlobalShortcut = (force = false) => {
+    const registrationSignature = shortcutRegistrationSignature();
+    if (!force && registrationSignature === lastShortcutRegistrationSignature) {
+      return;
+    }
+    lastShortcutRegistrationSignature = registrationSignature;
     globalShortcut.unregisterAll();
     let shortcut = currentSettings.globalShortcut || "Alt+Z";
+    const openRadialFromShortcut = async (sourceShortcut) => {
+      diagLog(`${sourceShortcut} shortcut triggered`);
+      const allowed = await shouldOpenMenu();
+      if (!allowed) return;
+      showMenuAtCursor("shortcut");
+    };
 
     // MIGRATION / NORMALIZATION: 'Win' is recorded as 'Super' now, but old settings might have 'Win'
     if (shortcut.includes("Win")) {
@@ -2401,12 +2510,9 @@ app.whenReady().then(async () => {
     }
 
     try {
-      const registered = globalShortcut.register(shortcut, async () => {
-        diagLog(`${shortcut} shortcut triggered`);
-        const allowed = await shouldOpenMenu();
-        if (!allowed) return;
-        showMenuAtCursor("shortcut");
-      });
+      const registered = globalShortcut.register(shortcut, () =>
+        openRadialFromShortcut(shortcut),
+      );
 
       if (registered) {
         mainShortcutConflictNotify = { failedKey: null, notifiedForKey: null };
@@ -2418,6 +2524,18 @@ app.whenReady().then(async () => {
         diagLog(
           `[Shortcut] Global shortcut '${shortcut}' not registered; it is likely already in use.${altZOverlayHint(shortcut)}`,
         );
+        /** Sem monitor global de mouse, garantir sempre uma forma segura de abrir o radial. */
+        const fallbackShortcut = "Alt+Shift+F9";
+        if (
+          shortcutCompactKey(shortcut) !== shortcutCompactKey(fallbackShortcut) &&
+          globalShortcut.register(fallbackShortcut, () =>
+            openRadialFromShortcut(fallbackShortcut),
+          )
+        ) {
+          diagLog(
+            `[Shortcut] Fallback '${fallbackShortcut}' registrado porque '${shortcut}' está ocupado.`,
+          );
+        }
       }
     } catch (e) {
       const failKey = shortcutCompactKey(shortcut);
@@ -2662,6 +2780,7 @@ app.whenReady().then(async () => {
 
   ipcMain.on("pause-global-shortcut", () => {
     console.log("[Shortcuts] Pausing global shortcuts for recording...");
+    lastShortcutRegistrationSignature = null;
     globalShortcut.unregisterAll();
   });
 
@@ -2994,7 +3113,7 @@ app.whenReady().then(async () => {
     return isDev ? p : p.replace("app.asar", "app.asar.unpacked");
   };
 
-  // 2. PowerShell Mouse Hook (C# Low Level Hook) for Global Reliability
+  // 2. PowerShell middle-button monitor (GetAsyncKeyState; never intercepts cursor movement)
   let mouseHook = null;
   /** If the first MMB opened the radial immediately, the second MMB (double-click → settings) would race fullscreen vs windowed. We defer the radial slightly so a second MMB can cancel it and open settings only — no overlay conflict. */
   /** Single MMB opens radial after this delay so a second MMB can cancel → settings only (no fullscreen race). */
@@ -3006,13 +3125,24 @@ app.whenReady().then(async () => {
   const startMouseHook = () => {
     if (mouseHook) return;
     const psScriptPath = getAssetPath("mouse-hook.ps1");
-    diagLog(`Starting Mouse Hook: ${psScriptPath}`);
-    mouseHook = spawn("powershell", [
-      "-ExecutionPolicy",
-      "Bypass",
-      "-File",
-      psScriptPath,
-    ]);
+    diagLog(`Starting Middle Button Monitor: ${psScriptPath}`);
+    mouseHook = spawn(
+      "powershell",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        psScriptPath,
+      ],
+      { windowsHide: true },
+    );
+    try {
+      os.setPriority(mouseHook.pid, os.constants.priority.PRIORITY_BELOW_NORMAL);
+    } catch (e) {
+      /* ignore */
+    }
 
     mouseHook.stdout.on("data", async (data) => {
       const lines = data.toString().split(/\r?\n/);
@@ -3105,6 +3235,8 @@ app.whenReady().then(async () => {
   };
 
   syncMouseHookState = () => {
+    // MMB remains global, but uses GetAsyncKeyState polling rather than WH_MOUSE_LL. The old
+    // low-level hook was invoked synchronously for every pointer movement and could delay the cursor.
     const wantHook = cachedRadialFlags.enableMouseTrigger;
     if (wantHook) startMouseHook();
     else stopMouseHook();
@@ -3855,10 +3987,15 @@ ipcMain.on("hide-window", () => {
 
   windowBuriedPassive = true;
 
-  // Low latency "hide": Opacity + Passthrough + Blur
-  mainWindow.setOpacity(0);
-  mainWindow.setIgnoreMouseEvents(true, { forward: true });
-  mainWindow.blur();
+  // Remove the native transparent surface completely. Opacity 0 + mouse forwarding still keeps
+  // a layered HWND in the Windows input/composition path and can delay high-rate pointers.
+  mainWindow.setIgnoreMouseEvents(true);
+  mainWindow.hide();
+  try {
+    mainWindow.webContents.setBackgroundThrottling(true);
+  } catch (e) {
+    /* ignore */
+  }
 });
 
 // IPC: Show Window explicitly
@@ -3867,6 +4004,11 @@ ipcMain.on("show-window", () => {
 
   windowBuriedPassive = false;
 
+  try {
+    mainWindow.webContents.setBackgroundThrottling(false);
+  } catch (e) {
+    /* ignore */
+  }
   mainWindow.show();
   mainWindow.focus();
   try {
@@ -4131,6 +4273,59 @@ ipcMain.handle("warm-radial-transition", () => {
   return true;
 });
 
+/**
+ * Repouso sem HUD: encolhe o HWND a um canto em vez de deixar uma janela layered topmost a ecrã inteiro.
+ * Uma camada transparente do tamanho do monitor fica sempre composta pelo DWM e recebe todo o hit-testing
+ * do rato (`setIgnoreMouseEvents` com `forward`) — é o que tornava o cursor e o resto do sistema lentos.
+ * Mesmo mecanismo já usado pela ilha via `set-window-hit-shape`; o radial reexpande em `updateWindowSize`.
+ */
+ipcMain.handle("collapse-idle-overlay", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  try {
+    if (mainWindow.isMinimized()) return false;
+  } catch (e) {
+    return false;
+  }
+  /** Só em `small`: em fullscreen/windowed o radial ou um painel está a usar a janela. */
+  if (nativeWindowSizeMode !== "small") return false;
+
+  const cur = mainWindow.getBounds();
+  const disp = screen.getDisplayNearestPoint({
+    x: Math.round(cur.x + cur.width / 2),
+    y: Math.round(cur.y + cur.height / 2),
+  });
+  const nb = {
+    x: disp.bounds.x,
+    y: disp.bounds.y,
+    width: IDLE_OVERLAY_COLLAPSED_SIZE,
+    height: IDLE_OVERLAY_COLLAPSED_SIZE,
+  };
+  const key = JSON.stringify(nb);
+  lastWindowHitShapeKey = key;
+  try {
+    if (typeof mainWindow.setShape === "function") mainWindow.setShape([]);
+  } catch (e) {
+    /* ignore */
+  }
+  if (!boundsApproxEqual(cur, nb)) {
+    try {
+      mainWindow.setBounds(nb);
+    } catch (e) {
+      /* ignore */
+    }
+  }
+  /** Nada visível aqui — retire completamente o HWND do compositor e do encaminhamento do rato. */
+  try {
+    mainWindow.setIgnoreMouseEvents(true);
+    mainWindow.hide();
+    mainWindow.webContents.setBackgroundThrottling(true);
+  } catch (e) {
+    /* ignore */
+  }
+  diagLog("[Overlay] Repouso sem HUD: janela nativa oculta (sem composição ou hit-testing).");
+  return true;
+});
+
 /** Re-run `small` overlay (forward mouse) — refreshes Windows hit-testing after fullscreen → HUD-only. */
 ipcMain.handle("reapply-small-overlay", () => {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
@@ -4148,6 +4343,16 @@ ipcMain.handle("reapply-small-overlay", () => {
     }
     return true;
   }
+  if (!overlayHudActive) {
+    try {
+      mainWindow.setIgnoreMouseEvents(true);
+      mainWindow.hide();
+      mainWindow.webContents.setBackgroundThrottling(true);
+    } catch (e) {
+      /* ignore */
+    }
+    return true;
+  }
   const cur = mainWindow.getBounds();
   /** Centro do HWND — não usar o cursor: com vários monitores o rato pode estar noutro ecrã e “puxar” a ilha. */
   const point = {
@@ -4155,7 +4360,8 @@ ipcMain.handle("reapply-small-overlay", () => {
     y: Math.round(cur.y + cur.height / 2),
   };
   const disp = screen.getDisplayNearestPoint(point);
-  const targetB = disp.bounds;
+  /** Sem HUD o alvo é o canto encolhido — nunca o monitor inteiro (ver `smallModeBounds`). */
+  const targetB = smallModeBounds(disp.bounds);
   /**
    * O renderer chama isto várias vezes (ilha idle, fechar pomodoro, etc.). Repetir `updateWindowSize('small')`
    * com `setBounds` + show/focus no mesmo estado faz o DWM piscar e o rect “fantasma” atrás da ilha.

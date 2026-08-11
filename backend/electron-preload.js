@@ -64,6 +64,11 @@ contextBridge.exposeInMainWorld("electron", {
   ensureWindowInteractive: () => ipcRenderer.invoke("ensure-window-interactive"),
   warmRadialTransition: () => ipcRenderer.invoke("warm-radial-transition"),
   reapplySmallOverlay: () => ipcRenderer.invoke("reapply-small-overlay"),
+  collapseIdleOverlay: () => ipcRenderer.invoke("collapse-idle-overlay"),
+  setOverlayHudActive: (active) =>
+    ipcRenderer.send("set-overlay-hud-active", !!active),
+  setRadialViewport: (payload) =>
+    ipcRenderer.send("set-radial-viewport", payload),
   setWindowHitShape: (rects, opts) =>
     ipcRenderer.invoke("set-window-hit-shape", rects, opts || {}),
   setWindowOpacity: (opacity) => ipcRenderer.send("set-window-opacity", opacity),

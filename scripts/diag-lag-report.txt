@@ -1,0 +1,28 @@
+﻿=== SONDA DE LAG DO ZENITH ===
+Reproduza AGORA: abra o modal, arraste a janela, mexa o mouse. 14 segundos.
+
+
+--- JANELAS DO ZENITH VISIVEIS (amostras) ---
+      2x  160x28 layered=True topmost=True
+      1x  64x64 layered=True topmost=True
+  maior area composta: 4480 px  (0.2% da tela 1920x1080)
+
+--- GPU (media %) ---
+  msedge|3d                      8.67
+  msedge|videodecode             5.23
+  dwm|3d                         1.62
+  System|copy                    1.54
+
+--- CPU no periodo (ms, >200) ---
+  Cursor                    20375 ms      83% de 1 nucleo
+  msedge                    19766 ms    80.6% de 1 nucleo
+  powershell                17812 ms    72.6% de 1 nucleo
+  msedge                    11062 ms    45.1% de 1 nucleo
+  msedge                     6578 ms    26.8% de 1 nucleo
+  svchost                    6281 ms    25.6% de 1 nucleo
+  ZenithBar                  5094 ms    20.8% de 1 nucleo
+  ShellHost                  4297 ms    17.5% de 1 nucleo
+  ChatGPT                    2688 ms      11% de 1 nucleo
+  LenovoVantage-(SmartNoiseCancelledAddin)     1406 ms     5.7% de 1 nucleo
+  audiodg                    1188 ms     4.8% de 1 nucleo
+  ChatGPT                    1078 ms     4.4% de 1 nucleo

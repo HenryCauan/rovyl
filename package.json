@@ -9,7 +9,8 @@
     "dev": "vite",
     "build": "tsc && vite build && node scripts/verify-radial-windowing.mjs && node scripts/generate-win-icon.mjs",
     "electron": "wait-on tcp:5173 && cross-env NODE_ENV=development node scripts/launch-electron.js",
-    "start": "concurrently -k \"npm run dev\" \"npm run electron\"",
+    "start": "node scripts/start-local-runtime.cjs",
+    "start:runtime": "concurrently -k \"npm run dev\" \"npm run electron\"",
     "dist": "npm run build && node scripts/run-electron-builder.mjs",
     "test:win32-launch": "node --test backend/win32-launch.test.cjs",
     "test:persistence-shape": "node scripts/persistence-normalize-smoke.mjs",
@@ -21,7 +22,6 @@
     "@tailwindcss/vite": "^4.3.0",
     "active-win": "^8.2.1",
     "framer-motion": "^10.16.4",
-    "loudness": "^0.4.2",
     "lucide-react": "^0.292.0",
     "node-global-key-listener": "^0.1.1",
     "react": "^18.2.0",
@@ -32,7 +32,7 @@
   "devDependencies": {
     "@types/react": "^18.2.37",
     "@types/react-dom": "^18.2.15",
-    "@vitejs/plugin-react": "^4.2.0",
+    "@vitejs/plugin-react": "^6.0.5",
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
     "electron": "^28.3.3",
@@ -40,7 +40,7 @@
     "png-to-ico": "^3.0.1",
     "rcedit": "^4.0.1",
     "typescript": "^5.2.2",
-    "vite": "^5.0.0",
+    "vite": "^8.2.1",
     "wait-on": "^7.1.0"
   },
   "build": {
