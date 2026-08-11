@@ -1,99 +1,38 @@
+# Poll only the middle-button state instead of installing WH_MOUSE_LL.
+# A managed low-level hook is called synchronously for every mouse movement in Windows; if the
+# PowerShell/.NET host stalls even briefly, the system cursor becomes delayed and erratic.
 Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
-using System.Diagnostics;
 
-public class MouseHook {
-    public delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
-
-    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-    public static extern IntPtr SetWindowsHookEx(int idHook, LowLevelMouseProc lpfn, IntPtr hMod, uint dwThreadId);
-
-    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool UnhookWindowsHookEx(IntPtr hhk);
-
-    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-    public static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
-
-    [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-    public static extern IntPtr GetModuleHandle(string lpModuleName);
-
+public static class ZenithMouseButtonState {
     [DllImport("user32.dll")]
-    public static extern bool GetMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
-
-    [DllImport("user32.dll")]
-    public static extern bool TranslateMessage([In] ref MSG lpMsg);
-
-    [DllImport("user32.dll")]
-    public static extern IntPtr DispatchMessage([In] ref MSG lpMsg);
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct MSG {
-        public IntPtr hwnd;
-        public uint message;
-        public IntPtr wParam;
-        public IntPtr lParam;
-        public uint time;
-        public POINT pt;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct POINT {
-        public int x;
-        public int y;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct MSLLHOOKSTRUCT {
-        public POINT pt;
-        public uint mouseData;
-        public uint flags;
-        public uint time;
-        public IntPtr dwExtraInfo;
-    }
-
-    private const int WH_MOUSE_LL = 14;
-    private const int WM_MBUTTONDOWN = 0x0207;
-    private const int WM_MBUTTONUP = 0x0208;
-
-    private static LowLevelMouseProc _proc = HookCallback;
-    private static IntPtr _hookID = IntPtr.Zero;
-
-    public static void Start() {
-        _hookID = SetHook(_proc);
-        MSG msg;
-        while (GetMessage(out msg, IntPtr.Zero, 0, 0)) {
-            TranslateMessage(ref msg);
-            DispatchMessage(ref msg);
-        }
-        UnhookWindowsHookEx(_hookID);
-    }
-
-    private static IntPtr SetHook(LowLevelMouseProc proc) {
-        using (Process curProcess = Process.GetCurrentProcess())
-        using (ProcessModule curModule = curProcess.MainModule) {
-            return SetWindowsHookEx(WH_MOUSE_LL, proc, GetModuleHandle(curModule.ModuleName), 0);
-        }
-    }
-
-    private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam) {
-        if (nCode >= 0) {
-            if (wParam == (IntPtr)WM_MBUTTONDOWN) {
-                Console.WriteLine("MIDDLE_DOWN");
-                return (IntPtr)1; // Swallow
-            } else if (wParam == (IntPtr)WM_MBUTTONUP) {
-                Console.WriteLine("MIDDLE_UP");
-                return (IntPtr)1; // Swallow
-            }
-        }
-        return CallNextHookEx(_hookID, nCode, wParam, lParam);
-    }
+    public static extern short GetAsyncKeyState(int virtualKey);
 }
 "@
 
+$VK_MBUTTON = 0x04
+$wasDown = $false
+
 try {
-    [MouseHook]::Start()
+    while ($true) {
+        $state = [int][ZenithMouseButtonState]::GetAsyncKeyState($VK_MBUTTON)
+        $isDown = ($state -band 0x8000) -ne 0
+
+        if ($isDown -ne $wasDown) {
+            if ($isDown) {
+                [Console]::WriteLine("MIDDLE_DOWN")
+            } else {
+                [Console]::WriteLine("MIDDLE_UP")
+            }
+            [Console]::Out.Flush()
+            $wasDown = $isDown
+        }
+
+        # A normal click lasts well over one frame; 16 ms halves wake-ups without losing MMB.
+        Start-Sleep -Milliseconds 16
+    }
 } catch {
-    Console.WriteLine("ERROR: " + $_.Exception.Message)
+    [Console]::WriteLine("ERROR: " + $_.Exception.Message)
+    [Console]::Out.Flush()
 }

@@ -14,44 +14,10 @@ import {
 const islandPillClass =
   'inline-flex min-w-0 items-center gap-2.5 rounded-full border border-white/[0.1] bg-[rgba(11,11,13,0.94)] px-3.5 py-1.5 shadow-none [filter:drop-shadow(0_4px_14px_rgba(0,0,0,0.28))_drop-shadow(0_1px_2px_rgba(0,0,0,0.2))]';
 
-const islandPulseDot =
-  'h-[4px] w-[4px] shrink-0 rounded-full bg-emerald-400/95 [filter:drop-shadow(0_0_5px_rgba(52,211,153,0.5))]';
-
-/**
- * Liquid-glass simulado — sem `backdrop-blur` nem `mix-blend` (no Windows transparente
- * geram um retângulo grande visível à volta da ilha). Contraste via preto semi-opaco + brilho.
- */
-const islandIdleGlassClass = [
-  'relative inline-flex min-w-0 items-center justify-center gap-2',
-  'rounded-full px-3.5 py-1.5',
-  'bg-[rgba(10,10,12,0.88)]',
-  'shadow-none',
-  '[filter:drop-shadow(0_5px_16px_rgba(0,0,0,0.45))]',
-  'before:pointer-events-none before:absolute before:inset-0 before:rounded-full',
-  'before:bg-gradient-to-b before:from-white/[0.11] before:via-white/[0.03] before:to-transparent',
-].join(' ');
-
-function IdleClockIsland({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className={islandIdleGlassClass} title={title}>
-      <div className="relative z-[1] inline-flex items-center gap-2">{children}</div>
-    </div>
-  );
-}
-
 /** Faixa no topo: largura = viewport; ilha centrada em X com flex (sem translate). */
-function islandTopStripClass(paintReady: boolean, notchFlush: boolean): string {
-  const pt = notchFlush
-    ? 'pt-2.5'
-    : 'pt-[max(1.25rem,env(safe-area-inset-top,0px))]';
+function islandTopStripClass(paintReady: boolean): string {
   return [
-    `fixed inset-x-0 top-0 z-[55] flex justify-center bg-transparent ${pt} px-4 pb-4 pointer-events-none overflow-visible isolate [mix-blend-mode:normal]`,
+    'fixed inset-x-0 top-0 z-[55] flex justify-center bg-transparent pt-[max(1.25rem,env(safe-area-inset-top,0px))] px-4 pb-4 pointer-events-none overflow-visible isolate [mix-blend-mode:normal]',
     paintReady ? 'opacity-100 visible' : 'opacity-0 invisible',
   ].join(' ');
 }
@@ -82,9 +48,14 @@ function looksLikeStartupWindowedViewport(): boolean {
   return Math.abs(w - 1280) <= 48 && Math.abs(h - 800) <= 48;
 }
 
+/** Em repouso o HWND fica encolhido ao canto: sem reexpandir primeiro, a faixa não tem viewport para medir. */
+function viewportTooSmallToMeasure(): boolean {
+  return window.innerWidth < 640 || window.innerHeight < 200;
+}
+
 async function ensureSmallOverlayBeforeHitShape(): Promise<void> {
   if (!window.electron?.reapplySmallOverlay) return;
-  if (!looksLikeStartupWindowedViewport()) return;
+  if (!looksLikeStartupWindowedViewport() && !viewportTooSmallToMeasure()) return;
   await window.electron.reapplySmallOverlay();
   await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
 }
@@ -92,7 +63,6 @@ async function ensureSmallOverlayBeforeHitShape(): Promise<void> {
 type Props = {
   config: UIConfig;
   isDesktopMode: boolean;
-  suppressFloatingClock: boolean;
   isPomodoroOpen: boolean;
   isStopwatchOpen: boolean;
   pomodoroState: PomodoroState;
@@ -100,16 +70,9 @@ type Props = {
   stopwatchSnap: StopwatchHudSnapshot | null;
 };
 
-/** Sempre HH:MM (24h), sem segundos — formato mínimo para a ilha de relógio. */
-function formatIdleClock(): string {
-  const d = new Date();
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
 export const CompactTimerHud: React.FC<Props> = ({
   config,
   isDesktopMode,
-  suppressFloatingClock,
   isPomodoroOpen,
   isStopwatchOpen,
   pomodoroState,
@@ -118,51 +81,18 @@ export const CompactTimerHud: React.FC<Props> = ({
 }) => {
   const t = (k: string) => getTranslation(config, k);
   const rootRef = useRef<HTMLDivElement>(null);
-  const idleTimeRef = useRef<HTMLSpanElement>(null);
   /** Evita mostrar a ilha durante vários frames em que o HWND / viewport ainda mudam (saltava entre cantos). */
   const [paintReady, setPaintReady] = useState(false);
   const lastSentBoundsRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
 
   const showPomodoro = pomodoroCompactHudVisible(isPomodoroOpen, pomodoroState, pomodoroConfig);
   const showStopwatch = stopwatchCompactHudVisible(isStopwatchOpen, stopwatchSnap);
-  const allowIdleClock = config.deskIslandClockWhileIdle !== false;
-  /** Relógio HH:MM só em repouso — some quando há faixa de widget (Pomodoro e/ou Cronómetro). */
-  const showIdleClock =
-    allowIdleClock && !suppressFloatingClock && !showPomodoro && !showStopwatch;
-
   const sideBySideTimerStrips = showPomodoro && showStopwatch;
-  const notchFlush = showIdleClock && !showPomodoro && !showStopwatch;
   const pillClass = islandPillClass;
   const labelMicro = 'text-[8px] font-semibold uppercase tracking-[0.2em]';
   const timeSize = 'text-[15px]';
 
-  const visible = isDesktopMode && (showPomodoro || showStopwatch || showIdleClock);
-
-  /**
-   * Ilha só em repouso: atualizar HH:MM no máximo 1×/minuto e só via textContent — evita
-   * re-render React + repintura do overlay transparente a cada segundo (congelava Zen/Edge).
-   */
-  useLayoutEffect(() => {
-    if (!showIdleClock) return;
-    const el = idleTimeRef.current;
-    if (!el) return;
-
-    const write = () => {
-      el.textContent = formatIdleClock();
-    };
-    write();
-    const msToNextMinute = 60_000 - (Date.now() % 60_000);
-    let intervalId: number | undefined;
-    const timeoutId = window.setTimeout(() => {
-      write();
-      intervalId = window.setInterval(write, 60_000);
-    }, msToNextMinute);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-      if (intervalId !== undefined) window.clearInterval(intervalId);
-    };
-  }, [showIdleClock]);
+  const visible = isDesktopMode && (showPomodoro || showStopwatch);
 
   /**
    * Não enviar `setWindowHitShape([])` ao desmontar — no main isso repõe o overlay a ecrã inteiro em `small` e
@@ -279,7 +209,7 @@ export const CompactTimerHud: React.FC<Props> = ({
       window.removeEventListener('resize', onResize);
       ro?.disconnect();
     };
-  }, [isDesktopMode, visible, showPomodoro, showStopwatch, showIdleClock, suppressFloatingClock]);
+  }, [isDesktopMode, visible, showPomodoro, showStopwatch]);
 
   if (!visible) return null;
 
@@ -288,11 +218,9 @@ export const CompactTimerHud: React.FC<Props> = ({
   const pomodoroLabel = `${pm}:${String(ps).padStart(2, '0')}`;
   const timeStyleBase = 'font-mono font-semibold tabular-nums leading-none text-white/[0.96]';
   const timeStyleDynamic = `${timeStyleBase} ${timeSize}`;
-  const timeStyleIdleClock =
-    'font-[system-ui,-apple-system,BlinkMacSystemFont,"Segoe_UI",sans-serif] text-[13px] font-medium tabular-nums leading-none tracking-[-0.01em] text-white/[0.94]';
 
   return (
-    <div className={islandTopStripClass(paintReady, notchFlush)}>
+    <div className={islandTopStripClass(paintReady)}>
       <div ref={rootRef} className={islandClusterClassNames(sideBySideTimerStrips)}>
         {showPomodoro && (
           <div
@@ -311,12 +239,6 @@ export const CompactTimerHud: React.FC<Props> = ({
             <span className={`${labelMicro} text-white/40 font-semibold uppercase`}>{t('hud.island_label_stop')}</span>
             <span className={timeStyleDynamic}>{formatStopwatchMs(stopwatchSnap.ms)}</span>
           </div>
-        )}
-        {showIdleClock && (
-          <IdleClockIsland title={t('hud.island_clock')}>
-            <span className={islandPulseDot} aria-hidden />
-            <span ref={idleTimeRef} className={timeStyleIdleClock} />
-          </IdleClockIsland>
         )}
       </div>
     </div>

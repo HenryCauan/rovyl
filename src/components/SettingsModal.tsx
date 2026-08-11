@@ -1415,27 +1415,6 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig; setCon
                                 step={0.05}
                                 onChange={(backdropOpacity) => setConfig({ ...config, backdropOpacity })}
                             />
-                            <SettingsSliderField
-                                label={t('visuals.blur_radius')}
-                                valueLabel={`${config.backdropBlur}px`}
-                                value={config.backdropBlur}
-                                min={0}
-                                max={60}
-                                step={1}
-                                onChange={(backdropBlur) => setConfig({ ...config, backdropBlur })}
-                            />
-                            <SettingsToggleRow
-                                label={t('visuals.blur_enabled')}
-                                description={t('visuals.blur_enabled_hint')}
-                                enabled={config.backdropBlur > 0}
-                                onToggle={() =>
-                                    setConfig({
-                                        ...config,
-                                        backdropBlur: config.backdropBlur > 0 ? 0 : 20,
-                                    })
-                                }
-                            />
-
                             <div className="space-y-2.5 border-t border-white/[0.06] pt-5">
                                 <div className="flex items-center gap-1.5">
                                     <span className="text-[13px] font-medium text-white/78">{t('visuals.accent_color')}</span>
@@ -1516,17 +1495,6 @@ const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig; setCon
                                         hintDescription={t('tooltip.performance_strict_desc')}
                                         enabled={config.performanceMode}
                                         onToggle={() => setConfig({ ...config, performanceMode: !config.performanceMode })}
-                                    />
-                                    <SettingsToggleRow
-                                        label={t('performance.idle_island')}
-                                        description={t('performance.idle_island_desc')}
-                                        hintTitle={t('tooltip.idle_island_title')}
-                                        hintDescription={t('tooltip.idle_island_desc')}
-                                        enabled={config.deskIslandClockWhileIdle !== false}
-                                        onToggle={() => {
-                                            const on = config.deskIslandClockWhileIdle !== false;
-                                            setConfig({ ...config, deskIslandClockWhileIdle: !on });
-                                        }}
                                     />
                                 </div>
                             </SettingsSection>
@@ -2814,62 +2782,6 @@ const HUDTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig:
                 </motion.div>
 
                 <div className="space-y-4">
-                    {/* CLOCK & DATE - Refined 2026 */}
-                    <motion.div
-                        className="bg-white/[0.015] border border-white/5 rounded-xl p-5 hover:bg-white/[0.03] transition-colors duration-500 group"
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.2 }}
-                    >
-                        <div className="flex items-center gap-4 mb-6">
-                            <div className="w-9 h-9 rounded-lg bg-black/40 border border-white/5 flex items-center justify-center text-white/40 group-hover:text-white group-hover:border-white/10 transition-all duration-500">
-                                <Clock size={24} strokeWidth={1} />
-                            </div>
-                            <div>
-                                <label className="text-[8px] font-medium text-white/20 uppercase tracking-[0.2em] block ml-0.5 mb-0.5">{getTranslation(config, 'hud.temporal_module')}</label>
-                                <h4 className="text-sm font-medium text-white/90 tracking-tight">{getTranslation(config, 'hud.time_flow')}</h4>
-                            </div>
-                        </div>
-
-                        <div className="space-y-4">
-                            <div className="flex items-center justify-between p-4 bg-black/20 rounded-xl border border-white/[0.02]">
-                                <div className="flex items-center gap-2 text-[13px] font-medium text-white/80">
-                                    {getTranslation(config, 'hud.chronometer')}
-                                    <InfoHint
-                                        title={getTranslation(config, 'tooltip.clock_title')}
-                                        description={getTranslation(config, 'tooltip.clock_desc')}
-                                    />
-                                </div>
-                                <motion.button
-                                    onClick={() => setConfig({ ...config, showClock: !config.showClock })}
-                                    className={`relative w-14 h-8 rounded-xl transition-all duration-500 p-1.5 shadow-lg ${config.showClock ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
-                                >
-                                    <motion.div className={`w-5 h-5 rounded-lg shadow-lg ${config.showClock ? 'bg-black' : 'bg-white/20'}`} animate={{ x: config.showClock ? 24 : 0 }} transition={{ type: "spring", stiffness: 400, damping: 30 }} />
-                                </motion.button>
-                            </div>
-
-                            <div className="flex items-center justify-between p-4 bg-black/20 rounded-xl border border-white/[0.02]">
-                                <div className="flex items-center gap-2 text-[13px] font-medium text-white/80">
-                                    {getTranslation(config, 'hud.calendar')}
-                                    <InfoHint
-                                        title={getTranslation(config, 'tooltip.date_title')}
-                                        description={getTranslation(config, 'tooltip.date_desc')}
-                                    />
-                                </div>
-                                <motion.button
-                                    onClick={() => setConfig({ ...config, showDate: !config.showDate })}
-                                    className={`relative w-14 h-8 rounded-xl transition-all duration-500 p-1.5 shadow-lg ${config.showDate ? 'bg-white' : 'bg-white/5 border border-white/10'}`}
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
-                                >
-                                    <motion.div className={`w-5 h-5 rounded-lg shadow-lg ${config.showDate ? 'bg-black' : 'bg-white/20'}`} animate={{ x: config.showDate ? 24 : 0 }} transition={{ type: "spring", stiffness: 400, damping: 30 }} />
-                                </motion.button>
-                            </div>
-                        </div>
-                    </motion.div>
-
                     <motion.div
                         className="bg-white/[0.01] border border-white/5 rounded-xl p-6 hover:bg-white/[0.02] transition-colors duration-500 group"
                         initial={{ opacity: 0, y: 10 }}
@@ -3624,9 +3536,8 @@ const SEARCHABLE_SETTINGS: Omit<SearchResult, 'id'>[] = [
     { type: 'setting', label: 'interface.center_button_func', description: 'interface.neural_center', tab: 'interface', icon: Box },
     { type: 'setting', label: 'interface.center_screen', description: 'interface.neural_center', tab: 'interface', icon: Layout },
     { type: 'setting', label: 'visuals.glass_effect', description: 'visuals.transparency', tab: 'visuals', icon: Palette },
-    { type: 'setting', label: 'visuals.transparency', description: 'visuals.blur_radius', tab: 'visuals', icon: ImageIcon },
+    { type: 'setting', label: 'visuals.transparency', description: 'visuals.opacity', tab: 'visuals', icon: ImageIcon },
     { type: 'setting', label: 'visuals.visual_rhythm', description: 'visuals.spacing', tab: 'visuals', icon: Layout },
-    { type: 'setting', label: 'hud.temporal_module', description: 'hud.time_flow', tab: 'widgets', icon: Clock },
     { type: 'setting', label: 'settings.gamemode_title', description: 'settings.gamemode_desc', tab: 'gamemode', icon: Shield },
     { type: 'setting', label: 'user.profile_title', description: 'user.profile_desc', tab: 'user', icon: User },
 ];
@@ -4358,19 +4269,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         const newPath = [...folderPath];
         newPath.pop();
         setFolderPath(newPath);
-    };
-
-    const toggleWidget = (widgetCommand: string, widgetDef: any) => {
-        const exists = flatApps.find(a => a.command === widgetCommand);
-        if (exists) {
-            setApps(prev => prev.filter(a => a.command !== widgetCommand));
-        } else {
-            const newWidgetApp: AppItem = {
-                id: generateId(), type: 'app', label: widgetDef.defaultLabel, iconName: widgetDef.iconName,
-                iconSource: 'lucide', command: widgetDef.command, description: widgetDef.name
-            };
-            setApps(prev => [...prev, newWidgetApp]);
-        }
     };
 
     const handleCenterTypeChange = (type: 'app' | 'widget' | 'command' | 'none' | 'cancel') => {

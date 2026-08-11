@@ -350,9 +350,6 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   const [hasMoved, setHasMoved] = useState(false);
   const isCenterActiveRef = useRef(isCenterActive);
   const openingTimeRef = useRef<number>(0);
-  const [currentTime, setCurrentTime] = useState(new Date());
-  // PERF FIX #4: Only update clock state when the displayed HH:MM string changes (once/minute vs once/second)
-  const lastDisplayedMinute = useRef('');
 
   useEffect(() => {
     isCenterActiveRef.current = isCenterActive;
@@ -437,21 +434,6 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   const CenterIcon = !isRoot ? CornerUpLeft : (config.centerButton?.iconName ? getIcon(config.centerButton.iconName) : Settings2);
   const centerLabel = !isRoot ? t('menu.back') : (config.centerButton?.label || t('menu.center'));
 
-  // PERF FIX #4: Clock — only trigger re-render when the displayed minute changes
-  useEffect(() => {
-    if (!isOpen) return;
-    const tick = () => {
-      const now = new Date();
-      const hhmm = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-      if (hhmm !== lastDisplayedMinute.current) {
-        lastDisplayedMinute.current = hhmm;
-        setCurrentTime(now);
-      }
-    };
-    tick(); // run immediately on open
-    const timer = setInterval(tick, 1000);
-    return () => clearInterval(timer);
-  }, [isOpen]);
 
   // Reset state when menu opens
   useEffect(() => {
@@ -1063,10 +1045,21 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     }
   }, [onClose, onWorkspaceSwitch]);
 
-  /** Fundo uniforme — gradientes radiais antigos criavam um “anel” mais claro à volta do menu. */
+  /**
+   * A janela Electron é maior que o menu para que gestos largos continuem a receber eventos do rato.
+   * O fundo visual, porém, acompanha apenas a roda (ícones + uma pequena margem) e usa a posição real
+   * do menu como centro — importante quando o radial abre perto da borda do monitor.
+   */
   const bo = config.backdropOpacity;
   const overlayAlpha = Math.min(0.88, 0.3 + bo * 0.58);
-  const overlayDim = `rgba(0, 0, 0, ${overlayAlpha})`;
+  const backdropRadius = Math.ceil(
+    actualMenuRadius + actualIconSize * 0.75 + Math.max(18, minGap),
+  );
+  const overlayDim =
+    `radial-gradient(circle at ${Math.round(position.x)}px ${Math.round(position.y)}px, ` +
+    `rgba(0,0,0,${overlayAlpha}) 0, ` +
+    `rgba(0,0,0,${overlayAlpha}) ${backdropRadius}px, ` +
+    `rgba(0,0,0,0) ${backdropRadius + 1}px)`;
 
   return (
     <motion.div
@@ -1100,12 +1093,8 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
           <RadialHud
             isOpen={isOpen}
             config={config}
-            currentTime={currentTime}
             batteryLevel={batteryLevel}
             weather={weather}
-            currentWorkspace={currentWorkspace}
-            moduleCount={apps.length}
-            moduleLabel={t('workspaces.active_modules')}
           />
 
           {/* Menu Container */}

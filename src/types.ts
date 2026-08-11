@@ -159,7 +159,6 @@ export interface UIConfig {
   menuRadius: number;
   iconSize: number;
   fixedPosition: boolean;
-  backdropBlur: number;
   backdropOpacity: number;
   menuOpacity: number;
   menuBackgroundStyle: "circle" | "fullscreen";
@@ -169,8 +168,6 @@ export interface UIConfig {
   showLabels: boolean;
   /** When true, app names stay visible for all items; when false, only the hovered/selected item shows its label. */
   alwaysShowAppLabels: boolean;
-  showClock: boolean;
-  showDate: boolean; // New
   showBattery: boolean; // New
   showWeather: boolean; // New
   weatherLocation?: string; // New: CEP or city name for weather
@@ -195,8 +192,6 @@ export interface UIConfig {
    * Persistido em config-v2.json (localStorage pode ser limpo após reboot).
    */
   mainStartMenuDiscoveryDone?: boolean;
-  /** Mostrar relógio no ambiente (modo desktop) em repouso — mantém overlay composto; mais uso de GPU. */
-  deskIslandClockWhileIdle?: boolean;
   /** Notes widget fullscreen overlay darkness (0 = transparent, 1 = opaque). */
   notesWidgetBackdropOpacity?: number;
   /** Alarms widget fullscreen overlay darkness (0 = transparent, 1 = opaque). */
@@ -267,6 +262,12 @@ export interface ElectronAPI {
   warmRadialTransition?: () => Promise<boolean>;
   /** Re-applies desktop passthrough overlay after closing a fullscreen widget (fixes flaky clicks on Windows). */
   reapplySmallOverlay?: () => Promise<boolean>;
+  /** Repouso sem HUD: encolhe o HWND ao canto (sem camada transparente a ecrã inteiro). */
+  collapseIdleOverlay?: () => Promise<boolean>;
+  /** Há HUD para desenhar em modo `small`? O main usa isto para nunca reexpandir ao monitor sem necessidade. */
+  setOverlayHudActive?: (active: boolean) => void;
+  /** Lado da caixa do radial (px) + se a posição é fixa — o main dimensiona a janela do menu com isto. */
+  setRadialViewport?: (payload: { size: number; fixed: boolean }) => void;
   /** Clears island passthrough / hit-shape so widgets and panels receive clicks immediately. */
   ensureWindowInteractive?: () => Promise<boolean>;
   /** Windows/Linux: ilha — `coordinateSpace: "screen"` encolhe o HWND; sem isso, coords de cliente + setShape. */
@@ -321,16 +322,6 @@ export interface ElectronAPI {
   ) => void;
   pauseGlobalShortcut: () => void;
   resumeGlobalShortcut: () => void;
-  getVolume: () => Promise<number>;
-  setVolume: (volume: number) => void;
-  getBrightness: () => Promise<number>;
-  setBrightness: (brightness: number) => void;
-  getHardwareCapabilities: () => Promise<{
-    hasWifi: boolean;
-    hasBluetooth: boolean;
-  }>;
-  toggleWifi: (enabled: boolean) => Promise<boolean>;
-  toggleBluetooth: (enabled: boolean) => Promise<boolean>;
   startShortcutRecording: () => void;
   stopShortcutRecording: () => void;
   onShortcutRecorded: (callback: (shortcut: string) => void) => () => void;

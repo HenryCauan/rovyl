@@ -430,7 +430,7 @@ export default function App() {
   const anyFullscreenWidgetOpen =
     isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen;
 
-  /** Faixas compactas + ilha de relógio opcional — mantém overlay visível em modo desktop quando aplicável. */
+  /** Faixas compactas (Pomodoro / Cronómetro) — mantém overlay visível em modo desktop quando aplicável. */
   const timerHudActive = compactTimerHudShouldShow(
     isPomodoroOpen,
     isStopwatchOpen,
@@ -438,28 +438,59 @@ export default function App() {
     pomodoro.config,
     stopwatchHudSnap,
     isDesktopMode,
-    isMenuOpen || radialOpenAwaitingFullscreen,
-    config.deskIslandClockWhileIdle !== false,
-    anyFullscreenWidgetOpen,
     panelSurfaceOpen,
   );
 
-  const prevTimerHudActiveRef = useRef(timerHudActive);
   /**
-   * A ilha encolhe o HWND; já não enviamos `setWindowHitShape([])` ao desmontar (evita flash no main).
-   * Quando o HUD compacto desliga sem ir para dashboard/radial, voltamos a aplicar overlay `small` em ecrã inteiro.
+   * Sem HUD (nem faixa de Pomodoro/Cronómetro, nem radial, nem painel) não há nada para desenhar:
+   * o HWND é encolhido ao canto. Deixá-lo em `small` a ecrã inteiro mantinha uma janela layered topmost
+   * composta pelo DWM a receber todo o hit-testing do rato — cursor e sistema ficavam lentos.
+   * O `updateWindowSize` reexpande ao abrir o radial / um painel.
+   */
+  const overlayIdle =
+    isDesktopMode &&
+    !timerHudActive &&
+    !panelSurfaceOpen &&
+    !isMenuOpen &&
+    !radialOpenAwaitingFullscreen &&
+    !anyFullscreenWidgetOpen;
+
+  /**
+   * Dimensão da janela do radial. Rótulos ficam para fora dos ícones; a margem de gesto é o que garante
+   * que arrastar para escolher a direção (e o clique que confirma) continua dentro da janela — os eventos
+   * de rato vêm da janela, fora dela o ângulo congela e a seleção não confirma. Aumentar se ficar curto.
+   */
+  useEffect(() => {
+    if (!window.electron?.setRadialViewport) return;
+    const RADIAL_LABEL_ALLOWANCE = 90;
+    const RADIAL_GESTURE_MARGIN = 200;
+    const radius = Number(config.menuRadius) || 140;
+    const icon = Number(config.iconSize) || 64;
+    const size = Math.round(
+      2 * (radius + icon + RADIAL_LABEL_ALLOWANCE + RADIAL_GESTURE_MARGIN),
+    );
+    window.electron.setRadialViewport({
+      size,
+      fixed: config.fixedPosition !== false,
+    });
+  }, [config.menuRadius, config.iconSize, config.fixedPosition]);
+
+  /**
+   * O main precisa de saber isto de forma persistente: um encolhimento pontual não chega, porque
+   * mostrar da bandeja / `reapplySmallOverlay` / segunda instância repunham o rect do monitor inteiro.
    */
   useLayoutEffect(() => {
-    if (!isDesktopMode || !window.electron?.reapplySmallOverlay) {
-      prevTimerHudActiveRef.current = timerHudActive;
-      return;
-    }
-    const was = prevTimerHudActiveRef.current;
-    if (was && !timerHudActive && !panelSurfaceOpen && !isMenuOpen && !radialOpenAwaitingFullscreen && !anyFullscreenWidgetOpen) {
-      void window.electron.reapplySmallOverlay();
-    }
-    prevTimerHudActiveRef.current = timerHudActive;
-  }, [isDesktopMode, timerHudActive, panelSurfaceOpen, isMenuOpen, radialOpenAwaitingFullscreen, anyFullscreenWidgetOpen]);
+    window.electron?.setOverlayHudActive?.(!overlayIdle);
+  }, [overlayIdle]);
+
+  useLayoutEffect(() => {
+    if (!overlayIdle || !window.electron?.collapseIdleOverlay) return;
+    /** Um tick depois: o main pode estar a aplicar `small`/`windowed` no mesmo ciclo (evita corrida de bounds). */
+    const t = window.setTimeout(() => {
+      void window.electron?.collapseIdleOverlay?.();
+    }, 60);
+    return () => window.clearTimeout(t);
+  }, [overlayIdle]);
 
   /**
    * Pré-aquece small↔fullscreen enquanto a ilha está visível — a 1.ª abertura do radial
@@ -2435,7 +2466,6 @@ export default function App() {
       config.accentColor,
       config.menuRadius,
       config.iconSize,
-      config.backdropBlur,
       config.backdropOpacity,
       config.menuBackgroundStyle,
       config.appSpacing,
@@ -2443,8 +2473,6 @@ export default function App() {
       config.centerButton,
       config.showLabels,
       config.alwaysShowAppLabels,
-      config.showClock,
-      config.showDate,
       config.showBattery,
       config.showWeather,
       config.weatherLocation,
@@ -2740,7 +2768,6 @@ export default function App() {
               key={islandHudRemountKey}
               config={config}
               isDesktopMode={isDesktopMode}
-              suppressFloatingClock={isMenuOpen}
               isPomodoroOpen={isPomodoroOpen}
               isStopwatchOpen={isStopwatchOpen}
               pomodoroState={pomodoro.state}

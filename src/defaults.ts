@@ -223,7 +223,6 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   menuRadius: 140,
   iconSize: 64,
   fixedPosition: true,
-  backdropBlur: 34,
   backdropOpacity: 1,
   menuOpacity: 0.8,
   menuBackgroundStyle: "circle",
@@ -237,8 +236,6 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   },
   showLabels: true,
   alwaysShowAppLabels: false,
-  showClock: true,
-  showDate: true,
   showBattery: false,
   showWeather: false,
   clockPosition: "top-center",
@@ -256,8 +253,6 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   language: "pt",
   performanceMode: false,
   mainStartMenuDiscoveryDone: false,
-  /** Ilha no ambiente (desktop): relógio HH:MM em repouso, sem segundos. */
-  deskIslandClockWhileIdle: true,
   notesWidgetBackdropOpacity: 0.85,
   alarmsWidgetBackdropOpacity: 0.85,
   pomodoroWidgetBackdropOpacity: 0.85,
@@ -299,4 +294,3 @@ export const AVAILABLE_WIDGETS: WidgetDefinition[] = [
     defaultLabel: "Pomodoro",
   },
 ];
-
