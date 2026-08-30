@@ -156,4 +156,11 @@ window-handshake invariants. If it fails, the handshake was broken, not the test
 
 ## License
 
-See [LICENSE](LICENSE).
+Copyright © 2026 Henry Cauan.
+
+Rovyl is free software, licensed under the **GNU General Public License v3.0** — see
+[LICENSE](LICENSE). You may use, study, modify and share it. If you distribute a modified
+version, you have to release its source under the same licence.
+
+The copyright holder is not bound by that outbound licence, so the build sold on the
+Microsoft Store is distributed under Microsoft's standard terms. Both are the same code.
