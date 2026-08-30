@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { flushSync } from 'react-dom';
 import { RadialMenu } from './components/RadialMenu';
-import { LicenseGate } from './components/LicenseGate';
 import { Toast } from './components/Toast';
 import { Coordinates, AppItem, UIConfig, UserProfile, Workspace } from './types';
 import {
@@ -176,7 +175,6 @@ function sanitizeFullPersistenceForDisk(d: {
 export default function App() {
   /* zenith-verify:radial-handshake-renderer — overlays/handshake radial; ver scripts/verify-radial-windowing.mjs */
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isLicenseGateOpen, setIsLicenseGateOpen] = useState(false);
   /** Atualização descarregada e à espera de reinício — assinalada com um selo no hub do radial. */
   const [updateReady, setUpdateReady] = useState(false);
 
@@ -187,8 +185,6 @@ export default function App() {
     return () => { off?.(); };
   }, []);
 
-  /** Pedido pendente para as definições abrirem no cartão da licença; o painel consome-o. */
-  const [licenseEditorRequested, setLicenseEditorRequested] = useState(false);
   /** Esconde dashboard/definições antes do `await applyWindowSize('fullscreen')` — sem isto, ao restaurar da bandeja aparece um frame da última UI. */
   const [radialOpenAwaitingFullscreen, setRadialOpenAwaitingFullscreen] = useState(false);
   /**
@@ -2037,21 +2033,6 @@ export default function App() {
       }
       /** Segundo MMB / atalho com o radial já aberto: alternar (fechar) em vez de reabrir. */
       if (closeMenuFromTrigger()) return;
-      /**
-       * Sem licença mostramos o gate — mas pela MESMA porta.
-       *
-       * Isto duplicava o caminho de abertura: calculava a posição sem a cadeia de recurso do
-       * `windowOrigin`, não repunha os sinalizadores de cobertura e não trocava a chave de
-       * montagem. Resultado: flash ao abrir e fechar sobre o painel, e a roda uns cem pixels
-       * acima do cursor — exatamente os defeitos que já tinham sido corrigidos no caminho normal.
-       *
-       * Levantar a bandeira ANTES de abrir garante que o `RadialMenu` nunca chega a montar: a
-       * árvore troca de componente no mesmo commit, sem um frame com a roda real à mostra.
-       */
-      if (!isStoreChannelRef.current && !userRef.current?.isPremium) {
-        flushSync(() => setIsLicenseGateOpen(true));
-      }
-
       void openMenuRef.current(data.x, data.y, data.source ?? 'shortcut', 'screen', {
         preSizedByMain: data.preSizedByMain === true,
         keepPanel: data.keepPanel === true,
@@ -2324,7 +2305,6 @@ export default function App() {
   const handleKeyDown = (e: KeyboardEvent) => {
     /* Removed hardcoded Alt+Z */
     if (e.key === 'Escape' && isMenuOpen) {
-      setIsLicenseGateOpen(false);
       setIsMenuOpen(false);
     }
   };
@@ -2381,7 +2361,6 @@ export default function App() {
 
     radialClickShieldUntilRef.current = Date.now() + 400;
     setIsMenuOpen(false);
-    setIsLicenseGateOpen(false);
     setRadialOpenAwaitingFullscreen(false);
     setRadialPreShowSolidCover(false);
     setRadialPendingPaintToken(null);
@@ -2462,111 +2441,18 @@ export default function App() {
     window.electron?.openExternalUrl?.('https://zenithos.online/#download');
   };
 
-  const handleActivateLicense = useCallback(async (licenseKey: string) => {
-    if (!window.electron?.activateRovylLicense) {
-      return { ok: false, error: 'License activation is only available in the Rovyl desktop app.' };
-    }
-    const result = await window.electron.activateRovylLicense(licenseKey);
-    if (result.ok && result.license) {
-      const license = result.license;
-      const name = license.name || 'Rovyl User';
-      flushSync(() => {
-        setUser({
-          id: crypto.randomUUID(),
-          name,
-          /** Sem email real nao se inventa um: um placeholder faz parecer que a licenca nao e do utilizador. */
-          email: license.email || '',
-          isPremium: license.isPremium !== false,
-          isAdmin: license.isAdmin === true,
-          planTier: license.planTier ?? 'pro',
-          deviceLimit: typeof license.deviceLimit === 'number' ? license.deviceLimit : undefined,
-          trialEndsAt: undefined,
-          avatarUrl: license.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=111111&color=ffffff`,
-        });
-      });
-      /** A janela pode fechar-se logo a seguir (radial) — não esperar pelo debounce de 450 ms. */
-      flushPersistenceToDiskRef.current?.();
-    }
-    return result;
-  }, []);
 
   /**
-   * Remover a licença é local: o `deviceId` guardado mantém-se, portanto reativar a mesma chave
    * nesta máquina volta a ocupar o mesmo lugar em vez de gastar um dispositivo novo.
    */
   /**
    * A roda trancada não pede a chave: encaminha para o cartão da licença nas definições, que é
    * onde o teclado já funciona sem depender do roubo de foreground para a janela do radial.
    */
-  const handleOpenLicenseSettings = useCallback(() => {
-    /**
-     * Uma única transição: fechar a roda pelo caminho normal chamaria `setWindowSize('small')` e a
-     * janela encolhia antes de as definições a voltarem a abrir — um salto visível. Aqui o estado
-     * passa direto de "roda trancada" para "painel aberto no cartão da licença".
-     */
-    radialClickShieldUntilRef.current = Date.now() + 400;
-    isHolding.current = false;
-    flushSync(() => {
-      setIsLicenseGateOpen(false);
-      setIsMenuOpen(false);
-      setRadialOpenAwaitingFullscreen(false);
-      setRadialPreShowSolidCover(false);
-      setRadialPendingPaintToken(null);
-      setPanelKeptUnderRadial(false);
-      setPanelOverlayScreenRect(null);
-      setPanelOverlayClientRect(null);
-      setPanelChromeDismissedForIsland(false);
-      setIsDashboardOpen(false);
-      setIsSettingsOpen(true);
-    });
-    setLicenseEditorRequested(true);
-    /** O painel acabado de revelar precisa do teclado tanto como o gate precisava. */
-    window.electron?.requestKeyboardFocus?.();
-    requestAnimationFrame(() => {
-      void window.electron?.invalidatePaint?.();
-    });
-  }, []);
 
-  const handleLicenseEditorConsumed = useCallback(() => setLicenseEditorRequested(false), []);
 
   /** Objeto estável: o memo das secções das definições depende dele. */
-  const licenseState = useMemo(
-    () => ({
-      active: isStoreChannel || user?.isPremium === true,
-      name: user?.name,
-      email: user?.email,
-      planTier: isStoreChannel ? (user?.planTier ?? 'pro') : user?.planTier,
-      deviceLimit: user?.deviceLimit,
-    }),
-    [isStoreChannel, user?.isPremium, user?.name, user?.email, user?.planTier, user?.deviceLimit],
-  );
 
-  const handleRemoveLicense = useCallback(async () => {
-    /**
-     * Primeiro libertar o lugar no servidor, depois esquecer localmente.
-     *
-     * Pela ordem inversa — ou sem a chamada, como estava — o dispositivo continuava a contar
-     * para o limite de três e o utilizador não tinha forma de o reaver. A remoção local acontece
-     * mesmo que o servidor recuse ou a rota ainda não exista: ficar preso a uma licença que já
-     * não se quer é pior do que um lugar por libertar, e o registo diz o que aconteceu.
-     */
-    let release: { ok: boolean; error?: string; code?: string } | undefined;
-    try {
-      release = await window.electron?.deactivateRovylLicense?.();
-    } catch (e) {
-      release = { ok: false, error: 'Falha ao contactar o serviço de licenças.' };
-    }
-    if (release && !release.ok) {
-      window.electron?.savePersistenceLog?.(
-        `[License] lugar NÃO libertado no servidor: ${release.code ?? '?'} ${release.error ?? ''}`,
-      );
-    }
-
-    flushSync(() => {
-      setUser(null);
-    });
-    flushPersistenceToDiskRef.current?.();
-  }, []);
 
   const handleLogout = () => {
     flushSync(() => {
@@ -2848,11 +2734,6 @@ export default function App() {
                     }
                   }}
                   onOpenDashboard={handleOpenSettings}
-                  onActivateLicense={handleActivateLicense}
-                  license={licenseState}
-                  onRemoveLicense={isStoreChannel ? undefined : handleRemoveLicense}
-                  licenseEditorRequested={licenseEditorRequested}
-                  onLicenseEditorConsumed={handleLicenseEditorConsumed}
                 />
                 </React.Suspense>
               </motion.div>
@@ -2893,7 +2774,7 @@ export default function App() {
       {/* ------------------------------------------------------------------ */}
 
         {/* Durante `radialOpenAwaitingFullscreen` o menu não pode ficar montado com `isOpen={false}` — o Framer animava “fechar” e depois “abrir”, causando flash de saída/entrada. */}
-        {!isLicenseGateOpen && (!radialOpenAwaitingFullscreen || isMenuOpen) && (
+        {(!radialOpenAwaitingFullscreen || isMenuOpen) && (
           <RadialMenu
             key={radialMountKey}
             isOpen={isMenuOpen}
@@ -2906,28 +2787,6 @@ export default function App() {
             updateReady={updateReady}
             onWorkspaceSwitch={handleWorkspaceSwitch}
             currentWorkspace={radialCurrentWorkspace}
-            animationReady={
-              radialPendingPaintToken === null ||
-              radialNativeRevealToken === radialPendingPaintToken
-            }
-          />
-        )}
-
-        {/*
-          Mesma condição do radial: enquanto a janela alarga, nada é montado. Sem isto o gate
-          aparecia antes do primeiro paint transparente e via-se o flash que a máquina de estados
-          do radial existe para evitar.
-        */}
-        {isLicenseGateOpen && (!radialOpenAwaitingFullscreen || isMenuOpen) && (
-          <LicenseGate
-            /** Mesma chave de montagem da roda: cada abertura começa de estado limpo. */
-            key={radialMountKey}
-            onOpenLicenseSettings={handleOpenLicenseSettings}
-            onDismiss={() => handleMenuClose(null)}
-            triggerSource={triggerSource}
-            position={menuPosition}
-            config={radialMenuConfig}
-            viewportSize={radialClientSize}
             animationReady={
               radialPendingPaintToken === null ||
               radialNativeRevealToken === radialPendingPaintToken

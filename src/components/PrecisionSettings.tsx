@@ -44,14 +44,9 @@ interface PrecisionSettingsProps {
   setConfig: (value: UIConfig | ((prev: UIConfig) => UIConfig)) => void;
   onReset: () => void;
   onOpenDashboard: () => void;
-  onActivateLicense?: (licenseKey: string) => Promise<{ ok: boolean; error?: string }>;
   /** Estado da licença ativa nesta máquina — a linha das definições espelha-o. */
-  license?: { active: boolean; name?: string; email?: string; planTier?: string; deviceLimit?: number };
-  onRemoveLicense?: () => void | Promise<void>;
   /** Verdadeiro enquanto houver um pedido pendente para abrir o cartão da licença. */
-  licenseEditorRequested?: boolean;
   /** Chamado assim que o pedido é atendido, para o App o limpar. */
-  onLicenseEditorConsumed?: () => void;
   isPage?: boolean;
 }
 
@@ -61,7 +56,6 @@ type SectionId = 'general' | 'trigger' | 'appearance' | 'spaces' | 'advanced';
 type Editor =
   | { kind: 'shortcut' }
   | { kind: 'blocked' }
-  | { kind: 'license' }
   | { kind: 'workspace'; index: number }
   | null;
 
@@ -116,11 +110,6 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
   config,
   setConfig,
   onReset,
-  onActivateLicense,
-  license,
-  onRemoveLicense,
-  licenseEditorRequested,
-  onLicenseEditorConsumed,
 }) => {
   const [sectionId, setSectionId] = useState<SectionId>('general');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -203,17 +192,6 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
       onClose();
     }, 240);
   }, [onClose]);
-
-  /**
-   * Abertura dirigida, e só uma vez: o pedido é consumido aqui. Um contador persistente reabria o
-   * cartão sempre que o painel remontava — abrir pela bandeja caía sempre na licença.
-   */
-  useEffect(() => {
-    if (!licenseEditorRequested) return;
-    setSectionId('advanced');
-    setEditor({ kind: 'license' });
-    onLicenseEditorConsumed?.();
-  }, [licenseEditorRequested, onLicenseEditorConsumed]);
 
   useEffect(() => {
     let cancelled = false;
@@ -538,48 +516,6 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
         },
       ],
       advanced: [
-        {
-          key: 'license',
-          group: 'Rovyl license',
-          title: license?.active ? 'License active' : 'Activate license',
-          description: isStoreBuild
-            ? 'Activated through the Microsoft Store. No key needed on this device.'
-            : license?.active
-            ? [
-                license.email,
-                license.planTier ? `${license.planTier} plan` : null,
-                `this device of ${license.deviceLimit ?? 3}`,
-              ]
-                .filter(Boolean)
-                .join(' · ')
-            : 'Enter the license key received after your purchase.',
-          kind: 'open',
-          value: isStoreBuild ? 'Store' : license?.active ? 'Active' : 'Enter key',
-          onOpen: () => setEditor({ kind: 'license' }),
-          onDelete: license?.active && onRemoveLicense ? onRemoveLicense : undefined,
-          deleteLabel: 'Remove license from this device',
-        },
-        /**
-         * Linha propria para os dispositivos.
-         *
-         * A remocao ja existia, mas escondida atras de um icone de caixote sem texto: quem paga
-         * concluia que a licenca nao estava ligada a nada e que nao havia forma de libertar um
-         * lugar. A funcionalidade nao mudou — passou a ser legivel.
-         */
-        ...(!isStoreBuild && license?.active && onRemoveLicense
-          ? [{
-              key: 'license-devices',
-              group: 'Rovyl license',
-              title: 'Devices',
-              description: `This license covers up to ${license.deviceLimit ?? 3} devices`
-                + `${license.email ? `, tied to ${license.email}` : ''}`
-                + '. Removing it here frees the slot for another computer.',
-              kind: 'action' as const,
-              actionLabel: 'Remove this device',
-              actionIcon: Trash2,
-              onRun: onRemoveLicense,
-            }]
-          : []),
         ...(!isStoreBuild && updateInfo.state === 'ready'
           ? [{
               key: 'update-ready',
@@ -657,7 +593,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
         },
       ],
     };
-  }, [config, gameMode, theme, apps, update, updateInfo, updateBusy, updateNote, isStoreBuild, runUpdateCheck, onReset, deleteWorkspace, reorderWorkspaces, license, onRemoveLicense]);
+  }, [config, gameMode, theme, apps, update, updateInfo, updateBusy, updateNote, isStoreBuild, runUpdateCheck, onReset, deleteWorkspace, reorderWorkspaces]);
 
   const trimmedQuery = query.trim().toLowerCase();
   const activeMeta = SECTIONS.find((section) => section.id === sectionId)!;
@@ -806,9 +742,6 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
               apps={apps}
               gameMode={gameMode}
               updateGameMode={updateGameMode}
-              onActivateLicense={onActivateLicense}
-              license={license}
-              onRemoveLicense={onRemoveLicense}
               onCloseSettings={dismissWithFade}
               reduceMotion={Boolean(reduceMotion)}
             />
@@ -1166,9 +1099,6 @@ function SettingsEditor({
   apps,
   gameMode,
   updateGameMode,
-  onActivateLicense,
-  license,
-  onRemoveLicense,
   onCloseSettings,
   reduceMotion,
 }: {
@@ -1181,9 +1111,6 @@ function SettingsEditor({
   apps: AppItem[];
   gameMode: UIConfig['gameMode'];
   updateGameMode: (patch: Partial<UIConfig['gameMode']>) => void;
-  onActivateLicense?: (licenseKey: string) => Promise<{ ok: boolean; error?: string }>;
-  license?: { active: boolean; name?: string; email?: string; planTier?: string; deviceLimit?: number };
-  onRemoveLicense?: () => void | Promise<void>;
   /** Ativar a licença fecha o painel: o utilizador veio destrancar a roda, não configurar. */
   onCloseSettings?: () => void;
   reduceMotion: boolean;
@@ -1209,24 +1136,6 @@ function SettingsEditor({
     );
   }
 
-  if (editor.kind === 'license') {
-    title = license?.active ? 'Rovyl license' : 'Activate Rovyl';
-    description = license?.active
-      ? 'This device is activated. Removing the license frees the slot for another machine.'
-      : 'Paste the key from your purchase confirmation. One license can be used on up to three devices.';
-    content = (
-      <LicenseActivation
-        onActivate={onActivateLicense}
-        license={license}
-        onRemove={onRemoveLicense}
-        onRemoved={close}
-        onActivated={() => {
-          close();
-          onCloseSettings?.();
-        }}
-      />
-    );
-  }
 
   if (editor.kind === 'workspace') {
     const index = editor.index;
@@ -1285,126 +1194,6 @@ function SettingsEditor({
   );
 }
 
-function LicenseActivation({
-  onActivate,
-  license,
-  onRemove,
-  onRemoved,
-  onActivated,
-}: {
-  onActivate?: (licenseKey: string) => Promise<{ ok: boolean; error?: string }>;
-  license?: { active: boolean; name?: string; email?: string; planTier?: string; deviceLimit?: number };
-  onRemove?: () => void | Promise<void>;
-  onRemoved?: () => void;
-  /** Chamado depois de a chave passar — o painel sai de cena. */
-  onActivated?: () => void;
-}) {
-  const [licenseKey, setLicenseKey] = useState('');
-  const [status, setStatus] = useState<'idle' | 'loading' | 'error' | 'success'>('idle');
-  const [message, setMessage] = useState('');
-  const [confirmRemoval, setConfirmRemoval] = useState(false);
-  const closeTimerRef = React.useRef<number | undefined>(undefined);
-  useEffect(() => () => window.clearTimeout(closeTimerRef.current), []);
-
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    const key = licenseKey.trim();
-    if (!key) {
-      setStatus('error');
-      setMessage('Enter your Rovyl license key.');
-      return;
-    }
-    if (!onActivate) {
-      setStatus('error');
-      setMessage('License activation is only available in the Rovyl desktop app.');
-      return;
-    }
-    setStatus('loading');
-    setMessage('Verifying license…');
-    const result = await onActivate(key);
-    if (result.ok) {
-      setStatus('success');
-      setMessage('License activated on this device.');
-      /** Um beat para a confirmação ser lida; fechar no mesmo frame parecia que nada aconteceu. */
-      closeTimerRef.current = window.setTimeout(() => onActivated?.(), 850);
-      return;
-    }
-    setStatus('error');
-    setMessage(result.error || 'This license could not be activated.');
-  };
-
-  /** Licença ativa: o cartão deixa de pedir chave e passa a mostrar o que está ativo aqui. */
-  if (license?.active) {
-    return (
-      <div className="zs-license-card">
-        <div className="zs-license-orbit" aria-hidden><span /></div>
-        <div className="zs-license-copy">
-          <span>ROVYL / LICENSE</span>
-          <strong>Active on this device.</strong>
-          <p>
-            {[license.name, license.email, license.planTier ? `${license.planTier} plan` : null]
-              .filter(Boolean)
-              .join(' · ') || 'Your license is active on this device.'}
-          </p>
-        </div>
-        {confirmRemoval && (
-          <p className="zs-license-status is-error" role="status">
-            Removing the license locks the radial menu on this device until you activate a key again.
-          </p>
-        )}
-        <div className="zs-license-actions">
-          <span>ONE LICENSE · 3 DEVICES</span>
-          <button
-            type="button"
-            className="zs-btn"
-            onClick={() => {
-              if (!confirmRemoval) {
-                setConfirmRemoval(true);
-                return;
-              }
-              onRemove?.();
-              onRemoved?.();
-            }}
-          >
-            {confirmRemoval ? 'Confirm removal' : 'Remove license'}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <form className="zs-license-card" onSubmit={submit}>
-      <div className="zs-license-orbit" aria-hidden><span /></div>
-      <div className="zs-license-copy">
-        <span>ROVYL / LICENSE KEY</span>
-        <strong>Unlock your radial workspace.</strong>
-        <p>Paste the key exactly as it appears in your purchase confirmation.</p>
-      </div>
-      <label className="zs-license-input">
-        <span>License key</span>
-        <input
-          autoFocus
-          value={licenseKey}
-          onChange={(event) => {
-            setLicenseKey(event.target.value.toUpperCase());
-            if (status !== 'idle') setStatus('idle');
-          }}
-          placeholder="ROVYL-XXXX-XXXX-XXXX"
-          autoComplete="off"
-          spellCheck={false}
-        />
-      </label>
-      {status !== 'idle' && <p className={`zs-license-status is-${status}`} role="status">{message}</p>}
-      <div className="zs-license-actions">
-        <span>ONE LICENSE · 3 DEVICES</span>
-        <button type="submit" className="zs-btn is-primary" disabled={status === 'loading'}>
-          {status === 'loading' ? 'Activating…' : 'Activate'}
-        </button>
-      </div>
-    </form>
-  );
-}
 
 type WorkspaceAddMode = 'app' | 'url' | 'folder' | null;
 
