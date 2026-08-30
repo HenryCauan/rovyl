@@ -329,14 +329,6 @@ export interface ElectronAPI {
   exportConfig: () => Promise<{ success: boolean; error?: string }>;
   importConfig: () => Promise<{ success: boolean; error?: string }>;
   startGoogleAuth: () => void;
-  activateRovylLicense?: (licenseKey: string) => Promise<{
-    ok: boolean;
-    license?: { email?: string; name?: string; isPremium?: boolean; planTier?: SubscriptionTier; avatarUrl?: string; isAdmin?: boolean; deviceLimit?: number };
-    error?: string;
-    code?: string;
-  }>;
-  /** Liberta o lugar deste dispositivo no servidor; falha em silêncio se a rota não existir. */
-  deactivateRovylLicense?: () => Promise<{ ok: boolean; error?: string; code?: string }>;
   onGoogleAuthSuccess: (callback: (user: any) => void) => () => void;
   onGoogleAuthError?: (callback: (payload: { code?: string; message?: string; userDataPath?: string }) => void) => () => void;
   savePersistenceLog: (message: string) => void;

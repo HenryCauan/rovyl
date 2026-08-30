@@ -203,9 +203,6 @@ contextBridge.exposeInMainWorld("electron", {
   setWorkspaceShortcutsState: (isOpen, workspaceSwitchMode) =>
     ipcRenderer.send("set-workspace-shortcuts", isOpen, workspaceSwitchMode),
   startGoogleAuth: () => ipcRenderer.send("start-google-auth"),
-  activateRovylLicense: (licenseKey) => ipcRenderer.invoke("activate-rovyl-license", licenseKey),
-  /** Liberta o lugar deste dispositivo no servidor de licenças. */
-  deactivateRovylLicense: () => ipcRenderer.invoke("deactivate-rovyl-license"),
   onGoogleAuthSuccess: (callback) => {
     const listener = (event, user) => callback(user);
     ipcRenderer.on("google-auth-success", listener);
