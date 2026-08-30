@@ -1,26 +1,35 @@
 {
-  "name": "zenith-radial-menu",
+  "name": "rovyl",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.2.4",
   "main": "backend/electron-main.js",
-  "author": "Seu Nome",
-  "description": "Menu Radial Zenith",
+  "author": "HenryCa",
+  "description": "Rovyl radial launcher",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HenryCauan/Rovyl.git"
+  },
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && node scripts/verify-radial-windowing.mjs && node scripts/generate-win-icon.mjs",
+    "build": "tsc && vite build && node scripts/verify-radial-windowing.mjs && node scripts/generate-win-icon.mjs && node scripts/generate-appx-assets.mjs",
     "electron": "wait-on tcp:5173 && cross-env NODE_ENV=development node scripts/launch-electron.js",
     "start": "node scripts/start-local-runtime.cjs",
     "start:runtime": "concurrently -k \"npm run dev\" \"npm run electron\"",
     "dist": "npm run build && node scripts/run-electron-builder.mjs",
     "test:win32-launch": "node --test backend/win32-launch.test.cjs",
     "test:persistence-shape": "node scripts/persistence-normalize-smoke.mjs",
-    "verify:radial-windowing": "node scripts/verify-radial-windowing.mjs"
+    "verify:radial-windowing": "node scripts/verify-radial-windowing.mjs",
+    "release": "node scripts/release.mjs",
+    "release:check": "node scripts/release.mjs --check",
+    "dist:store": "npm run build && node scripts/run-electron-builder.mjs --win appx --publish never"
   },
   "dependencies": {
+    "@fontsource-variable/instrument-sans": "^5.3.0",
     "@fontsource-variable/inter": "^5.2.8",
     "@fontsource-variable/space-grotesk": "^5.2.10",
     "@tailwindcss/vite": "^4.3.0",
     "active-win": "^8.2.1",
+    "electron-updater": "^6.8.9",
     "framer-motion": "^10.16.4",
     "lucide-react": "^0.292.0",
     "node-global-key-listener": "^0.1.1",
@@ -39,13 +48,14 @@
     "electron-builder": "^24.9.1",
     "png-to-ico": "^3.0.1",
     "rcedit": "^4.0.1",
+    "sharp": "^0.35.3",
     "typescript": "^5.2.2",
     "vite": "^8.2.1",
     "wait-on": "^7.1.0"
   },
   "build": {
-    "appId": "com.seu.zenith",
-    "productName": "Zenith OS",
+    "appId": "com.henry.rovyl",
+    "productName": "Rovyl",
     "icon": "build/icon.ico",
     "files": [
       "dist/**/*",
@@ -63,27 +73,50 @@
     "directories": {
       "output": "build-out"
     },
+    "publish": {
+      "provider": "github",
+      "owner": "HenryCauan",
+      "repo": "rovylapp",
+      "releaseType": "release"
+    },
     "afterPack": "./scripts/after-pack-win-icon.cjs",
     "afterAllArtifactBuild": "./scripts/after-all-artifact-win-icon.cjs",
     "win": {
       "target": [
-        "nsis",
-        "portable"
+        "nsis"
       ],
       "icon": "build/icon.ico",
       "signAndEditExecutable": false
     },
     "nsis": {
+      "uninstallDisplayName": "Rovyl",
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "installerHeaderIcon": "build/icon.ico",
+      "installerSidebar": "build/installer-sidebar.bmp",
+      "uninstallerSidebar": "build/installer-sidebar.bmp",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "guid": "5e135f2a-7b3b-4e12-8c14-998822334455",
-      "artifactName": "${productName} Setup ${version}.${ext}",
+      "artifactName": "${productName}.${ext}",
       "include": "nsis/installer.nsh",
       "deleteAppDataOnUninstall": true
+    },
+    "appx": {
+      "identityName": "HenryCa.Rovyl",
+      "publisher": "CN=B2313BE4-E4A4-4805-A379-905ED98AD53F",
+      "publisherDisplayName": "HenryCa",
+      "applicationId": "Rovyl",
+      "displayName": "Rovyl",
+      "backgroundColor": "#101014",
+      "showNameOnTiles": false,
+      "languages": [
+        "en-US"
+      ]
     }
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

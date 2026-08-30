@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import '@fontsource-variable/inter';
 import '@fontsource-variable/space-grotesk';
+import '@fontsource-variable/instrument-sans';
 import './index.css';
 import App from './App';
 

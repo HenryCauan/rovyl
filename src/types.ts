@@ -10,6 +10,8 @@ export interface UserProfile {
   /** Paid tier when billing supports Plus vs Pro; optional until checkout is wired. */
   planTier?: SubscriptionTier;
   isAdmin?: boolean;
+  /** Quantos dispositivos a licenca cobre; vem do servidor na ativacao. */
+  deviceLimit?: number;
   trialEndsAt?: string; // ISO Date string
   avatarUrl?: string;
   /** Local profile only (billing / account sync can come later). */
@@ -34,86 +36,14 @@ export interface AppItem {
   openTerminalForRecents?: boolean;
   openTerminal?: boolean; // New: indicates if opening this item should also open a terminal
   terminalCommands?: string[]; // New: list of commands to run automatically in the terminal
-}
-
-export interface WidgetDefinition {
-  id: string;
-  name: string;
-  description: string;
-  iconName: string;
-  command: string;
-  defaultLabel: string;
-}
-
-export type NoteSize = 'sm' | 'md' | 'lg' | 'xl';
-
-export interface TodoItem {
-  id: string;
-  text: string;
-  done: boolean;
-}
-
-/** Separate boards for the Notes widget (independent from radial menu workspaces). */
-export interface NoteWorkspace {
-  id: string;
-  name: string;
-}
-
-export interface Note {
-  id: string;
-  title: string;
-  content: string;
-  contentHtml?: string; // Rich-text HTML content
-  date: string;
-  color?: string; // Background accent color key
-  size?: NoteSize; // Tile size tier for the bento grid
-  position?: { x: number; y: number }; // Infinite canvas floating position
-  dimensions?: { width: number; height: number }; // Free-form resizing dimensions
-  icon?: string; // Lucide icon name for custom visual categorization
-  type?: 'text' | 'todo'; // 'todo' changes rendering to a tick-box list
-  todos?: TodoItem[]; // Payload for 'todo' list mode
-  /** Which notes board this sticky belongs to (defaults to "default"). */
-  workspaceId?: string;
-  pinned?: boolean;
-  archived?: boolean;
-  updatedAt?: string;
-}
-
-export interface Alarm {
-  id: string;
-  time: string;
-  label: string;
-  enabled: boolean;
-  days?: number[];
-}
-
-export type PomodoroMode = "work" | "shortBreak" | "longBreak";
-
-export interface PomodoroConfig {
-  workDuration: number; // minutes
-  shortBreakDuration: number; // minutes
-  longBreakDuration: number; // minutes
-  autoStart: boolean;
-  longBreakInterval: number; // pomodoros before long break
-}
-
-export interface PomodoroTask {
-  id: string;
-  title: string;
-  completed: boolean;
-  estimatedPomodoros: number;
-  completedPomodoros: number;
-}
-
-export interface PomodoroState {
-  isActive: boolean;
-  mode: PomodoroMode;
-  timeLeft: number; // seconds
-  cyclesCompleted: number;
-  totalPomodorosCompleted: number; // Daily stats
+  /** Diretório explícito para terminal/comandos; evita inferir cwd da linha de lançamento da IDE. */
+  workingDirectory?: string;
+  /** Estratégia de abertura: normal, reutilizar processo existente ou aquecer ficheiros no cache do Windows. */
+  launchMode?: "normal" | "reuse" | "prewarm";
 }
 
 export interface CenterButtonConfig {
+  /** `widget` mantido só para ler configs antigos — os widgets internos foram removidos. */
   type: "app" | "widget" | "command" | "none" | "cancel";
   target: string;
   label: string;
@@ -130,13 +60,16 @@ export interface GameModeConfig {
   enabled: boolean;
   mode: "all" | "list"; // 'all' = qualquer app fullscreen; 'list' = só apps da lista em fullscreen
   blockedApps: string;
+  /** Detecta automaticamente jogos fullscreen por pasta, launcher e marcadores de engine. */
+  autoDetectGames: boolean;
 }
 
 export interface Workspace {
   id: string;
   name: string;
   apps: AppItem[];
-  hotkey: number; // 1-9
+  /** Number key used while the radial is open. Zero means picker/mouse-wheel only. */
+  hotkey: number; // 0 or 1-9
   enabled: boolean;
   color?: string; // Optional project/workspace color
   /** Ícone Lucide na roda inicial quando `workspaceSwitchMode === 'picker'`. Omite → Layers. */
@@ -156,8 +89,14 @@ export type ClockHudPosition = (typeof CLOCK_HUD_POSITIONS)[number];
 
 export interface UIConfig {
   accentColor: string;
+  /** Cor aplicada ao item apontado no menu radial. Opcional para compatibilidade com configs antigas. */
+  radialHoverColor?: string;
   menuRadius: number;
   iconSize: number;
+  /**
+   * @deprecated Deixou de ser configurável — a roda nasce sempre no centro. Mantido só para ler
+   * configs antigos (normalizado para `true` na hidratação). Não voltar a expor nas definições.
+   */
   fixedPosition: boolean;
   backdropOpacity: number;
   menuOpacity: number;
@@ -181,10 +120,26 @@ export interface UIConfig {
    * picker: ao abrir o radial vê-se primeiro a roda de espaços; ao escolher, os apps desse espaço; o centro volta atrás (como pastas).
    */
   workspaceSwitchMode?: 'hotkeys' | 'picker';
+  /**
+   * Tema das superfícies opacas (titlebar + Settings). O radial permanece sempre
+   * escuro: é um overlay sobre o ambiente de trabalho, não uma superfície do produto.
+   */
+  appearanceTheme?: 'black' | 'white';
+  /**
+   * Como a roda decide o alvo.
+   * 'angle'  — direcao a partir do centro; a fatia acende mesmo com o cursor longe (por omissao).
+   * 'cursor' — so acende quando o ponteiro esta mesmo sobre o icone.
+   */
+  radialSelectionMode?: 'angle' | 'cursor';
   openAtLogin?: boolean; // New: Start app at login
   enableMouseTrigger: boolean;
   /** click: clique MMB abre e deixa o radial aberto; hold: segurar abre e soltar executa a seleção. */
   mouseTriggerMode?: 'click' | 'hold';
+  /**
+   * Botão físico que abre a roda. Esquerdo e direito estão fora de propósito: vigiá-los
+   * globalmente colidiria com o clique primário e o menu de contexto do sistema.
+   */
+  mouseTriggerButton?: 'middle' | 'x1' | 'x2';
   language: "pt" | "en" | "es" | "fr" | "de" | "it" | "ja" | "zh" | "ko" | "ru";
   performanceMode: boolean; // New: Strict performance mode for zero-lag
   /**
@@ -192,14 +147,6 @@ export interface UIConfig {
    * Persistido em config-v2.json (localStorage pode ser limpo após reboot).
    */
   mainStartMenuDiscoveryDone?: boolean;
-  /** Notes widget fullscreen overlay darkness (0 = transparent, 1 = opaque). */
-  notesWidgetBackdropOpacity?: number;
-  /** Alarms widget fullscreen overlay darkness (0 = transparent, 1 = opaque). */
-  alarmsWidgetBackdropOpacity?: number;
-  /** Pomodoro widget fullscreen overlay darkness (0 = transparent, 1 = opaque). */
-  pomodoroWidgetBackdropOpacity?: number;
-  /** Stopwatch widget fullscreen overlay darkness (0 = transparent, 1 = opaque). */
-  stopwatchWidgetBackdropOpacity?: number;
   persistenceMeta?: {
     isFirstRunCompleted?: boolean;
     lastSuccessfulLoad?: string;
@@ -217,10 +164,23 @@ export interface ElectronAPI {
   executeCommand: (
     command: string,
     commandType: "app" | "url" | "folder",
-    options?: { openTerminal?: boolean; terminalCommands?: string[] },
+    options?: { openTerminal?: boolean; terminalCommands?: string[]; workingDirectory?: string; launchMode?: "normal" | "reuse" | "prewarm" },
   ) => void;
   hideWindow: () => void;
   showWindow: () => void;
+  requestKeyboardFocus?: () => void;
+  getAppVersion?: () => Promise<string>;
+  /** Canal de distribuição: 'store' (MSIX) não tem atualização própria. */
+  getBuildChannel?: () => Promise<'store' | 'direct'>;
+  onUpdateState?: (
+    callback: (payload: { state: 'downloading' | 'ready'; version?: string }) => void,
+  ) => () => void;
+  getUpdateState?: () => Promise<{ state: string; version?: string | null }>;
+  checkForUpdates?: () => Promise<{ ok: boolean; state?: string; version?: string; code?: string; error?: string }>;
+  installUpdateNow?: () => void;
+  wasOpenedAtLogin?: () => Promise<boolean>;
+  /** O main confirma se a app tem mesmo um perfil de IDE com MRU (não adivinhar por nome). */
+  appSupportsRecents?: (appName: string, appCommand: string) => Promise<boolean>;
   onOpenMenu: (
     callback: (data: {
       x: number;
@@ -228,14 +188,33 @@ export interface ElectronAPI {
       source?: "mmb" | "mmb-click" | "shortcut";
       /** True quando o main já aplicou fullscreen — evita segundo `applyWindowSize` no renderer. */
       preSizedByMain?: boolean;
+      /** O painel continua no ecrã por baixo do radial — o renderer não o pode fechar. */
+      keepPanel?: boolean;
+      /** Rect de ecrã do painel; só quando a janela foi alargada e ele precisa de ser reposicionado. */
+      panelRect?: { x: number; y: number; width: number; height: number } | null;
+      /** Centro já convertido para coordenadas do novo HWND; evita métricas antigas após Settings. */
+      clientPosition?: { x: number; y: number } | null;
+      /** Origem nativa correspondente ao clientPosition/panelRect durante o handshake. */
+      windowOrigin?: { x: number; y: number } | null;
+      /** Viewport autoritativo após o resize; o renderer pode ainda reportar o tamanho do Settings. */
+      clientSize?: { width: number; height: number } | null;
+      /** Handshake do primeiro frame: o main só revela uma janela oculta após este token ser confirmado. */
+      paintToken?: number;
     }) => void,
   ) => () => void;
   /** Antes de abrir o radial a partir do main — cobrir frame antigo (ex.: dashboard ao restaurar). */
   onPrepareRadialShow?: (callback: () => void) => () => void;
   notifyRadialPrepPaintDone?: () => void;
+  notifyRadialOpenPaintDone?: (paintToken: number) => void;
+  /** A janela nativa já está visível; libera a animação do radial preparado em alfa zero. */
+  onRadialNativeRevealed?: (callback: (paintToken: number) => void) => () => void;
   onOpenDashboard: (callback: () => void) => () => void;
   onMouseUp: (callback: () => void) => () => void;
   onMmbRelease: (callback: () => void) => () => void;
+  /** Cursor sondado pelo main enquanto o botão do meio está premido (coordenadas de ecrã). */
+  onMmbCursor?: (
+    callback: (point: { x: number; y: number }) => void,
+  ) => (() => void) | void;
   onOpenSettings: (callback: () => void) => () => void;
   /** Fired when the OS hid the window to tray (not a real quit). */
   onWindowHidToTray: (callback: () => void) => () => void;
@@ -262,12 +241,12 @@ export interface ElectronAPI {
   warmRadialTransition?: () => Promise<boolean>;
   /** Re-applies desktop passthrough overlay after closing a fullscreen widget (fixes flaky clicks on Windows). */
   reapplySmallOverlay?: () => Promise<boolean>;
-  /** Repouso sem HUD: encolhe o HWND ao canto (sem camada transparente a ecrã inteiro). */
+  /** Repouso: encolhe o HWND ao canto (sem camada transparente a ecrã inteiro). */
   collapseIdleOverlay?: () => Promise<boolean>;
-  /** Há HUD para desenhar em modo `small`? O main usa isto para nunca reexpandir ao monitor sem necessidade. */
-  setOverlayHudActive?: (active: boolean) => void;
   /** Lado da caixa do radial (px) + se a posição é fixa — o main dimensiona a janela do menu com isto. */
   setRadialViewport?: (payload: { size: number; fixed: boolean }) => void;
+  /** Painel (Settings/Welcome) realmente à vista — decide se o radial abre por cima dele. */
+  setPanelSurfaceVisible?: (visible: boolean) => void;
   /** Clears island passthrough / hit-shape so widgets and panels receive clicks immediately. */
   ensureWindowInteractive?: () => Promise<boolean>;
   /** Windows/Linux: ilha — `coordinateSpace: "screen"` encolhe o HWND; sem isso, coords de cliente + setShape. */
@@ -287,6 +266,14 @@ export interface ElectronAPI {
     height: number;
   } | null>;
   setGameMode: (config: GameModeConfig) => void;
+  prewarmApps?: (commands: string[]) => void;
+  getVolume: () => Promise<number>;
+  setVolume: (value: number) => void;
+  getBrightness: () => Promise<number>;
+  setBrightness: (value: number) => void;
+  getHardwareCapabilities: () => Promise<{ hasWifi: boolean; hasBluetooth: boolean }>;
+  toggleWifi: (enabled: boolean) => Promise<boolean>;
+  toggleBluetooth: (enabled: boolean) => Promise<boolean>;
   getFileIcon: (path: string) => Promise<string | null>;
   /** Favicon obtido no main (data URL) — o renderer costuma falhar com <img https://…>. */
   getWebsiteFaviconDataUrl?: (pageUrl: string) => Promise<string | null>;
@@ -302,11 +289,7 @@ export interface ElectronAPI {
   selectImage: () => Promise<string | null>;
   /** Removes a file only if it lives under userData/custom-icons (safe no-op otherwise). */
   removeManagedCustomIcon: (urlOrPath?: string) => Promise<void>;
-  /** Copy user audio into userData/pomodoro-ambient; returns path or null. */
-  selectPomodoroAudio: () => Promise<string | null>;
-  /** Delete file only if under userData/pomodoro-ambient. */
-  removeManagedPomodoroAudio: (filePath?: string) => Promise<void>;
-  getInstalledApps: () => Promise<any[]>;
+  getInstalledApps: (forceRefresh?: boolean) => Promise<any[]>;
   getOnboardingApps: () => Promise<any[]>;
   getStartupApps: () => Promise<any[]>;
   onExecutionError: (callback: (errorMsg: string) => void) => () => void;
@@ -346,6 +329,14 @@ export interface ElectronAPI {
   exportConfig: () => Promise<{ success: boolean; error?: string }>;
   importConfig: () => Promise<{ success: boolean; error?: string }>;
   startGoogleAuth: () => void;
+  activateRovylLicense?: (licenseKey: string) => Promise<{
+    ok: boolean;
+    license?: { email?: string; name?: string; isPremium?: boolean; planTier?: SubscriptionTier; avatarUrl?: string; isAdmin?: boolean; deviceLimit?: number };
+    error?: string;
+    code?: string;
+  }>;
+  /** Liberta o lugar deste dispositivo no servidor; falha em silêncio se a rota não existir. */
+  deactivateRovylLicense?: () => Promise<{ ok: boolean; error?: string; code?: string }>;
   onGoogleAuthSuccess: (callback: (user: any) => void) => () => void;
   onGoogleAuthError?: (callback: (payload: { code?: string; message?: string; userDataPath?: string }) => void) => () => void;
   savePersistenceLog: (message: string) => void;

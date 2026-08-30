@@ -1,4 +1,4 @@
-import { AppItem, UIConfig, WidgetDefinition, Workspace } from "./types";
+import { AppItem, UIConfig, Workspace } from "./types";
 
 export const DEFAULT_APPS: AppItem[] = [
   {
@@ -83,16 +83,6 @@ export const DEFAULT_APPS: AppItem[] = [
     description: "File Manager",
   },
   {
-    id: "92f5d818-c499-4e4f-8a4d-3e28d4d7f5df",
-    type: "app",
-    label: "Notes",
-    direction: "W",
-    iconName: "FileText",
-    iconSource: "lucide",
-    command: "internal:notes",
-    description: "Quick Notes",
-  },
-  {
     id: "a306e818-d599-4e4f-8a4d-3e28d4d7f5e0",
     type: "app",
     label: "Calculator",
@@ -132,7 +122,6 @@ export const BUNDLED_DEMO_APP_IDS: ReadonlySet<string> = (() => {
   const s = new Set<string>();
   const walk = (items: AppItem[]) => {
     for (const a of items) {
-      if (typeof a.command === "string" && a.command.startsWith("internal:")) continue;
       if (a.id) s.add(a.id);
       if (a.children?.length) walk(a.children);
     }
@@ -152,10 +141,11 @@ export function workspaceContainsBundledDemoApp(workspace: Workspace): boolean {
   return scan(workspace.apps);
 }
 
-/** Main workspace before Start Menu discovery: only Zenith widgets — never the full demo wheel (fixes wrong apps on first paint / disk). */
-export const MINIMAL_MAIN_WORKSPACE_APPS: AppItem[] = DEFAULT_APPS.filter(
-  (a) => typeof a.command === "string" && a.command.startsWith("internal:"),
-);
+/**
+ * Main workspace before Start Menu discovery: vazio — nunca a roda de demonstração completa
+ * (evita apps errados no primeiro paint / no disco). Era aqui que viviam os widgets internos.
+ */
+export const MINIMAL_MAIN_WORKSPACE_APPS: AppItem[] = [];
 
 // Default Workspaces
 export const DEFAULT_WORKSPACES: Workspace[] = [
@@ -166,12 +156,15 @@ export const DEFAULT_WORKSPACES: Workspace[] = [
     enabled: true,
     apps: MINIMAL_MAIN_WORKSPACE_APPS,
     color: "#3B82F6", // Blue
+    /** Sem isto todos os workspaces entram na roda com o mesmo `Layers` e só se distinguem pelo nome. */
+    pickerIconName: "Home",
   },
   {
     id: "workspace-2",
     name: "Streaming",
     hotkey: 2,
     enabled: true,
+    pickerIconName: "MonitorPlay",
     apps: [
       {
         id: "stream-1",
@@ -220,6 +213,7 @@ export const DEFAULT_WORKSPACES: Workspace[] = [
 
 export const DEFAULT_UI_CONFIG: UIConfig = {
   accentColor: "#FFFFFF",
+  radialHoverColor: "#FFFFFF",
   menuRadius: 140,
   iconSize: 64,
   fixedPosition: true,
@@ -242,55 +236,50 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   gameMode: {
     enabled: false,
     mode: "list",
-    blockedApps: "csgo.exe, valorant.exe, dota2.exe, overwatch.exe",
+    blockedApps: "",
+    autoDetectGames: false,
   },
   globalShortcut: "Alt+Z",
   workspaces: DEFAULT_WORKSPACES,
   activeWorkspaceIndex: 0,
   workspaceSwitchMode: 'picker',
+  appearanceTheme: 'black',
+  radialSelectionMode: 'angle',
   enableMouseTrigger: true,
   mouseTriggerMode: 'click',
-  language: "pt",
+  mouseTriggerButton: 'middle',
+  language: "en",
   performanceMode: false,
   mainStartMenuDiscoveryDone: false,
-  notesWidgetBackdropOpacity: 0.85,
-  alarmsWidgetBackdropOpacity: 0.85,
-  pomodoroWidgetBackdropOpacity: 0.85,
-  stopwatchWidgetBackdropOpacity: 0.85,
 };
 
-export const AVAILABLE_WIDGETS: WidgetDefinition[] = [
-  {
-    id: "zenith_notes",
-    name: "Zenith Notes",
-    description:
-      "A minimalist card-based note taking tool with local persistence.",
-    iconName: "FileText",
-    command: "internal:notes",
-    defaultLabel: "Notes",
-  },
-  {
-    id: "zenith_alarm",
-    name: "Zenith Alarm",
-    description: "Set reminders and alarms. Runs in background.",
-    iconName: "AlarmClock",
-    command: "internal:alarm",
-    defaultLabel: "Alarms",
-  },
-  {
-    id: "zenith_stopwatch",
-    name: "Zenith Stopwatch",
-    description: "Precision chronograph with lap tracking.",
-    iconName: "Timer",
-    command: "internal:stopwatch",
-    defaultLabel: "Stopwatch",
-  },
-  {
-    id: "zenith_pomodoro",
-    name: "Zenith Pomodoro",
-    description: "Focus timer with task tracking and stats.",
-    iconName: "TimerReset",
-    command: "internal:pomodoro",
-    defaultLabel: "Pomodoro",
-  },
-];
+/**
+ * Configs antigos guardaram atalhos `internal:*` (Notas / Alarme / Cronómetro / Pomodoro).
+ * Esses widgets já não existem: sem esta limpeza na hidratação o radial mostraria ícones mortos.
+ */
+export function stripInternalWidgetApps(items: AppItem[]): AppItem[] {
+  const out: AppItem[] = [];
+  for (const a of items) {
+    if (typeof a.command === "string" && a.command.startsWith("internal:")) continue;
+    out.push(a.children?.length ? { ...a, children: stripInternalWidgetApps(a.children) } : a);
+  }
+  return out;
+}
+
+/** Aplica `stripInternalWidgetApps` a todos os workspaces e ao botão central. */
+export function stripInternalWidgetsFromConfig(config: UIConfig): UIConfig {
+  const workspaces = config.workspaces?.map((ws) => ({
+    ...ws,
+    apps: stripInternalWidgetApps(ws.apps ?? []),
+  }));
+  const center = config.centerButton;
+  const centerIsInternal =
+    typeof center?.target === "string" && center.target.startsWith("internal:");
+  return {
+    ...config,
+    workspaces: workspaces ?? config.workspaces,
+    centerButton: centerIsInternal
+      ? { type: "none", target: "", label: "", iconName: "Circle" }
+      : center,
+  };
+}

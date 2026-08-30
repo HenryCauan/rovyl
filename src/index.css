@@ -3,37 +3,932 @@
 @theme {
   --font-display: "Space Grotesk Variable", "Space Grotesk", sans-serif;
   --font-ui: "Inter Variable", "Inter", system-ui, sans-serif;
+  --font-radial: "Instrument Sans Variable", "Instrument Sans", "Inter Variable", sans-serif;
 }
 
-/* Overlay scrollbars — não roubam largura do layout (evita deslocar o eixo central). */
 @layer base {
-  html,
-  body {
-    overflow: hidden;
-    overscroll-behavior: none;
-  }
+  html, body { overflow: hidden; overscroll-behavior: none; }
+  /*
+   * Nada de arrastar imagens nem ícones. Numa app de janela — e sobretudo numa roda que se opera
+   * a apontar e largar — o arrasto nativo do browser só produz um fantasma da imagem colado ao
+   * cursor, que interrompe o gesto e não leva a lado nenhum. A seleção de texto sai pela mesma
+   * razão: `Ctrl+A` a azular a interface inteira não é comportamento de aplicação nativa.
+   */
+  img, svg { -webkit-user-drag: none; user-select: none; }
+  #root { width: 100%; height: 100%; }
+  * { scrollbar-width: thin; scrollbar-color: rgba(242, 242, 237, .15) transparent; }
+  *::-webkit-scrollbar { width: 6px; height: 6px; }
+  *::-webkit-scrollbar-thumb { background: rgba(242, 242, 237, .15); border-radius: 999px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+}
 
-  #root {
-    width: 100%;
-    height: 100%;
-  }
+/* ══ Zenith surface tokens ═════════════════════════════════════════════════
+   Linguagem do Modal Radial / QuickAccess levada às superfícies opacas do
+   produto (titlebar + Settings). O "accent" do Zenith é ausência de cor:
+   branco sólido sobre preto, invertido no tema white. Nada de matiz nova.
 
-  * {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
-  }
+   Hierarquia (uma só, os dois temas usam os mesmos degraus):
+     bg → sunken (chrome/nav) → surface (conteúdo) → raised (estado) → solid
+   ════════════════════════════════════════════════════════════════════════ */
+:root {
+  --zn-bg: #151515;
+  --zn-sunken: #111111;
+  --zn-surface: #151515;
+  --zn-raised: rgba(255, 255, 255, .055);
+  --zn-hover: rgba(255, 255, 255, .032);
+  --zn-pressed: rgba(255, 255, 255, .085);
 
-  *::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
+  --zn-line: rgba(255, 255, 255, .07);
+  --zn-line-strong: rgba(255, 255, 255, .13);
 
-  *::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.14);
-    border-radius: 999px;
-  }
+  --zn-text: rgba(255, 255, 255, .93);
+  --zn-text-2: rgba(255, 255, 255, .55);
+  --zn-text-3: rgba(255, 255, 255, .34);
 
-  *::-webkit-scrollbar-track {
-    background: transparent;
-  }
+  /* Ação primária: o mesmo par branco/preto do item ativo do radial. */
+  --zn-solid: #ffffff;
+  --zn-on-solid: #0a0a0b;
+
+  --zn-focus: rgba(255, 255, 255, .55);
+  --zn-scrim: rgba(6, 6, 8, .66);
+  --zn-elev: 0 20px 50px rgba(0, 0, 0, .55);
+
+  /* Escala de espaço — 4px base, sem valores fora dela. */
+  --zn-1: 4px;
+  --zn-2: 8px;
+  --zn-3: 12px;
+  --zn-4: 16px;
+  --zn-5: 20px;
+  --zn-6: 24px;
+  --zn-8: 32px;
+  --zn-10: 40px;
+
+  /* Raio: o raio comunica hierarquia (janela > painel > controlo > chip). */
+  --zn-r-window: 12px;
+  --zn-r-panel: 10px;
+  --zn-r-control: 8px;
+  --zn-r-chip: 6px;
+
+  /* Altura de controlo e ícone — um valor de cada, reutilizado em tudo. */
+  --zn-ctl: 32px;
+  --zn-ctl-sm: 26px;
+  --zn-icon: 16px;
+
+  --zn-ease: cubic-bezier(.22, 1, .36, 1);
+}
+
+[data-zn-theme="white"] {
+  --zn-bg: #e8e8ea;
+  --zn-sunken: #f2f2f4;
+  --zn-surface: #fcfcfd;
+  --zn-raised: rgba(0, 0, 0, .05);
+  --zn-hover: rgba(0, 0, 0, .028);
+  --zn-pressed: rgba(0, 0, 0, .08);
+
+  --zn-line: rgba(0, 0, 0, .085);
+  --zn-line-strong: rgba(0, 0, 0, .16);
+
+  --zn-text: rgba(0, 0, 0, .90);
+  --zn-text-2: rgba(0, 0, 0, .56);
+  --zn-text-3: rgba(0, 0, 0, .38);
+
+  --zn-solid: #101012;
+  --zn-on-solid: #ffffff;
+
+  --zn-focus: rgba(0, 0, 0, .45);
+  --zn-scrim: rgba(226, 226, 229, .7);
+  --zn-elev: 0 18px 44px rgba(0, 0, 0, .16);
+}
+
+/* A janela é uma superfície só: hairline interior, sem sombra recortada a
+   competir com a borda. `hasShadow:false` no main — a separação vem do raio
+   e do contraste, não de um halo desenhado por dentro do próprio rect. */
+.zenith-panel-surface {
+  background: var(--zn-bg);
+  border-radius: var(--zn-r-window);
+  box-shadow: inset 0 0 0 1px var(--zn-line);
+}
+
+/*
+ * O painel pode continuar visível por baixo do radial. Alguns controlos internos
+ * usam `pointer-events: auto`, portanto bloquear apenas o contêiner não basta:
+ * um descendente ainda pode voltar a ser alvo. `inert` trata foco/teclado e esta
+ * regra garante o mesmo bloqueio para todos os eventos de ponteiro.
+ */
+[data-radial-background-inert="true"],
+[data-radial-background-inert="true"] * {
+  pointer-events: none !important;
+}
+
+/* A barra do Electron funde-se com a superfície, como uma janela nativa do Windows. */
+.zenith-titlebar { background: var(--zn-sunken); border-bottom: 1px solid var(--zn-line); color: var(--zn-text); }
+.zenith-titlebar-wordmark { color: var(--zn-text-2); font: 500 11.5px/1 var(--font-ui); letter-spacing: -.01em; }
+/* Controlos de janela: o Windows não anima o realce destes botões — acende e apaga no
+   momento. Uma transição de 150ms aqui lê-se como efeito da app, não como janela do sistema. */
+.zenith-titlebar-btn { color: var(--zn-text-3); }
+/* Realce do Windows: rectângulo cheio, da altura toda da barra, num cinzento neutro.
+   Um wash translúcido sobre a barra dava um tom sujo e o raio deixava-o a flutuar. */
+.zenith-titlebar-btn:hover { color: var(--zn-text); background: rgba(255, 255, 255, .08); }
+.zenith-titlebar-btn:active { background: rgba(255, 255, 255, .05); }
+[data-zn-theme="white"] .zenith-titlebar-btn:hover { background: rgba(0, 0, 0, .06); }
+[data-zn-theme="white"] .zenith-titlebar-btn:active { background: rgba(0, 0, 0, .09); }
+.zenith-titlebar-btn:focus-visible { outline: 2px solid var(--zn-focus); outline-offset: -2px; }
+.zenith-titlebar-btn.is-close:hover { color: #fff; background: #c42b1c; }
+.zenith-titlebar-btn.is-close:active { color: #fff; background: #b0271a; }
+
+/* ══ Zenith Settings ═══════════════════════════════════════════════════════ */
+
+.zs-shell {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  overflow: hidden;
+  color: var(--zn-text);
+  background: var(--zn-surface);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+/*
+ * Saída do painel depois de ativar a licença.
+ *
+ * O fecho da janela é deliberadamente seco — mexer nele traria de volta os flashes do DWM que a
+ * máquina de estados do radial existe para evitar. Mas o CONTEÚDO pode sair com calma: encolhe
+ * um pouco e desvanece, e só depois a janela desaparece. Ao olho, o que se lê é a janela a
+ * fechar-se; ao compositor, nada mudou.
+ */
+.zs-shell.is-dismissing {
+  opacity: 0;
+  transform: scale(.985);
+  transition: opacity 200ms ease-out, transform 240ms cubic-bezier(.22, 1, .36, 1);
+  pointer-events: none;
+}
+
+.zs-shell[data-zn-theme="black"] { color-scheme: dark; }
+.zs-shell[data-zn-theme="white"] { color-scheme: light; }
+
+.zs-shell *, .zs-shell *::before, .zs-shell *::after { box-sizing: border-box; }
+.zs-shell button, .zs-shell input, .zs-shell textarea, .zs-shell select { font: inherit; }
+.zs-shell :where(button, input, textarea, select, [tabindex]):focus-visible { outline: 2px solid var(--zn-focus); outline-offset: 2px; }
+/* Foco nos campos de texto.
+ *
+ * O traço de 2px em `--zn-focus` (branco a 55%) é desenhado para botões, onde aparece só na
+ * navegação por teclado. Num campo de texto o `:focus-visible` dispara também com o rato, e o
+ * resultado era um retângulo claro a envolver o campo a cada clique.
+ *
+ * Aqui o sinal passa a ser a borda a firmar mais um halo suave — segue o raio, lê-se como o
+ * campo a acender e não como uma moldura colada por cima. Continua a haver indicação de foco,
+ * que é o que a regra existia para garantir. */
+.zs-shell :where(input, textarea):focus-visible {
+  outline: none;
+  border-color: var(--zn-line-strong);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--zn-focus) 18%, transparent);
+}
+.zs-shell ::selection { color: var(--zn-on-solid); background: var(--zn-solid); }
+.zs-shell * { scrollbar-color: var(--zn-line-strong) transparent; }
+.zs-shell *::-webkit-scrollbar-thumb { background: var(--zn-line-strong); }
+
+.zs-window {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr);
+  overflow: hidden;
+  background: var(--zn-surface);
+}
+.zs-window.is-sidebar-collapsed { grid-template-columns: 60px minmax(0, 1fr); }
+.zs-window.is-sidebar-collapsed .zs-sidebar { padding-inline: var(--zn-2); }
+.zs-window.is-sidebar-collapsed .zs-sidebar-head h2,
+.zs-window.is-sidebar-collapsed .zs-search input,
+.zs-window.is-sidebar-collapsed .zs-nav button span,
+.zs-window.is-sidebar-collapsed .zs-sidebar-foot { display: none; }
+.zs-window.is-sidebar-collapsed .zs-sidebar-head,
+.zs-window.is-sidebar-collapsed .zs-search,
+.zs-window.is-sidebar-collapsed .zs-nav button { justify-content: center; padding-inline: 0; }
+.zs-window.is-sidebar-collapsed .zs-search { gap: 0; }
+
+/* ── Navigation ─────────────────────────────────────────────────────────── */
+
+.zs-sidebar {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--zn-4);
+  padding: var(--zn-5) var(--zn-3) var(--zn-3);
+  border-right: 1px solid var(--zn-line);
+  background: var(--zn-sunken);
+}
+
+.zs-sidebar-head { display: flex; align-items: center; justify-content: space-between; gap: var(--zn-2); padding-inline: var(--zn-2); }
+/* Título da barra lateral: tem de estar claramente acima das linhas da navegação (12.5px),
+   senão lê-se como mais um item da lista em vez do nome do painel. */
+.zs-sidebar-head h2 { margin: 0; color: var(--zn-text); font-size: 15.5px; font-weight: 600; letter-spacing: -.015em; }
+.zs-sidebar-head button {
+  width: var(--zn-ctl-sm); height: var(--zn-ctl-sm); flex: none;
+  display: grid; place-items: center; padding: 0;
+  color: var(--zn-text-3); border: 0; border-radius: var(--zn-r-chip); background: transparent; cursor: pointer;
+  transition: color .15s var(--zn-ease), background .15s var(--zn-ease);
+}
+.zs-sidebar-head button:hover { color: var(--zn-text); background: var(--zn-raised); }
+.zs-sidebar-head button:active { background: var(--zn-pressed); }
+
+.zs-search {
+  height: var(--zn-ctl); display: flex; align-items: center; gap: var(--zn-2);
+  padding-inline: var(--zn-2) var(--zn-1);
+  color: var(--zn-text-3); border: 1px solid var(--zn-line); border-radius: var(--zn-r-control); background: var(--zn-surface);
+  transition: border-color .15s var(--zn-ease);
+}
+.zs-search:focus-within { border-color: var(--zn-line-strong); }
+.zs-search input { min-width: 0; flex: 1; height: 100%; color: var(--zn-text); border: 0; outline: 0; background: transparent; font-size: 12.5px; }
+.zs-search input::placeholder { color: var(--zn-text-3); }
+.zs-search button { width: 22px; height: 22px; display: grid; place-items: center; padding: 0; color: var(--zn-text-3); border: 0; border-radius: var(--zn-r-chip); background: transparent; cursor: pointer; }
+.zs-search button:hover { color: var(--zn-text); background: var(--zn-raised); }
+
+.zs-nav { display: flex; flex-direction: column; gap: 2px; }
+.zs-nav button {
+  width: 100%; height: 34px; display: flex; align-items: center; gap: var(--zn-3);
+  padding-inline: var(--zn-2);
+  color: var(--zn-text-2); border: 0; border-radius: var(--zn-r-control); background: transparent; cursor: pointer;
+  font-size: 12.5px; font-weight: 450; text-align: left;
+  transition: color .15s var(--zn-ease), background .15s var(--zn-ease);
+}
+.zs-nav button span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.zs-nav button svg { flex: none; color: var(--zn-text-3); transition: color .15s var(--zn-ease); }
+.zs-nav button:hover { color: var(--zn-text); background: var(--zn-hover); }
+.zs-nav button:hover svg { color: var(--zn-text-2); }
+
+/* Estado activo discreto: superfície elevada + hairline, nunca uma pill de alto contraste. */
+.zs-nav button.is-active { color: var(--zn-text); background: var(--zn-raised); box-shadow: inset 0 0 0 1px var(--zn-line); }
+.zs-nav button.is-active svg { color: var(--zn-text); }
+
+.zs-sidebar-foot { margin-top: auto; display: flex; align-items: baseline; justify-content: space-between; gap: var(--zn-2); padding: var(--zn-3) var(--zn-2) var(--zn-1); border-top: 1px solid var(--zn-line); color: var(--zn-text-3); font-size: 11px; }
+.zs-sidebar-foot b { color: var(--zn-text-2); font-weight: 500; }
+.zs-sidebar-foot span { color: var(--zn-text-3); font-variant-numeric: tabular-nums; }
+
+/* ── Content ────────────────────────────────────────────────────────────── */
+
+.zs-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--zn-surface); }
+.zs-scroll { min-height: 0; flex: 1; overflow-y: auto; padding: var(--zn-8) clamp(var(--zn-6), 4vw, var(--zn-10)) var(--zn-8); }
+.zs-canvas { width: min(620px, 100%); }
+
+.zs-page-head { margin-bottom: var(--zn-6); }
+.zs-page-head h1 { margin: 0 0 var(--zn-1); color: var(--zn-text); font-size: 21px; font-weight: 600; line-height: 1.15; letter-spacing: -.022em; }
+.zs-page-head p { margin: 0; color: var(--zn-text-2); font-size: 12.5px; line-height: 1.45; }
+
+.zs-group + .zs-group { margin-top: var(--zn-6); }
+/* Rótulo de grupo: distinto da descrição (11.5px/400) pelo peso, não por caixa alta nem tracking. */
+.zs-group-title { margin: 0 0 var(--zn-2); color: var(--zn-text-2); font-size: 12px; font-weight: 600; letter-spacing: -.005em; }
+
+/* Composição contínua: os divisores separam, não caixas. */
+.zs-rows { border-top: 1px solid var(--zn-line); }
+.zs-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--zn-6); padding-block: var(--zn-3); border-bottom: 1px solid var(--zn-line); }
+.zs-row.is-openable { cursor: pointer; }
+.zs-row-copy { min-width: 0; }
+.zs-row-copy b { display: block; color: var(--zn-text); font-size: 13px; font-weight: 500; line-height: 1.35; letter-spacing: -.008em; }
+.zs-row-copy small { display: block; margin-top: 3px; color: var(--zn-text-2); font-size: 11.5px; line-height: 1.45; }
+.zs-row-control { display: flex; align-items: center; justify-content: flex-end; gap: var(--zn-2); }
+.zs-btn.is-delete-icon { width: 32px; padding-inline: 0; justify-content: center; color: #ef7c7c; }
+.zs-btn.is-delete-icon:hover { border-color: rgba(239, 68, 68, .34); background: rgba(239, 68, 68, .09); color: #ff9b9b; }
+/* Reordenar por arrasto — mesmo vocabulario da lista de atalhos de um workspace:
+   coluna reservada, manipulo sem tinta ate ao hover, marca de insercao recuada. */
+.zs-row.is-reorderable { position: relative; grid-template-columns: 16px minmax(0, 1fr) auto; }
+.zs-row-grip {
+  display: grid; place-items: center; align-self: stretch;
+  color: var(--zn-text-2); opacity: 0; cursor: grab; touch-action: none;
+  transition: opacity .13s var(--zn-ease), color .13s var(--zn-ease);
+}
+.zs-row.is-reorderable:hover .zs-row-grip,
+.zs-row.is-reorderable:focus-within .zs-row-grip { opacity: .5; }
+.zs-row-grip:hover { opacity: 1; color: var(--zn-text); }
+.zs-row-grip:active { cursor: grabbing; }
+.zs-row.is-dragging > .zs-row-copy,
+.zs-row.is-dragging > .zs-row-control { opacity: .3; }
+.zs-row.is-drop-above::before,
+.zs-row.is-drop-below::after {
+  content: ""; position: absolute; left: 0; right: 0; height: 2px;
+  border-radius: 2px; background: var(--zn-solid); z-index: 3;
+}
+.zs-row.is-drop-above::before { top: -1px; }
+.zs-row.is-drop-below::after { bottom: -1px; }
+.zs-row.is-slider { grid-template-columns: minmax(0, 1fr) auto; row-gap: var(--zn-3); }
+.zs-row.is-slider .zs-slider { grid-column: 1 / -1; }
+
+/* ── Workspaces em cartoes ──────────────────────────────────────────────────
+   Cada cartao antecipa a roda: os icones reais nas posicoes reais. A grelha adapta a
+   largura disponivel em vez de fixar colunas, para o painel poder encolher. */
+.zs-ws-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: var(--zn-2); padding-block: var(--zn-2); }
+.zs-ws-card {
+  display: grid; justify-items: center; gap: 2px;
+  padding: var(--zn-3) var(--zn-2) var(--zn-2);
+  border: 1px solid var(--zn-line); border-radius: var(--zn-r-control);
+  background: var(--zn-sunken); color: var(--zn-text); cursor: pointer; text-align: center;
+  transition: border-color .15s var(--zn-ease), background .15s var(--zn-ease);
+}
+.zs-ws-card:hover { border-color: var(--zn-line-strong); background: var(--zn-raised); }
+.zs-ws-card.is-current { border-color: var(--zn-solid); }
+.zs-ws-card.is-paused .zs-ws-preview { opacity: .4; }
+.zs-ws-card-head { display: flex; align-items: center; gap: 6px; margin-top: var(--zn-2); min-width: 0; }
+.zs-ws-card-head > b { overflow: hidden; font-size: 12.5px; font-weight: 500; white-space: nowrap; text-overflow: ellipsis; }
+.zs-ws-card-head > em {
+  flex: 0 0 auto; padding: 0 5px; border: 1px solid var(--zn-line); border-radius: 4px;
+  color: var(--zn-text-2); font: 500 10px/1.5 var(--font-mono, monospace); font-style: normal;
+}
+.zs-ws-card > small { color: var(--zn-text-2); font-size: 11px; }
+.zs-ws-card { position: relative; cursor: grab; }
+.zs-ws-card:active { cursor: grabbing; }
+.zs-ws-card.is-dragging { opacity: .35; }
+/* Grelha: a marca de destino e VERTICAL, entre colunas — uma barra horizontal aqui leria-se
+   como separador de linhas e apontaria para o sitio errado. */
+.zs-ws-card.is-drop-before::before,
+.zs-ws-card.is-drop-after::after {
+  content: ""; position: absolute; top: 4px; bottom: 4px; width: 2px;
+  border-radius: 2px; background: var(--zn-solid); z-index: 3;
+}
+.zs-ws-card.is-drop-before::before { left: calc(var(--zn-2) / -2 - 1px); }
+.zs-ws-card.is-drop-after::after { right: calc(var(--zn-2) / -2 - 1px); }
+/* Eliminar mora no cartao, revelado no hover: presente quando se olha, ausente quando nao. */
+.zs-ws-card-delete {
+  position: absolute; top: 6px; right: 6px;
+  display: grid; place-items: center; width: 24px; height: 24px; padding: 0;
+  border: 0; border-radius: var(--zn-r-chip, 6px); background: transparent;
+  color: var(--zn-text-2); opacity: 0; cursor: pointer;
+  transition: opacity .13s var(--zn-ease), color .13s var(--zn-ease), background .13s var(--zn-ease);
+}
+.zs-ws-card:hover .zs-ws-card-delete,
+.zs-ws-card:focus-within .zs-ws-card-delete { opacity: .55; }
+.zs-ws-card-delete:hover { opacity: 1; color: #ff9b9b; background: rgba(239, 68, 68, .12); }
+.zs-ws-card.is-new { gap: 6px; align-content: center; min-height: 132px; border-style: dashed; color: var(--zn-text-2); cursor: pointer; }
+
+/* Estado do workspace: dois icones, com a explicacao no tooltip em vez de em paragrafos. */
+.zs-workspace-flags { display: flex; align-items: center; gap: var(--zn-1); }
+/* Dica instantanea e com o visual do painel. O `title` nativo demora quase um segundo,
+   herda o estilo do sistema, e nao aparece de todo sobre elementos desativados. */
+/* Aponta para BAIXO: `.zs-editor-body` tem `overflow-y: auto`, e estes botões vivem no topo
+   dele — uma dica para cima saía do contentor e era cortada pelo cabeçalho do editor. */
+.zs-flag-btn[data-tip]::after {
+  content: attr(data-tip); position: absolute; top: calc(100% + 6px); left: 50%;
+  transform: translateX(-50%) translateY(-3px); z-index: 30;
+  width: max-content; max-width: 190px; padding: 5px 8px;
+  border: 1px solid var(--zn-line); border-radius: var(--zn-r-chip);
+  background: var(--zn-surface); color: var(--zn-text);
+  font-size: 11px; line-height: 1.35; text-align: center; white-space: normal;
+  opacity: 0; pointer-events: none;
+  transition: opacity .12s var(--zn-ease), transform .12s var(--zn-ease);
+}
+.zs-flag-btn[data-tip]:hover::after,
+.zs-flag-btn[data-tip]:focus-visible::after { opacity: 1; transform: translateX(-50%) translateY(0); }
+.zs-flag-btn {
+  position: relative;
+  display: grid; place-items: center; width: 32px; height: 32px; padding: 0;
+  border: 1px solid var(--zn-line); border-radius: var(--zn-r-control);
+  background: transparent; color: var(--zn-text-2); cursor: pointer;
+  transition: color .15s var(--zn-ease), border-color .15s var(--zn-ease), background .15s var(--zn-ease);
+}
+.zs-flag-btn:hover:not(:disabled) { color: var(--zn-text); border-color: var(--zn-line-strong); background: var(--zn-raised); }
+.zs-flag-btn.is-on { color: var(--zn-on-solid); border-color: var(--zn-solid); background: var(--zn-solid); }
+/* Inerte, nao desativado: continua a receber o rato para poder explicar-se. */
+.zs-flag-btn.is-inert { cursor: default; }
+.zs-flag-btn.is-inert:hover { border-color: var(--zn-line); background: transparent; }
+.zs-flag-btn.is-on.is-inert { opacity: .8; }
+.zs-flag-btn.is-on.is-inert:hover { border-color: var(--zn-solid); background: var(--zn-solid); }
+.zs-ws-card.is-new:hover { color: var(--zn-text); }
+
+/* A miniatura e um quadrado com tudo posicionado a partir do centro. */
+.zs-ws-preview { position: relative; display: grid; place-items: center; width: 92px; height: 92px; color: var(--zn-text-2); }
+.zs-ws-preview-ring { position: absolute; width: 68px; height: 68px; border: 1px dashed; border-radius: 50%; }
+.zs-ws-preview-hub { position: absolute; width: 16px; height: 16px; border-radius: 50%; }
+.zs-ws-preview-slot {
+  position: absolute; display: grid; place-items: center; width: 18px; height: 18px;
+  overflow: hidden; border-radius: 5px; background: var(--zn-surface); box-shadow: 0 0 0 1px var(--zn-line);
+}
+.zs-ws-preview-img { width: 100%; height: 100%; display: block; }
+.zs-ws-preview-empty { position: absolute; bottom: 4px; color: var(--zn-text-2); font-size: 10px; }
+
+.zs-empty { padding: var(--zn-10) 0; color: var(--zn-text-2); font-size: 12.5px; text-align: center; }
+
+/* ── Controls ───────────────────────────────────────────────────────────── */
+
+/* Todos partilham altura, raio, borda e tipografia. */
+.zs-shell .zs-btn {
+  height: var(--zn-ctl); display: inline-flex; align-items: center; gap: var(--zn-2);
+  padding-inline: var(--zn-3);
+  color: var(--zn-text); border: 1px solid var(--zn-line); border-radius: var(--zn-r-control); background: transparent; cursor: pointer;
+  font: 450 11.5px/1.2 var(--font-ui); white-space: nowrap;
+  transition: color .15s var(--zn-ease), border-color .15s var(--zn-ease), background .15s var(--zn-ease);
+}
+.zs-btn:hover { border-color: var(--zn-line-strong); background: var(--zn-hover); }
+.zs-btn:active { background: var(--zn-pressed); }
+.zs-btn:disabled { opacity: .4; cursor: not-allowed; }
+.zs-btn svg { flex: none; color: var(--zn-text-3); }
+.zs-btn:hover svg { color: var(--zn-text-2); }
+.zs-shell .zs-btn.is-delete-icon svg { display: block; color: currentColor; }
+.zs-btn.is-value { color: var(--zn-text-2); }
+.zs-btn.is-value b { color: var(--zn-text); font-size: 11.5px; font-weight: 500; line-height: 1.2; }
+.zs-btn.is-primary { color: var(--zn-on-solid); border-color: var(--zn-solid); background: var(--zn-solid); font-weight: 550; }
+.zs-btn.is-primary:hover { background: var(--zn-solid); opacity: .9; }
+.zs-btn.is-primary svg { color: currentColor; }
+.zs-btn.is-quiet { border-color: transparent; color: var(--zn-text-2); }
+.zs-btn.is-quiet:hover { color: var(--zn-text); border-color: var(--zn-line); }
+
+.zs-color-control {
+  height: var(--zn-ctl); display: inline-flex; align-items: center; gap: 5px;
+  padding: 0 5px; color: var(--zn-text); border: 1px solid var(--zn-line);
+  border-radius: var(--zn-r-control); background: transparent;
+  transition: border-color .15s var(--zn-ease), background .15s var(--zn-ease);
+}
+.zs-color-control:hover { border-color: var(--zn-line-strong); background: var(--zn-hover); }
+.zs-color-swatch { position: relative; width: 22px; height: 22px; flex: none; overflow: hidden; border: 1px solid var(--zn-line-strong); border-radius: 6px; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(0,0,0,.18); }
+.zs-color-swatch > span { position: absolute; inset: 0; pointer-events: none; }
+.zs-color-swatch > input { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; opacity: 0; cursor: pointer; }
+.zs-color-prefix { color: var(--zn-text-3); font: 500 11px/1 var(--font-ui); }
+.zs-shell .zs-color-hex { width: 56px; padding: 0; color: var(--zn-text); border: 0; outline: 0; background: transparent; font: 500 11px/1 var(--font-ui); letter-spacing: .025em; text-transform: uppercase; }
+
+.zs-switch {
+  position: relative; width: 36px; height: 20px; flex: none; padding: 0;
+  border: 1px solid var(--zn-line-strong); border-radius: 999px; background: var(--zn-raised); cursor: pointer;
+  transition: background .18s var(--zn-ease), border-color .18s var(--zn-ease);
+}
+.zs-switch i { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--zn-text-3); transition: translate .18s var(--zn-ease), background .18s var(--zn-ease); }
+.zs-switch:disabled { cursor: not-allowed; opacity: .45; }
+.zs-switch:hover:not(:disabled) { border-color: var(--zn-text-3); }
+.zs-switch:hover:not(:disabled) i { background: var(--zn-text-2); }
+.zs-switch[aria-checked="true"] { border-color: var(--zn-solid); background: var(--zn-solid); }
+.zs-switch[aria-checked="true"] i { translate: 16px 0; background: var(--zn-on-solid); }
+
+.zs-segmented { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--zn-line); border-radius: var(--zn-r-control); background: var(--zn-sunken); }
+.zs-segmented button {
+  height: 26px; min-width: 62px; display: inline-flex; align-items: center; justify-content: center;
+  padding-inline: var(--zn-3);
+  color: var(--zn-text-2); border: 0; border-radius: var(--zn-r-chip); background: transparent; cursor: pointer;
+  font-size: 11px; font-weight: 450; white-space: nowrap;
+  transition: color .15s var(--zn-ease), background .15s var(--zn-ease);
+}
+.zs-segmented button:hover { color: var(--zn-text); }
+.zs-segmented button.is-selected { color: var(--zn-text); background: var(--zn-raised); box-shadow: inset 0 0 0 1px var(--zn-line); }
+
+.zs-slider { display: flex; align-items: center; gap: var(--zn-3); }
+.zs-slider input[type="range"] {
+  min-width: 0; flex: 1; height: 4px; margin: 0; padding: 0;
+  appearance: none; -webkit-appearance: none;
+  border-radius: 999px; background: var(--zn-raised); accent-color: var(--zn-solid); cursor: pointer;
+}
+.zs-slider input[type="range"]::-webkit-slider-thumb {
+  appearance: none; -webkit-appearance: none;
+  width: 13px; height: 13px; margin-top: 0;
+  border: 0; border-radius: 50%; background: var(--zn-solid); cursor: pointer;
+  box-shadow: 0 0 0 1px var(--zn-line-strong);
+  transition: transform .15s var(--zn-ease);
+}
+.zs-slider input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.12); }
+.zs-slider input[type="range"]:active::-webkit-slider-thumb { transform: scale(.94); }
+.zs-slider input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: transparent; box-shadow: none; }
+.zs-slider-bounds { color: var(--zn-text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+.zs-readout { min-width: 58px; color: var(--zn-text); font: 500 12.5px/1 var(--font-display); font-variant-numeric: tabular-nums; text-align: right; }
+
+/* ── Editor (o único modal real) ────────────────────────────────────────── */
+
+.zs-editor-layer { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; padding: var(--zn-5); background: var(--zn-scrim); backdrop-filter: blur(8px); }
+.zs-editor {
+  width: min(420px, 100%); max-height: min(480px, 100%);
+  display: flex; flex-direction: column; overflow: hidden;
+  border-radius: var(--zn-r-panel); background: var(--zn-surface);
+  box-shadow: inset 0 0 0 1px var(--zn-line-strong), var(--zn-elev);
+}
+.zs-editor.is-workspace { width: min(760px, 100%); max-height: min(680px, 100%); }
+.zs-editor.is-workspace .zs-editor-body { padding-bottom: var(--zn-4); }
+.zs-editor header { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: var(--zn-4); padding: var(--zn-5) var(--zn-5) var(--zn-4); }
+.zs-editor h2 { margin: 0 0 var(--zn-1); color: var(--zn-text); font-size: 15px; font-weight: 600; letter-spacing: -.015em; }
+.zs-editor header p { margin: 0; color: var(--zn-text-2); font-size: 12px; line-height: 1.45; }
+.zs-editor header > button { width: var(--zn-ctl-sm); height: var(--zn-ctl-sm); flex: none; display: grid; place-items: center; padding: 0; color: var(--zn-text-3); border: 0; border-radius: var(--zn-r-chip); background: transparent; cursor: pointer; }
+.zs-editor header > button:hover { color: var(--zn-text); background: var(--zn-raised); }
+.zs-editor-body { min-height: 0; overflow-y: auto; padding: 0 var(--zn-5) var(--zn-5); }
+.zs-license-card { position: relative; overflow: hidden; border: 1px solid var(--zn-line); border-radius: 14px; padding: 20px; background: linear-gradient(145deg, rgba(255,255,255,.065), rgba(255,255,255,.018) 56%, rgba(255,255,255,.04)); box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 20px 42px rgba(0,0,0,.22); }
+.zs-license-card::before { content: ''; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at 89% 8%, rgba(255,255,255,.12), transparent 28%); }
+.zs-license-orbit { position: absolute; right: -29px; top: -31px; width: 118px; height: 118px; border: 1px solid rgba(255,255,255,.13); border-radius: 50%; opacity: .72; }
+.zs-license-orbit::before, .zs-license-orbit span { content: ''; position: absolute; border-radius: 50%; border: 1px solid rgba(255,255,255,.1); }
+.zs-license-orbit::before { inset: 14px; }
+.zs-license-orbit span { width: 7px; height: 7px; background: #fff; border: 0; left: 14px; bottom: 16px; box-shadow: 0 0 18px rgba(255,255,255,.85); }
+.zs-license-copy, .zs-license-input, .zs-license-actions, .zs-license-status { position: relative; z-index: 1; }
+.zs-license-copy > span { display: block; color: var(--zn-text-3); font-size: 9px; font-weight: 700; letter-spacing: .16em; }
+.zs-license-copy strong { display: block; max-width: 280px; margin-top: 8px; color: var(--zn-text); font-size: 17px; font-weight: 570; letter-spacing: -.025em; }
+.zs-license-copy p { max-width: 385px; margin: 6px 0 18px; color: var(--zn-text-2); font-size: 11.5px; line-height: 1.55; }
+.zs-license-input { display: block; }
+.zs-license-input > span { display: block; margin-bottom: 7px; color: var(--zn-text-3); font-size: 10px; font-weight: 600; }
+.zs-license-input input { width: 100%; min-width: 0; border: 1px solid var(--zn-line); border-radius: 9px; outline: none; background: rgba(0,0,0,.28); color: var(--zn-text); padding: 11px 12px; font: 600 11px/1.2 ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: .045em; text-transform: uppercase; transition: border-color .16s ease, background .16s ease, box-shadow .16s ease; }
+.zs-license-input input::placeholder { color: var(--zn-text-3); letter-spacing: .015em; }
+.zs-license-input input:focus { border-color: rgba(255,255,255,.4); background: rgba(0,0,0,.42); box-shadow: 0 0 0 3px rgba(255,255,255,.07); }
+.zs-license-status { margin: 10px 0 0; font-size: 11px; line-height: 1.4; color: var(--zn-text-2); }
+.zs-license-status.is-error { color: #f29a9a; }
+.zs-license-status.is-success { color: #92d8ad; }
+.zs-license-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 17px; }
+.zs-license-actions > span { color: var(--zn-text-3); font-size: 9px; font-weight: 700; letter-spacing: .11em; }
+.zs-license-actions .zs-btn { min-width: 96px; justify-content: center; }
+.zs-editor > footer { flex: none; display: flex; justify-content: flex-end; gap: var(--zn-2); padding: var(--zn-3) var(--zn-5); border-top: 1px solid var(--zn-line); }
+
+.zs-options { display: flex; flex-direction: column; gap: var(--zn-1); }
+.zs-options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--zn-1); }
+.zs-options button {
+  min-height: var(--zn-ctl); display: flex; align-items: center; justify-content: space-between; gap: var(--zn-2);
+  padding-inline: var(--zn-3);
+  color: var(--zn-text-2); border: 1px solid transparent; border-radius: var(--zn-r-control); background: transparent; cursor: pointer;
+  font-size: 11.5px; text-align: left;
+  transition: color .15s var(--zn-ease), background .15s var(--zn-ease);
+}
+.zs-options button:hover { color: var(--zn-text); background: var(--zn-hover); }
+.zs-options button.is-selected { color: var(--zn-text); background: var(--zn-raised); border-color: var(--zn-line); }
+.zs-options button svg { flex: none; }
+
+.zs-field { display: flex; flex-direction: column; gap: var(--zn-2); }
+.zs-field > span { color: var(--zn-text-2); font-size: 11.5px; font-weight: 500; }
+.zs-field input, .zs-field textarea, .zs-workspace select {
+  width: 100%; color: var(--zn-text); border: 1px solid var(--zn-line); border-radius: var(--zn-r-control); background: var(--zn-sunken); outline: 0; font-size: 12.5px;
+  transition: border-color .15s var(--zn-ease);
+}
+.zs-field input, .zs-workspace select { height: var(--zn-ctl); padding-inline: var(--zn-3); }
+.zs-workspace select { font-size: 11.5px; }
+.zs-field textarea { min-height: 132px; padding: var(--zn-3); resize: vertical; line-height: 1.55; }
+.zs-field input:focus, .zs-field textarea:focus, .zs-workspace select:focus { border-color: var(--zn-line-strong); }
+
+.zs-shortcut { display: flex; flex-direction: column; gap: var(--zn-3); }
+.zs-shortcut-keys { min-height: 64px; display: flex; align-items: center; justify-content: center; gap: var(--zn-2); border: 1px solid var(--zn-line); border-radius: var(--zn-r-control); background: var(--zn-sunken); }
+.zs-shortcut kbd { min-width: 34px; padding: 7px 9px; color: var(--zn-text); border: 1px solid var(--zn-line-strong); border-radius: var(--zn-r-chip); background: var(--zn-raised); font: 500 12px/1 var(--font-display); text-align: center; }
+.zs-shortcut > button { justify-content: center; }
+
+.zs-workspace { display: flex; flex-direction: column; gap: var(--zn-3); }
+.zs-app-list { max-height: 168px; overflow-y: auto; border: 1px solid var(--zn-line); border-radius: var(--zn-r-control); background: var(--zn-sunken); }
+.zs-app-list > div { min-height: 36px; display: grid; grid-template-columns: 22px minmax(0, 1fr) 22px; align-items: center; gap: var(--zn-2); padding-inline: var(--zn-2); border-bottom: 1px solid var(--zn-line); }
+.zs-app-list > div:last-child { border-bottom: 0; }
+.zs-app-list > div > span { display: grid; place-items: center; color: var(--zn-text-2); }
+.zs-app-list b { overflow: hidden; font-size: 12px; font-weight: 450; white-space: nowrap; text-overflow: ellipsis; }
+.zs-app-list > div > button { width: 22px; height: 22px; display: grid; place-items: center; padding: 0; color: var(--zn-text-3); border: 0; border-radius: var(--zn-r-chip); background: transparent; cursor: pointer; }
+.zs-app-list > div > button:hover { color: var(--zn-text); background: var(--zn-raised); }
+.zs-app-list > small { display: block; padding: var(--zn-5); color: var(--zn-text-3); font-size: 12px; text-align: center; }
+
+/* Workspace manager: creation and maintenance live in one continuous surface. */
+.zs-workspace-manager { display: flex; flex-direction: column; gap: var(--zn-3); }
+.zs-workspace-overview {
+  display: flex; flex-direction: column; gap: var(--zn-3);
+  padding-bottom: var(--zn-3); border-bottom: 1px solid var(--zn-line);
+}
+/* Identidade em uma única linha; os estados vivem abaixo e não esticam esta área. */
+.zs-workspace-identity {
+  min-width: 0; display: grid;
+  grid-template-columns: 48px minmax(180px, 1fr) auto auto;
+  grid-template-rows: auto;
+  align-items: end; column-gap: var(--zn-3);
+}
+.zs-workspace-identity > .zs-workspace-icon-button { grid-area: 1 / 1; align-self: end; width: 48px; height: 48px; }
+.zs-workspace-identity > .zs-workspace-name-field { grid-area: 1 / 2; align-self: end; }
+.zs-workspace-identity > .zs-workspace-flags { grid-area: 1 / 3; align-self: end; margin-bottom: 1px; }
+.zs-workspace-meta {
+  grid-area: 1 / 4; align-self: end; margin: 0 0 9px;
+  display: flex; align-items: center; gap: var(--zn-2);
+  color: var(--zn-text-3); font-size: 10.5px;
+}
+.zs-workspace-meta i { font-style: normal; opacity: .6; }
+.zs-workspace-name-field { min-width: 0; display: flex; flex-direction: column; gap: var(--zn-2); }
+.zs-workspace-name-field > span { color: var(--zn-text-2); font-size: 11.5px; font-weight: 500; }
+.zs-workspace-name-field > input {
+  width: 100%; height: var(--zn-ctl); padding: 0 var(--zn-3); color: var(--zn-text);
+  border: 1px solid var(--zn-line); border-radius: var(--zn-r-control); outline: 0; background: var(--zn-sunken); font-size: 12.5px;
+  transition: border-color .15s var(--zn-ease);
+}
+.zs-workspace-name-field > input:focus { border-color: var(--zn-line-strong); }
+.zs-workspace-icon-button {
+  position: relative; display: grid; place-items: center; padding: 0;
+  color: var(--zn-text-2); border: 1px solid var(--zn-line); border-radius: var(--zn-r-control); background: var(--zn-sunken); cursor: pointer;
+  transition: color .15s var(--zn-ease), border-color .15s var(--zn-ease), background .15s var(--zn-ease);
+}
+.zs-workspace-icon-button:hover, .zs-workspace-icon-button.is-active { color: var(--zn-text); border-color: var(--zn-line-strong); background: var(--zn-raised); }
+.zs-workspace-icon-button:focus-visible { outline: 0; }
+.zs-workspace-icon-button svg:last-child { position: absolute; right: 4px; bottom: 4px; padding: 1px; border-radius: 3px; background: var(--zn-surface); }
+/* ── Modal do ícone do workspace ────────────────────────────────────────────
+   Fixo ao ecrã, acima da camada do editor (z-index 20), com o mesmo scrim. */
+.zs-icon-modal-layer {
+  position: fixed; inset: 0; z-index: 40;
+  display: grid; place-items: center; padding: var(--zn-5);
+  background: var(--zn-scrim); backdrop-filter: blur(8px);
+}
+.zs-icon-modal {
+  width: min(560px, 100%); max-height: min(560px, 100%);
+  display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid var(--zn-line); border-radius: var(--zn-r-panel);
+  background: var(--zn-surface); box-shadow: 0 28px 60px rgba(0, 0, 0, .38);
+}
+.zs-icon-modal > header {
+  flex: none; display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--zn-4); padding: var(--zn-5) var(--zn-5) var(--zn-3);
+}
+.zs-icon-modal > header b { display: block; color: var(--zn-text); font-size: 14px; font-weight: 600; }
+.zs-icon-modal > header small { display: block; margin-top: 3px; color: var(--zn-text-2); font-size: 11.5px; line-height: 1.45; }
+.zs-icon-modal > header > button {
+  width: var(--zn-ctl-sm); height: var(--zn-ctl-sm); flex: none;
+  display: grid; place-items: center; padding: 0;
+  color: var(--zn-text-3); border: 0; border-radius: var(--zn-r-chip);
+  background: transparent; cursor: pointer;
+}
+.zs-icon-modal > header > button:hover { color: var(--zn-text); background: var(--zn-raised); }
+.zs-icon-modal-body { min-height: 0; overflow-y: auto; padding: 0 var(--zn-5) var(--zn-5); }
+
+.zs-workspace-shortcuts { min-width: 0; }
+.zs-workspace-section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--zn-4); margin-bottom: var(--zn-3); }
+.zs-workspace-section-head h3 { margin: 0; color: var(--zn-text); font-size: 13px; font-weight: 600; }
+.zs-workspace-section-head p { margin: 3px 0 0; color: var(--zn-text-3); font-size: 10.5px; }
+.zs-add-actions { display: flex; gap: var(--zn-1); }
+.zs-add-actions button {
+  height: 28px; display: inline-flex; align-items: center; gap: 6px; padding-inline: 9px;
+  color: var(--zn-text-2); border: 1px solid var(--zn-line); border-radius: var(--zn-r-chip); background: transparent; cursor: pointer;
+  font-size: 10.5px; line-height: 1; transition: color .15s var(--zn-ease), background .15s var(--zn-ease), border-color .15s var(--zn-ease);
+}
+.zs-add-actions button:hover, .zs-add-actions button.is-active { color: var(--zn-text); border-color: var(--zn-line-strong); background: var(--zn-raised); }
+
+/* Split view: while an add panel is open, the existing shortcuts stay beside it
+   instead of being pushed out of the viewport. Collapses to one column below 900px. */
+.zs-workspace-workbench { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }
+@media (min-width: 900px) {
+  .zs-workspace-workbench.is-split { grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); gap: var(--zn-3); align-items: start; }
+  .zs-workspace-workbench.is-split > .zs-add-panel { margin-bottom: 0; position: sticky; top: 0; }
+  .zs-workspace-workbench.is-split > .zs-workspace-items { max-height: min(420px, 52vh); overflow-y: auto; border-top: 0; scrollbar-gutter: stable; overscroll-behavior: contain; }
+}
+
+.zs-add-panel { margin-bottom: var(--zn-3); padding: var(--zn-3); border: 1px solid var(--zn-line); border-radius: var(--zn-r-control); background: var(--zn-sunken); }
+.zs-add-panel-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--zn-2); margin-bottom: var(--zn-2); }
+.zs-search.is-manager-search { min-width: 0; background: var(--zn-surface); }
+.zs-search.is-manager-search input:focus,
+.zs-search.is-manager-search input:focus-visible { outline: 0; box-shadow: none; }
+.zs-installed-apps { min-height: 132px; max-height: min(320px, 38vh); overflow-y: auto; padding-right: 2px; scrollbar-gutter: stable; overscroll-behavior: contain; }
+.zs-installed-apps > button {
+  width: 100%; min-height: 42px; display: grid; grid-template-columns: 28px minmax(0, 1fr) 20px; align-items: center; gap: var(--zn-2); padding: 5px var(--zn-2);
+  color: var(--zn-text-2); border: 0; border-radius: var(--zn-r-chip); background: transparent; cursor: pointer; text-align: left;
+}
+.zs-installed-apps > button:hover { color: var(--zn-text); background: var(--zn-hover); }
+.zs-installed-apps > button:disabled { opacity: .52; cursor: default; background: transparent; }
+.zs-installed-apps > button > span { display: grid; place-items: center; overflow: hidden; color: var(--zn-text-3); border-radius: var(--zn-r-chip); background: var(--zn-raised); }
+/* No padding here: extract-icon.ps1 already normalizes every icon to the same
+   content ratio on its canvas, so extra insets would only shrink them again. */
+.zs-installed-app-icon > img { width: 100%; height: 100%; object-fit: contain; }
+.zs-installed-apps > button div { min-width: 0; }
+.zs-installed-apps > button b, .zs-installed-apps > button small { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.zs-installed-apps > button b { color: currentColor; font-size: 11.5px; font-weight: 500; }
+.zs-installed-apps > button small { margin-top: 2px; color: var(--zn-text-3); font-size: 9.5px; }
+.zs-installed-apps > button > svg { color: var(--zn-text-3); }
+.zs-add-panel-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--zn-2);
+  margin-top: var(--zn-2); padding-top: var(--zn-2); border-top: 1px solid var(--zn-line);
+  color: var(--zn-text-3); font-size: 9.5px;
+}
+.zs-add-panel-foot button { padding: 0; color: var(--zn-text-2); border: 0; background: transparent; cursor: pointer; font-size: 9.5px; }
+.zs-add-panel-foot button:hover { color: var(--zn-text); text-decoration: underline; }
+
+.zs-add-form { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr) auto; align-items: end; gap: var(--zn-3); }
+.zs-folder-picker { min-width: 0; min-height: 54px; display: grid; grid-template-columns: 28px minmax(0, 1fr) 18px; align-items: center; gap: var(--zn-2); padding: var(--zn-2); color: var(--zn-text-2); border: 1px dashed var(--zn-line-strong); border-radius: var(--zn-r-control); background: var(--zn-surface); cursor: pointer; text-align: left; }
+.zs-folder-picker:hover { color: var(--zn-text); background: var(--zn-hover); }
+.zs-folder-picker div { min-width: 0; }
+.zs-folder-picker b, .zs-folder-picker small { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.zs-folder-picker b { font-size: 11.5px; font-weight: 500; }
+.zs-folder-picker small { margin-top: 2px; color: var(--zn-text-3); font-size: 9.5px; }
+
+.zs-workspace-items { overflow: hidden; border-top: 1px solid var(--zn-line); }
+.zs-workspace-item { border-bottom: 1px solid var(--zn-line); }
+/* Em edição a linha vira cartão. Antes era só um wash de fundo a toda a largura: um
+   retângulo sem contorno que encostava às linhas vizinhas e não dizia onde começava nem
+   acabava a zona editável. O recuo interno de 4px soma-se ao do cabeçalho e ao do editor,
+   portanto o alinhamento das colunas mantém-se — o cartão envolve, não desloca. */
+.zs-workspace-item.is-editing {
+  margin: var(--zn-2) 0;
+  padding-inline: var(--zn-1);
+  border: 1px solid var(--zn-line-strong);
+  border-radius: var(--zn-r-control);
+  background: var(--zn-raised);
+}
+/* Quatro colunas: manipulo, icone, copia, acoes. A do manipulo reserva sempre o espaco —
+   aparecer so no hover sem coluna declarada empurrava a linha inteira a cada passagem do rato. */
+.zs-workspace-item-main { min-height: 50px; display: grid; grid-template-columns: 16px 34px minmax(0, 1fr) auto; align-items: center; gap: var(--zn-2); padding: 6px var(--zn-1); }
+/* ── Reordenar atalhos ──────────────────────────────────────────────────────
+   O manipulo vive na primeira coluna da grelha, sempre com espaco reservado e sem tinta ate
+   o rato entrar na linha. Uma lista densa nao aguenta seis pontos cinzentos permanentes. */
+.zs-workspace-item { position: relative; }
+.zs-item-grip {
+  display: grid; place-items: center; align-self: stretch;
+  color: var(--zn-text-2); opacity: 0; cursor: grab; touch-action: none;
+  transition: opacity .13s var(--zn-ease), color .13s var(--zn-ease);
+}
+.zs-workspace-item:hover .zs-item-grip,
+.zs-workspace-item:focus-within .zs-item-grip { opacity: .5; }
+.zs-item-grip:hover { opacity: 1; color: var(--zn-text); }
+.zs-item-grip:active { cursor: grabbing; }
+/* Em edicao a linha e um cartao: arrastar um formulario aberto nao faz sentido. */
+.zs-workspace-item.is-editing .zs-item-grip { opacity: .12; cursor: default; }
+
+/* A origem esvazia-se em vez de desaparecer, para a lista nao saltar de altura. */
+.zs-workspace-item.is-dragging > .zs-workspace-item-main { opacity: .3; }
+
+/* Marca de insercao: recuada como o conteudo e na cor de maior contraste, que inverte com o
+   tema. Sem o recuo encostava as bordas e lia-se como mais uma linha divisoria da lista. */
+.zs-workspace-item.is-drop-above::before,
+.zs-workspace-item.is-drop-below::after {
+  content: ""; position: absolute; left: var(--zn-1); right: var(--zn-1); height: 2px;
+  border-radius: 2px; background: var(--zn-solid); z-index: 3;
+}
+.zs-workspace-item.is-drop-above::before { top: -1px; }
+.zs-workspace-item.is-drop-below::after { bottom: -1px; }
+/* O cartao de edicao tem margem propria; sem isto a marca flutuava fora da linha. */
+.zs-workspace-item.is-editing.is-drop-above::before { top: calc(var(--zn-2) * -1 - 1px); }
+.zs-workspace-item.is-editing.is-drop-below::after { bottom: calc(var(--zn-2) * -1 - 1px); }
+
+.zs-workspace-app-icon { width: 30px; height: 30px; display: grid; place-items: center; overflow: hidden; color: var(--zn-text-2); border-radius: var(--zn-r-chip); background: var(--zn-raised); }
+.zs-workspace-native-icon { display: block; }
+.zs-workspace-item-copy { min-width: 0; }
+.zs-workspace-item-copy > b, .zs-workspace-item-copy > small { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.zs-workspace-item-copy > b { color: var(--zn-text); font-size: 11.5px; font-weight: 500; }
+.zs-workspace-item-copy > small { margin-top: 3px; color: var(--zn-text-3); font-size: 9.5px; }
+.zs-workspace-item-copy em { color: var(--zn-text-2); font-style: normal; }
+.zs-item-actions { display: flex; gap: 2px; opacity: .7; transition: opacity .15s var(--zn-ease); }
+.zs-workspace-item:hover .zs-item-actions, .zs-workspace-item.is-editing .zs-item-actions { opacity: 1; }
+.zs-item-actions button { width: 25px; height: 25px; display: grid; place-items: center; padding: 0; color: var(--zn-text-3); border: 0; border-radius: var(--zn-r-chip); background: transparent; cursor: pointer; }
+.zs-item-actions button:hover, .zs-item-actions button.is-active { color: var(--zn-text); background: var(--zn-raised); }
+.zs-item-actions button:disabled { opacity: .22; cursor: default; }
+/* O editor alinha com a linha que o abriu: recuo esquerdo até à coluna do título
+   (4px de padding + 34px de ícone + 8px de gap = 46px) e margem direita igual à do
+   cabeçalho. Os 42px simétricos de antes desalinhavam dos dois lados — à esquerda por
+   4px, à direita por 38px — e era isso que fazia o bloco parecer cortado. */
+.zs-workspace-item-editor { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--zn-3); padding: 0 var(--zn-1) var(--zn-3) 46px; }
+/* Um campo de nome esticado à largura do painel lê-se como caixa de texto longa; o valor é curto. */
+.zs-workspace-item-editor > .zs-field { max-width: 340px; }
+.zs-launch-options { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--zn-3); padding: var(--zn-3); border: 1px solid var(--zn-line); border-radius: var(--zn-r-control); background: var(--zn-sunken); }
+.zs-launch-options b { display: block; color: var(--zn-text); font-size: 11.5px; font-weight: 550; }
+.zs-launch-options small { display: block; max-width: 520px; margin-top: 2px; color: var(--zn-text-3); font-size: 9.5px; line-height: 1.4; }
+/* Aviso de modo de arranque: âmbar, dentro do próprio bloco, para se ler como consequência
+   da escolha acabada de fazer e não como erro do painel. */
+.zs-launch-risk {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 13px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--zn-2);
+  margin: var(--zn-3) 0 0;
+  padding: var(--zn-2) var(--zn-3);
+  border: 1px solid rgba(224, 160, 60, .28);
+  border-radius: var(--zn-r-chip);
+  background: rgba(224, 160, 60, .07);
+  color: rgba(233, 189, 120, .92);
+  font-size: 9.5px;
+  line-height: 1.5;
+}
+.zs-launch-risk svg { margin-top: 1px; color: rgba(233, 189, 120, .9); }
+/* No tema claro o mesmo âmbar teria de escurecer para se ler sobre superfície branca. */
+[data-zn-theme="white"] .zs-launch-risk {
+  border-color: rgba(146, 92, 6, .3);
+  background: rgba(180, 120, 20, .09);
+  color: rgba(122, 76, 4, .95);
+}
+[data-zn-theme="white"] .zs-launch-risk svg { color: rgba(146, 92, 6, .9); }
+
+.zs-ide-options { grid-column: 1 / -1; overflow: hidden; border: 1px solid var(--zn-line); border-radius: var(--zn-r-control); background: var(--zn-surface); }
+.zs-ide-options-head, .zs-ide-toggle-row, .zs-ide-commands { padding: var(--zn-3); }
+.zs-ide-options-head { border-bottom: 1px solid var(--zn-line); background: var(--zn-sunken); }
+.zs-ide-options-head b, .zs-ide-toggle-row b, .zs-ide-commands-head b { display: block; color: var(--zn-text); font-size: 11.5px; font-weight: 550; }
+.zs-ide-options-head small, .zs-ide-toggle-row small, .zs-ide-commands-head small { display: block; margin-top: 2px; color: var(--zn-text-3); font-size: 9.5px; line-height: 1.4; }
+.zs-ide-toggle-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--zn-3); border-bottom: 1px solid var(--zn-line); }
+.zs-ide-commands-head { display: flex; align-items: center; justify-content: space-between; gap: var(--zn-3); }
+.zs-command-row { display: grid; grid-template-columns: minmax(0, 1fr) 28px; gap: 4px; margin-top: var(--zn-2); }
+.zs-command-row input { min-width: 0; height: 30px; padding: 0 var(--zn-2); color: var(--zn-text); border: 1px solid var(--zn-line); border-radius: var(--zn-r-chip); background: var(--zn-sunken); font: 450 10.5px/1 var(--font-ui); outline: 0; }
+.zs-command-row input:focus { border-color: var(--zn-line-strong); }
+.zs-command-row button { display: grid; place-items: center; padding: 0; color: var(--zn-text-3); border: 0; border-radius: var(--zn-r-chip); background: transparent; cursor: pointer; }
+.zs-command-row button:hover { color: #e66; background: rgba(220,50,50,.08); }
+.zs-ide-empty { margin: var(--zn-3) 0 0; color: var(--zn-text-3); font-size: 10px; }
+
+.zs-manager-empty { min-height: 62px; display: flex; align-items: center; justify-content: center; gap: var(--zn-2); color: var(--zn-text-3); font-size: 10.5px; }
+.zs-manager-empty.is-large { min-height: 118px; flex-direction: column; text-align: center; }
+.zs-manager-empty.is-large b { color: var(--zn-text-2); font-size: 12px; font-weight: 500; }
+.zs-manager-empty.is-large span { font-size: 10.5px; }
+.zs-spin { animation: zs-spin .8s linear infinite; }
+@keyframes zs-spin { to { transform: rotate(360deg); } }
+.zs-shell .zs-delete-workspace { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; padding: 5px 7px; color: var(--zn-text-3); border: 0; border-radius: var(--zn-r-chip); background: transparent; cursor: pointer; font: 450 10.5px/1.2 var(--font-ui); }
+.zs-delete-workspace:hover { color: #e66; background: rgba(220, 50, 50, .08); }
+.zs-delete-workspace:disabled { opacity: .3; cursor: not-allowed; }
+
+.zs-toast {
+  position: absolute; right: var(--zn-5); bottom: var(--zn-5); z-index: 30;
+  display: flex; align-items: center; gap: var(--zn-2);
+  padding: var(--zn-2) var(--zn-3);
+  color: var(--zn-on-solid); border-radius: var(--zn-r-control); background: var(--zn-solid);
+  box-shadow: var(--zn-elev); font-size: 12px; font-weight: 500;
+}
+
+/* ── Escala / viewport ──────────────────────────────────────────────────── */
+
+/* Windows 150–175%: o viewport CSS encolhe. Colapsa a nav para ícones antes
+   de a coluna de conteúdo ficar estreita demais para label + controlo. */
+@media (max-width: 760px) {
+  .zs-window { grid-template-columns: 60px minmax(0, 1fr); }
+  .zs-sidebar { padding-inline: var(--zn-2); }
+  .zs-sidebar-head h2, .zs-search input, .zs-nav button span, .zs-sidebar-foot { display: none; }
+  .zs-sidebar-head, .zs-search, .zs-nav button { justify-content: center; padding-inline: 0; }
+  .zs-search { gap: 0; }
+  .zs-scroll { padding: var(--zn-6) var(--zn-5); }
+  .zs-row { gap: var(--zn-4); }
+  .zs-options-grid { grid-template-columns: 1fr; }
+  .zs-workspace-overview { gap: var(--zn-3); }
+  /* Estreito: identidade em cima, estados e contagem descem para a segunda linha. */
+  .zs-workspace-identity { grid-template-columns: 48px minmax(0, 1fr) auto; }
+  .zs-workspace-identity > .zs-workspace-flags { grid-area: 1 / 3; }
+  .zs-workspace-meta { grid-area: 2 / 2; align-self: start; margin: var(--zn-1) 0 0; }
+  .zs-workspace-state { grid-template-columns: 1fr; }
+  .zs-workspace-section-head { align-items: flex-start; flex-direction: column; }
+  .zs-add-form { grid-template-columns: 1fr; }
+  .zs-add-form .zs-btn { justify-content: center; }
+}
+
+@media (max-width: 560px) {
+  .zs-row { grid-template-columns: minmax(0, 1fr); row-gap: var(--zn-2); }
+  .zs-row-control { justify-content: flex-start; }
+  .zs-add-actions { width: 100%; }
+  .zs-add-actions button { flex: 1; justify-content: center; padding-inline: 5px; }
+  .zs-add-panel-head { grid-template-columns: 1fr; }
+  .zs-workspace-item-editor { grid-template-columns: 1fr; padding-left: 42px; }
+  .zs-launch-options { grid-template-columns: 1fr; }
+}
+
+@media (max-height: 560px) {
+  .zs-scroll { padding-block: var(--zn-6); }
+  .zs-page-head { margin-bottom: var(--zn-5); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zs-shell, .zs-shell * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+/* ══ Modal radial — animação no compositor ═════════════════════════════════
+   A roda era animada por springs de JS (uma por ícone + uma por rótulo, todas
+   recalculadas a cada fatia atravessada). Aqui a posição/presença de cada
+   fatia é apenas uma variável CSS: o React escreve o valor, o compositor
+   interpola. Nenhum trabalho por frame na thread principal.
+
+   `--zn-tf` / `--zn-op` são o estado alvo; a transição é o movimento.
+   ════════════════════════════════════════════════════════════════════════ */
+.zn-radial-slice,
+.zn-radial-hub,
+.zn-radial-label,
+.zn-radial-pill,
+.zn-radial-scrim {
+  transform: var(--zn-tf, none);
+  opacity: var(--zn-op, 1);
+  transition:
+    transform var(--zn-dur, 220ms) var(--zn-ease, cubic-bezier(.2, .82, .28, 1)),
+    opacity var(--zn-dur-op, 175ms) ease-out;
+}
+
+/* O hub também troca de cor/anel ao ficar ativo — vem depois da regra comum
+   para redefinir o atalho `transition` inteiro (mesma especificidade). */
+.zn-radial-hub {
+  transition:
+    transform var(--zn-dur, 190ms) var(--zn-ease, cubic-bezier(.2, .82, .28, 1)),
+    opacity var(--zn-dur-op, 165ms) ease-out,
+    background-color 170ms ease-out,
+    border-color 170ms ease-out,
+    box-shadow 170ms ease-out;
+}
+
+/* Só as fatias e o hub sobem a camada própria: promover tudo custaria mais
+   memória de GPU do que poupa em repintura. */
+.zn-radial-slice,
+.zn-radial-hub {
+  will-change: transform, opacity;
+}
+
+/* Modo normal: expansão progressiva, com desaceleração longa o bastante para a
+   troca de workspace/pasta não parecer um corte seco. */
+.zn-radial-slice {
+  --zn-ease: cubic-bezier(.16, .86, .24, 1);
+  --zn-dur: 220ms;
+  --zn-dur-op: 165ms;
+}
+
+/* `performanceMode`: mesmo desenho, sem overshoot e mais curto. */
+.zn-radial--fast .zn-radial-slice,
+.zn-radial--fast .zn-radial-hub,
+.zn-radial--fast .zn-radial-label,
+.zn-radial--fast .zn-radial-pill {
+  --zn-ease: ease-out;
+  --zn-dur: 110ms;
+  --zn-dur-op: 90ms;
+}
+
+/* Fechar é sempre mais curto que abrir — esperar pela saída lê-se como lag. */
+.zn-radial--closing .zn-radial-slice,
+.zn-radial--closing .zn-radial-hub,
+.zn-radial--closing .zn-radial-label,
+.zn-radial--closing .zn-radial-pill,
+.zn-radial--closing .zn-radial-scrim {
+  --zn-ease: ease-in;
+  --zn-dur: 110ms;
+  --zn-dur-op: 100ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zn-radial-slice,
+  .zn-radial-hub,
+  .zn-radial-label,
+  .zn-radial-pill,
+  .zn-radial-scrim { transition-duration: .01ms !important; }
 }

@@ -11,12 +11,14 @@ const {
   dialog,
   session,
 } = require("electron");
+const { autoUpdater } = require("electron-updater");
 const path = require("path");
 const { exec, spawn, execFile, execFileSync } = require("child_process");
 const os = require("os");
 const fs = require("fs");
 const win32Launch = require("./win32-launch");
 const { normalizeFullPersistenceBlob } = require("./persistence-normalize.cjs");
+const { detectGameExecutable } = require("./game-detection.cjs");
 const crypto = require("crypto");
 const { GlobalKeyboardListener } = require("node-global-key-listener");
 const http = require("http");
@@ -24,6 +26,17 @@ const https = require("https");
 const url = require("url");
 
 const isDev = !app.isPackaged;
+
+/**
+ * Canal de distribuição. A Microsoft Store proíbe mecanismos próprios de atualização — quem
+ * atualiza é a loja — e uma submissão com o `electron-updater` ativo é reprovada na certificação.
+ * O mesmo código serve os dois canais; é aqui que se decide qual deles está a correr.
+ *
+ * `process.windowsStore` é posto pelo Electron quando o processo corre dentro de um pacote MSIX.
+ * A variável de ambiente existe só para poder testar o comportamento sem empacotar.
+ */
+const isStoreBuild = () =>
+  process.windowsStore === true || process.env.ROVYL_STORE_BUILD === "1";
 const logDir = isDev
   ? path.join(__dirname, "..")
   : path.join(os.homedir(), ".zenith-radial-menu");
@@ -31,9 +44,39 @@ const logFile = path.join(logDir, "diagnostic.log");
 
 const logQueue = [];
 let isWriting = false;
+let logFlushTimer = null;
+
+/**
+ * O log era append puro: crescia para sempre (e cada abertura acrescenta uma linha por ícone
+ * resolvido). Duas gerações de 2 MB chegam para diagnosticar e o disco deixa de pagar juros.
+ * O tamanho é contado em memória — `statSync` a cada escrita seria trocar um problema por outro.
+ */
+const LOG_MAX_BYTES = 2 * 1024 * 1024;
+let logBytesWritten = null;
+
+const rotateLogIfNeeded = (incomingBytes) => {
+  try {
+    if (logBytesWritten === null) {
+      logBytesWritten = fs.existsSync(logFile) ? fs.statSync(logFile).size : 0;
+    }
+    if (logBytesWritten + incomingBytes <= LOG_MAX_BYTES) {
+      logBytesWritten += incomingBytes;
+      return;
+    }
+    /** `renameSync` sobre o `.1` anterior descarta a geração mais velha sem passo extra. */
+    fs.renameSync(logFile, `${logFile}.1`);
+    logBytesWritten = incomingBytes;
+  } catch (e) {
+    logBytesWritten = 0;
+  }
+};
 
 const processLogQueue = () => {
   if (isWriting || logQueue.length === 0) return;
+  if (logFlushTimer) {
+    clearTimeout(logFlushTimer);
+    logFlushTimer = null;
+  }
   isWriting = true;
 
   const logsToWrite = logQueue.splice(0, logQueue.length).join("");
@@ -42,6 +85,7 @@ const processLogQueue = () => {
     if (!fs.existsSync(logDir)) {
       fs.mkdirSync(logDir, { recursive: true });
     }
+    rotateLogIfNeeded(Buffer.byteLength(logsToWrite, "utf-8"));
     fs.appendFile(logFile, logsToWrite, (err) => {
       isWriting = false;
       if (err) {
@@ -56,6 +100,27 @@ const processLogQueue = () => {
   }
 };
 
+/**
+ * Flush only after a log actually arrives. The old permanent 5 s interval woke
+ * the Electron main process all day even when the app was completely idle.
+ */
+const scheduleLogFlush = () => {
+  if (logFlushTimer || logQueue.length === 0) return;
+  logFlushTimer = setTimeout(() => {
+    logFlushTimer = null;
+    processLogQueue();
+  }, 1500);
+  logFlushTimer.unref?.();
+};
+
+/**
+ * Botões de rato aceites como gatilho. Esquerdo (0x01) e direito (0x02) estão deliberadamente
+ * fora: vigiá-los globalmente colidiria com o clique primário e o menu de contexto de todo o
+ * sistema. Os laterais (X1/X2) são livres na esmagadora maioria das aplicações.
+ */
+const MOUSE_TRIGGER_VK = { middle: 0x04, x1: 0x05, x2: 0x06 };
+const MOUSE_TRIGGER_BUTTONS = Object.keys(MOUSE_TRIGGER_VK);
+
 const diagLog = (msg) => {
   const line = `[${new Date().toISOString()}] ${msg}\n`;
   logQueue.push(line);
@@ -63,6 +128,8 @@ const diagLog = (msg) => {
   // Throttle writes: process immediately in dev, or when queue reaches 10 lines in prod
   if (isDev || logQueue.length >= 10) {
     processLogQueue();
+  } else {
+    scheduleLogFlush();
   }
 };
 
@@ -86,42 +153,40 @@ function applyEnvFileContent(content) {
 }
 
 /**
- * Packaged Zenith uses electron-builder `productName` → userData `%APPDATA%\\Zenith OS`.
- * Unpackaged `npm start` uses package.json `name` → `%APPDATA%\\zenith-radial-menu` by default,
- * so dev and installer wrote/read different folders (looks like “nothing persists”).
- * Optional override: `ZENITH_USER_DATA=C:\\path`.
+ * Rovyl keeps one profile for packaged and development builds. During the rebrand,
+ * copy the former Zenith profile forward so existing workspaces and preferences survive.
+ * `ZENITH_USER_DATA` remains supported as a backwards-compatible environment override.
  * Must run before any `app.getPath("userData")`.
  */
 function ensureUnifiedUserDataDirectory() {
-  const udOverride = (process.env.ZENITH_USER_DATA || "").trim();
+  const udOverride = (
+    process.env.ROVYL_USER_DATA ||
+    process.env.ZENITH_USER_DATA ||
+    ""
+  ).trim();
   if (udOverride) {
     try {
       app.setPath("userData", udOverride);
-      diagLog(`[Persist] userData from ZENITH_USER_DATA=${app.getPath("userData")}`);
+      diagLog(`[Persist] userData override=${app.getPath("userData")}`);
       return;
     } catch (e) {
-      console.error("ZENITH_USER_DATA setPath failed:", e.message);
+      console.error("ROVYL_USER_DATA setPath failed:", e.message);
     }
   }
-  if (app.isPackaged) return;
 
   try {
     const appData = app.getPath("appData");
-    const unifiedDir = path.join(appData, "Zenith OS");
-    let legacyName = "zenith-radial-menu";
-    try {
-      const pkgPath = path.join(__dirname, "..", "package.json");
-      const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
-      if (pkg && typeof pkg.name === "string" && pkg.name.trim()) {
-        legacyName = pkg.name.trim();
-      }
-    } catch (_) {}
-
-    const legacyDir = path.join(appData, legacyName);
+    const unifiedDir = path.join(appData, "Rovyl");
     const unifiedCfg = path.join(unifiedDir, "config-v2.json");
-    const legacyCfg = path.join(legacyDir, "config-v2.json");
+    const legacyDirs = [
+      path.join(appData, "Zenith OS"),
+      path.join(appData, "zenith-radial-menu"),
+    ];
+    const legacyDir = legacyDirs.find((dir) =>
+      fs.existsSync(path.join(dir, "config-v2.json")),
+    );
 
-    if (!fs.existsSync(unifiedCfg) && fs.existsSync(legacyCfg)) {
+    if (!fs.existsSync(unifiedCfg) && legacyDir) {
       if (!fs.existsSync(unifiedDir)) {
         fs.mkdirSync(unifiedDir, { recursive: true });
       }
@@ -130,6 +195,7 @@ function ensureUnifiedUserDataDirectory() {
         "config-v2.json.bak",
         "settings.json",
         "zenith-persistence.log",
+        "rovyl-persistence.log",
         "icon-cache.json",
       ]) {
         const src = path.join(legacyDir, f);
@@ -137,7 +203,7 @@ function ensureUnifiedUserDataDirectory() {
         if (fs.existsSync(src) && !fs.existsSync(dst)) {
           try {
             fs.copyFileSync(src, dst);
-            diagLog(`[Persist] Migrated dev profile ${f} → Zenith OS userData`);
+            diagLog(`[Persist] Migrated legacy profile ${f} → Rovyl userData`);
           } catch (e) {
             diagLog(`[Persist] Migrate ${f} failed: ${e.message}`);
           }
@@ -146,7 +212,7 @@ function ensureUnifiedUserDataDirectory() {
     }
 
     app.setPath("userData", unifiedDir);
-    diagLog(`[Persist] Dev userData unified to: ${unifiedDir}`);
+    diagLog(`[Persist] Rovyl userData: ${unifiedDir}`);
   } catch (e) {
     console.error("ensureUnifiedUserDataDirectory:", e.message);
   }
@@ -198,9 +264,6 @@ if (process.env.ZENITH_DISABLE_HARDWARE_ACCELERATION === "1") {
   diagLog("[GPU] Aceleração de hardware ativa para o radial transparente.");
 }
 
-// Periodic flush to ensure logs aren't stuck in queue
-setInterval(processLogQueue, 5000);
-
 // Helper function to detect preferred terminal emulator
 let cachedTerminal = null;
 const getPreferredTerminal = () => {
@@ -235,6 +298,232 @@ const getAssetPath = (...paths) => {
   );
 };
 
+/* ── MRU de IDEs da família VS Code ──────────────────────────────────────────────────────────
+ *
+ * O nome da pasta de perfil não é o nome do produto e muda entre versões e fabricantes:
+ * "Antigravity IDE" (e não "Antigravity", que é só runtime do Chromium), "Code - Insiders",
+ * "Windsurf", "Trae"… Uma tabela fixa de caminhos falha em silêncio — devolve lista vazia sem
+ * erro, exatamente o que aconteceu com o Antigravity. Em vez de adivinhar o caminho, descobre-se:
+ * qualquer pasta com `User/globalStorage/{storage.json|state.vscdb}` É um perfil desta família,
+ * e escolhe-se a que melhor corresponde ao nome/executável da app. IDEs que ainda não existem
+ * passam a funcionar sem alterar código.
+ */
+
+/** Nomes normalizados: comparação sem espaços, hífens, pontuação nem maiúsculas. */
+function normalizeIdeToken(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/** Rótulos que não parecem com a pasta que o produto cria. */
+const IDE_TOKEN_ALIASES = {
+  visualstudiocode: "code",
+  vscode: "code",
+  vscodeinsiders: "codeinsiders",
+};
+
+/** Troços de caminho e de nome de ficheiro que nunca identificam um produto. */
+const IDE_TOKEN_STOPLIST = new Set([
+  "exe", "com", "app", "bin", "cmd", "lnk", "url",
+  "users", "user", "appdata", "local", "locallow", "roaming",
+  "program", "programs", "programfiles", "files", "windows", "system32",
+  "start", "menu", "desktop", "microsoft", "google", "data",
+  /** Prefixos de AUMID de apps Electron: `electron.app.Antigravity` não identifica produto nenhum. */
+  "electron", "electronapp", "shell", "launcher",
+]);
+
+/**
+ * Pistas de identidade por ordem de confiança. O EXECUTÁVEL vem primeiro: `Antigravity IDE.exe` e
+ * `Antigravity.exe` são produtos diferentes que partilham prefixo, e o rótulo — editável pelo
+ * utilizador — não os distingue. Só depois vem o nome visível e, por fim, o caminho.
+ */
+function ideIdentityTokens(appName, appCommand) {
+  const tokens = [];
+  const push = (raw) => {
+    const token = normalizeIdeToken(raw);
+    if (!token || token.length < 3 || tokens.includes(token)) return;
+    if (IDE_TOKEN_STOPLIST.has(token)) return;
+    tokens.push(token);
+    const alias = IDE_TOKEN_ALIASES[token];
+    if (alias && !tokens.includes(alias)) tokens.push(alias);
+  };
+
+  const command = String(appCommand || "").trim().replace(/^"|"$/g, "");
+  const segments = command.split(/[\\/]/).filter(Boolean);
+  const executable = segments[segments.length - 1] || "";
+
+  /** `Antigravity IDE.exe` → `antigravityide`. */
+  push(executable.replace(/\.[a-z0-9]+$/i, ""));
+  /** Pasta de instalação: `...\Programs\Antigravity IDE\...`. */
+  if (segments.length >= 2) push(segments[segments.length - 2]);
+  /** AUMID: `Google.Antigravity` → `antigravity`. */
+  executable.split(".").forEach(push);
+
+  push(appName);
+  String(appName || "")
+    .split(/[\s\-_]+/)
+    .forEach(push);
+
+  segments.forEach(push);
+
+  return tokens;
+}
+
+/** Diretórios onde as apps desta família guardam o perfil. */
+function ideProfileSearchRoots() {
+  return [process.env.APPDATA, process.env.LOCALAPPDATA].filter(Boolean);
+}
+
+function readIdeProfileAt(dir, dirName) {
+  const globalStorage = path.join(dir, "User", "globalStorage");
+  const storageJson = path.join(globalStorage, "storage.json");
+  const vscdb = path.join(globalStorage, "state.vscdb");
+  let mtime = 0;
+  let found = false;
+  for (const file of [vscdb, storageJson]) {
+    try {
+      mtime = Math.max(mtime, fs.statSync(file).mtimeMs);
+      found = true;
+    } catch (e) {
+      /* ficheiro ausente — o outro ainda pode existir */
+    }
+  }
+  return found ? { name: dirName, normalized: normalizeIdeToken(dirName), globalStorage, mtime } : null;
+}
+
+/** A varredura é de disco: guardada por instantes para não correr a cada abertura da roda. */
+let ideProfileCache = { at: 0, profiles: [] };
+const IDE_PROFILE_CACHE_MS = 15000;
+
+function listIdeProfiles() {
+  const now = Date.now();
+  if (now - ideProfileCache.at < IDE_PROFILE_CACHE_MS) return ideProfileCache.profiles;
+
+  const profiles = [];
+  const seen = new Set();
+  for (const root of ideProfileSearchRoots()) {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(root, { withFileTypes: true });
+    } catch (e) {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const dir = path.join(root, entry.name);
+      const profile = readIdeProfileAt(dir, entry.name);
+      if (profile) {
+        if (seen.has(profile.globalStorage)) continue;
+        seen.add(profile.globalStorage);
+        profiles.push(profile);
+        continue;
+      }
+      /** Um nível abaixo cobre perfis debaixo do fabricante (`Google\Antigravity`). */
+      let nested = [];
+      try {
+        nested = fs.readdirSync(dir, { withFileTypes: true });
+      } catch (e) {
+        continue;
+      }
+      for (const child of nested) {
+        if (!child.isDirectory()) continue;
+        const nestedProfile = readIdeProfileAt(path.join(dir, child.name), child.name);
+        if (!nestedProfile || seen.has(nestedProfile.globalStorage)) continue;
+        seen.add(nestedProfile.globalStorage);
+        profiles.push(nestedProfile);
+      }
+    }
+  }
+
+  ideProfileCache = { at: now, profiles };
+  diagLog(`[Recents] IDE profiles found: ${profiles.map((p) => p.name).join(", ") || "none"}`);
+  return profiles;
+}
+
+/**
+ * Correspondência por grau, nunca por substring solta: `code` não pode capturar `VSCodium`, e
+ * `antigravity` tem de encontrar `Antigravity IDE`. Empate resolve-se pelo perfil escrito há menos
+ * tempo, que é o que o utilizador anda mesmo a usar.
+ */
+function scoreIdeProfile(token, profile) {
+  const name = profile.normalized;
+  if (!token || !name) return 0;
+  if (name === token) return 100;
+  if (name.startsWith(token)) return 80;
+  if (token.startsWith(name)) return 70;
+  if (token.length >= 5 && name.includes(token)) return 50;
+  return 0;
+}
+
+/**
+ * Verdadeiro quando o token nomeia uma pasta de dados própria que NÃO é um perfil desta família.
+ * É o sinal decisivo contra o espelhamento: `Antigravity.exe` (o agente) tem `%APPDATA%\Antigravity`
+ * sem `globalStorage`, portanto não tem MRU nenhum — e não pode herdar o de `Antigravity IDE` só
+ * porque um nome é prefixo do outro.
+ */
+function ideTokenHasOwnNonProfileDataDir(token) {
+  for (const root of ideProfileSearchRoots()) {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(root, { withFileTypes: true });
+    } catch (e) {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || normalizeIdeToken(entry.name) !== token) continue;
+      const globalStorage = path.join(root, entry.name, "User", "globalStorage");
+      if (!fs.existsSync(globalStorage)) return true;
+    }
+  }
+  return false;
+}
+
+/** `globalStorage` do IDE indicado, ou "" quando nenhum perfil corresponde. */
+function resolveIdeGlobalStorage(appName, appCommand) {
+  const tokens = ideIdentityTokens(appName, appCommand);
+  if (tokens.length === 0) return "";
+  const profiles = listIdeProfiles();
+  if (profiles.length === 0) return "";
+
+  /** 1) Correspondência exata: um produto identificado ao milímetro nunca cede a um prefixo. */
+  for (const token of tokens) {
+    const exact = profiles
+      .filter((profile) => profile.normalized === token)
+      .sort((a, b) => b.mtime - a.mtime)[0];
+    if (exact) {
+      diagLog(`[Recents] "${appName}" → perfil "${exact.name}" (exato via "${token}")`);
+      return exact.globalStorage;
+    }
+    /** 2) O produto tem casa própria e ela não é um perfil: não há MRU para mostrar. */
+    if (ideTokenHasOwnNonProfileDataDir(token)) {
+      diagLog(`[Recents] "${appName}" tem pasta de dados própria sem globalStorage ("${token}") — sem MRU`);
+      return "";
+    }
+  }
+
+  /** 3) Só então se aceita parcial, para perfis cujo nome difere do produto. */
+  let best = null;
+  tokens.forEach((token, tokenIndex) => {
+    for (const profile of profiles) {
+      const score = scoreIdeProfile(token, profile);
+      if (score === 0) continue;
+      const candidate = { profile, score, tokenIndex };
+      if (
+        !best ||
+        candidate.tokenIndex < best.tokenIndex ||
+        (candidate.tokenIndex === best.tokenIndex &&
+          (candidate.score > best.score ||
+            (candidate.score === best.score && candidate.profile.mtime > best.profile.mtime)))
+      ) {
+        best = candidate;
+      }
+    }
+  });
+
+  if (!best) return "";
+  diagLog(`[Recents] "${appName}" → perfil "${best.profile.name}" (parcial ${best.score})`);
+  return best.profile.globalStorage;
+}
+
 /** VS Code–family IDEs store MRU as a raw array or { entries: [...] }; Cursor/Antigravity often keep history only in state.vscdb. */
 function normalizeRecentlyOpenedPathsList(raw) {
   if (!raw) return [];
@@ -267,7 +556,7 @@ async function loadRecentlyOpenedPathsFromVscdb(vscdbPath) {
   }
 }
 
-diagLog("Zenith Main Process Started");
+diagLog("Rovyl Main Process Started");
 
 /**
  * Ctrl+C no terminal envia SIGINT ao processo Node/Electron. Sem este handler, o processo
@@ -331,22 +620,30 @@ if (process.env.ZENITH_AGGRESSIVE_GPU === "1") {
 }
 
 /**
- * Packaged app: Chromium throttles occluded/background renderers aggressively on Windows.
- * The transparent radial HUD must keep requestAnimationFrame + drag at full rate in production.
+ * Chromium throttles occluded/background renderers aggressively on Windows.
+ * The transparent radial HUD must keep requestAnimationFrame + drag at full rate.
+ *
+ * `CalculateNativeWinOcclusion` é o ponto crítico e vale TAMBÉM em dev: numa janela layered
+ * transparente que é escondida/mostrada/redimensionada a cada gesto, o Chromium marca-a como
+ * ocluída, descarta os frames e o `show()` seguinte apresenta a textura antiga (dashboard/ilha)
+ * ou um frame preto. Isto reproduz-se em QUALQUER ação (abrir, fechar, restaurar), não só na
+ * abertura — era por isso que os handshakes de cobertura não chegavam.
+ * A deteção nativa continua desativada para evitar a textura antiga, mas o throttling
+ * global de timers NÃO: `webContents.setBackgroundThrottling(false/true)` já o alterna
+ * nos pontos de mostrar/esconder, permitindo que a app durma quando está na bandeja.
  */
-if (!isDev) {
-  app.commandLine.appendSwitch("disable-renderer-backgrounding");
-  app.commandLine.appendSwitch("disable-background-timer-throttling");
-  app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
+if (process.env.ZENITH_AGGRESSIVE_GPU !== "1") {
+  /** No modo agressivo o `disable-features` já inclui estas (appendSwitch repetido substitui a lista). */
   app.commandLine.appendSwitch(
     "disable-features",
     "CalculateNativeWinOcclusion,WindowOcclusionPrediction",
   );
-  diagLog("[Perf] Production renderer throttling disabled (occlusion + background timers).");
 }
+diagLog("[Perf] Background throttling dynamically controlled by window visibility.");
 
 // Fix Taskbar Icon Grouping
-app.setAppUserModelId("com.henry.zenith"); // AUMID explicitly set
+app.setName("Rovyl");
+app.setAppUserModelId("com.henry.rovyl"); // AUMID explicitly set
 // app.setPath("userData", path.join(os.tmpdir(), "zenith-radial-menu-cache")); // REMOVED: tmpdir is not persistent
 
 // Single instance: prevents two Zenith processes when login startup is slow and the user launches manually.
@@ -390,6 +687,7 @@ let gameModeConfig = {
   enabled: false,
   mode: "list",
   blockedApps: "",
+  autoDetectGames: false,
 };
 
 function mergeGameModeConfig(gm) {
@@ -403,6 +701,7 @@ function mergeGameModeConfig(gm) {
     enabled: !!gm.enabled,
     mode: gm.mode === "all" ? "all" : "list",
     blockedApps: blocked,
+    autoDetectGames: !!gm.autoDetectGames,
   };
 }
 
@@ -413,13 +712,54 @@ function extractUiConfigFromPersistenceBlob(blob) {
   return blob;
 }
 
-// Window Management Persistence
-let lastWindowedBounds = { width: 1280, height: 800, x: 100, y: 100 };
+// Window Management Persistence — compact desktop panel, not a full-screen dashboard.
+/**
+ * 720×540 deixava ~430px de conteúdo depois da navegação e do padding: as Settings
+ * pareciam miniaturas dentro de um rect grande. 880×600 dá uma coluna de conteúdo de
+ * ~565px (236px de navegação + padding) — a largura para que a escala tipográfica
+ * (13px label / 11.5px descrição) foi desenhada — sem virar dashboard.
+ * Continua a caber a 175% de escala do Windows em 1080p
+ * graças ao clamp de `windowedBoundsForWorkArea`.
+ */
+const DEFAULT_WINDOWED_WIDTH = 880;
+const DEFAULT_WINDOWED_HEIGHT = 600;
+let lastWindowedBounds = {
+  width: DEFAULT_WINDOWED_WIDTH,
+  height: DEFAULT_WINDOWED_HEIGHT,
+  x: 100,
+  y: 100,
+};
 let isUpdatingBounds = false;
 
 /** Ilha (modo `small` + hit-shape) encolhe o HWND — não gravar isso como "janela normal" ou o dashboard abre num rect minúsculo. */
 const MIN_REASONABLE_WINDOWED_W = 480;
 const MIN_REASONABLE_WINDOWED_H = 360;
+
+/**
+ * Rect windowed por omissão, centrado e sempre dentro da área de trabalho.
+ * `workArea` já vem em DIPs, por isso isto cobre 100/125/150/175% de escala do Windows:
+ * a 175% em 1080p a área útil ronda 1097×583 DIPs e o rect encolhe em vez de sair do ecrã.
+ */
+function windowedBoundsForWorkArea() {
+  try {
+    const { workArea } = screen.getPrimaryDisplay();
+    const w = Math.min(DEFAULT_WINDOWED_WIDTH, Math.max(MIN_REASONABLE_WINDOWED_W, workArea.width - 80));
+    const h = Math.min(DEFAULT_WINDOWED_HEIGHT, Math.max(MIN_REASONABLE_WINDOWED_H, workArea.height - 80));
+    return {
+      x: Math.round(workArea.x + (workArea.width - w) / 2),
+      y: Math.round(workArea.y + (workArea.height - h) / 2),
+      width: w,
+      height: h,
+    };
+  } catch (e) {
+    return {
+      x: 100,
+      y: 100,
+      width: DEFAULT_WINDOWED_WIDTH,
+      height: DEFAULT_WINDOWED_HEIGHT,
+    };
+  }
+}
 
 function resetLastWindowedBoundsIfIslandCorrupted() {
   const b = lastWindowedBounds;
@@ -430,16 +770,7 @@ function resetLastWindowedBoundsIfIslandCorrupted() {
   ) {
     return;
   }
-  try {
-    const { workArea } = screen.getPrimaryDisplay();
-    const w = Math.min(1280, Math.max(MIN_REASONABLE_WINDOWED_W, workArea.width - 80));
-    const h = Math.min(800, Math.max(MIN_REASONABLE_WINDOWED_H, workArea.height - 80));
-    const x = Math.round(workArea.x + (workArea.width - w) / 2);
-    const y = Math.round(workArea.y + (workArea.height - h) / 2);
-    lastWindowedBounds = { x, y, width: w, height: h };
-  } catch (e) {
-    lastWindowedBounds = { width: 1280, height: 800, x: 100, y: 100 };
-  }
+  lastWindowedBounds = windowedBoundsForWorkArea();
 }
 /** Cleared when leaving radial overlay for settings so a pending hide does not break the window. */
 let skipTaskbarHideTimer = null;
@@ -505,6 +836,19 @@ function applyMousePolicyAfterReveal(win) {
 
 /** When true, allow BrowserWindow to close (real quit). Otherwise close → hide to tray. */
 let isAppQuitting = false;
+/**
+ * Parar o gatilho no fecho — e é um requisito de ATUALIZAÇÃO, não de higiene.
+ *
+ * O processo PowerShell do gatilho vive dentro da pasta de instalação. Se sobreviver ao fecho da
+ * app, mantém um handle aberto sobre `mouse-blocker.ps1`, o instalador NSIS não consegue substituir
+ * os ficheiros, e a atualização falha em silêncio: no arranque seguinte a app encontra a mesma
+ * versão nova e volta a propô-la. Para sempre.
+ *
+ * A função vive dentro de `app.whenReady`; esta referência é como o `will-quit` lhe chega.
+ */
+let stopMouseHookForShutdown = () => {};
+
+let updateInstallInProgress = false;
 /** Ensures renderer runs saveFullConfigSync before exit (tray "Sair" / OS shutdown paths). */
 let zenithQuitFlushStarted = false;
 /**
@@ -516,6 +860,10 @@ let skipQuitFlushForImport = false;
 
 app.on("before-quit", (event) => {
   isAppQuitting = true;
+  // `quitAndInstall` must not be delayed by the normal renderer persistence handshake.
+  if (updateInstallInProgress) {
+    return;
+  }
   if (zenithQuitFlushStarted) {
     return;
   }
@@ -636,11 +984,15 @@ function stopShortcutRecording() {
 }
 
 async function createWindow() {
+  /** Centrado e clampado à área útil — nunca maior que o ecrã em escalas altas do Windows. */
+  const initialBounds = windowedBoundsForWorkArea();
+  /** `updateWindowSize('windowed')` pode correr antes do primeiro evento `resize`: alinhar já. */
+  lastWindowedBounds = { ...initialBounds };
   const newWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    x: 100,
-    y: 100,
+    width: initialBounds.width,
+    height: initialBounds.height,
+    x: initialBounds.x,
+    y: initialBounds.y,
     frame: false, // Keep frameless for transparency
     titleBarStyle: "hidden", // Hide default title bar but keep controls
     titleBarOverlay: false,
@@ -757,6 +1109,14 @@ function attachWindowUserRestoreGuards(window) {
 
   const onRestore = () => {
     if (!window || window.isDestroyed()) return;
+    /** Restaurar da bandeja/minimização com o renderer ainda throttled expõe a textura antiga. */
+    try {
+      if (typeof window.webContents?.setBackgroundThrottling === "function") {
+        window.webContents.setBackgroundThrottling(false);
+      }
+    } catch (e) {
+      /* ignore */
+    }
     try {
       if (windowBuriedPassive) {
         window.setOpacity(1);
@@ -779,7 +1139,10 @@ function attachWindowUserRestoreGuards(window) {
       ) {
         window.setOpacity(1);
         window.setIgnoreMouseEvents(false);
-        window.setSkipTaskbar(false);
+        /** Apenas o painel windowed visível representa Settings na barra de tarefas. */
+        window.setSkipTaskbar(
+          nativeWindowSizeMode !== "windowed" || !rendererPanelVisible,
+        );
         if (window.webContents && !window.webContents.isDestroyed()) {
           window.webContents.send("window-native-display-restored", {
             mode: nativeWindowSizeMode,
@@ -893,11 +1256,44 @@ function setupMainWindow(window) {
   });
 }
 
-/* zenith-verify:radial-handshake-main — prepare → radial-prep-paint-done → open-menu → show; ver scripts/verify-radial-windowing.mjs */
+let radialOpenPaintSequence = 0;
+
+/* zenith-verify:radial-handshake-main — prepare → radial-prep-paint-done → open-menu → radial-open-paint-done → show; ver scripts/verify-radial-windowing.mjs */
 function showMenuAtCursor(source = "shortcut") {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  const radialOpenStartedAt = Date.now();
 
-  const cursorPoint = screen.getCursorScreenPoint();
+  /** Posição fixa significa fixa de verdade: nem a posição nem o monitor seguem o cursor. */
+  const targetDisplay = screen.getPrimaryDisplay();
+  let radialCenter = {
+    x: Math.round(targetDisplay.bounds.x + targetDisplay.bounds.width / 2),
+    y: Math.round(targetDisplay.bounds.y + targetDisplay.bounds.height / 2),
+  };
+  /**
+   * Se o centro real do monitor cabe dentro do HWND do Settings, mantemos o HWND completamente
+   * imóvel (sem flash DWM) e desenhamos a roda naquele ponto em coordenadas de cliente. Antes este
+   * caminho substituía `radialCenter` pelo centro DO SETTINGS — (906,345) no vídeo — e parecia
+   * seguir o cursor. Se o painel estiver noutro monitor/fora do centro, usa-se o caminho seguro de
+   * hide+resize abaixo para honrar o centro do monitor principal.
+   */
+  let keepExistingPanelWindow = false;
+  if (
+    nativeWindowSizeMode === "windowed" &&
+    rendererPanelVisible &&
+    isMainWindowOnScreen()
+  ) {
+    try {
+      const bounds = mainWindow.getBounds();
+      const visualMargin = Math.min(150, Math.floor(Math.min(bounds.width, bounds.height) / 4));
+      keepExistingPanelWindow =
+        radialCenter.x >= bounds.x + visualMargin &&
+        radialCenter.x <= bounds.x + bounds.width - visualMargin &&
+        radialCenter.y >= bounds.y + visualMargin &&
+        radialCenter.y <= bounds.y + bounds.height - visualMargin;
+    } catch (e) {
+      keepExistingPanelWindow = false;
+    }
+  }
 
   let wasMinimized = false;
   try {
@@ -906,68 +1302,232 @@ function showMenuAtCursor(source = "shortcut") {
     wasMinimized = false;
   }
 
+  /**
+   * Definir isto ANTES de qualquer resize, `open-menu` ou `show-window`. Se esperarmos pelo
+   * `reveal`, o renderer pode pedir `show()` primeiro e o Windows cria por um instante um botão
+   * do radial na barra de tarefas. Quando Settings permanece por baixo do radial, preservamos o
+   * botão existente porque ele continua a representar o painel visível, não o modal radial.
+   */
+  if (!rendererPanelVisible) {
+    clearSkipTaskbarHideTimer();
+    try {
+      mainWindow.setSkipTaskbar(true);
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  /**
+   * O estado lógico pode ficar um IPC atrás da geometria (Settings→radial→Settings→fechar).
+   * Se o renderer já confirmou que não há painel, nenhuma flag de união pode sobreviver.
+   */
+  if (!rendererPanelVisible) {
+    panelOverlayActive = false;
+    panelOverlayKeptWindow = false;
+  }
+
+  /**
+   * Qualquer transição geométrica → radial muda os bounds nativos. Se o HWND continuar visível,
+   * o DWM estica por um frame a última textura do Settings (ou a textura que acabou de fechar),
+   * causando o flash. Guardamos antes que o painel estava realmente visível e retiramos a
+   * superfície do compositor antes do resize; o handshake volta a mostrá-la já pintada.
+   */
+  let nativeResizeRisk = false;
+  if (!wasMinimized && !keepExistingPanelWindow) {
+    try {
+      const currentBounds = mainWindow.getBounds();
+      const desiredBounds = radialModeBounds(targetDisplay.bounds, radialCenter);
+      nativeResizeRisk =
+        mainWindow.isVisible() && !boundsApproxEqual(currentBounds, desiredBounds);
+    } catch (e) {
+      nativeResizeRisk = true;
+    }
+  }
+  if (nativeResizeRisk) {
+    diagLog(
+      `[RadialOpen] Native bounds differ from centered radial; hiding before resize (mode=${nativeWindowSizeMode}, panel=${rendererPanelVisible})`,
+    );
+    if (rendererPanelVisible && isMainWindowOnScreen()) {
+      panelOverlayActive = true;
+    }
+    try {
+      mainWindow.hide();
+      windowBuriedPassive = true;
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
   // Resize before IPC so the first renderer paint is already monitor-sized (send() is async; windowed→radial looked like "dashboard size").
-  updateWindowSize("fullscreen", { x: cursorPoint.x, y: cursorPoint.y });
+  updateWindowSize("fullscreen", radialCenter);
 
   // Do NOT setOpacity(0) here — on Windows + transparent BrowserWindow it often leaves the compositor
   // without a fresh web frame (user sees through / "nothing", while hit-testing still works).
 
-  const sendOpenMenuAndReveal = () => {
+  /**
+   * `hide-window` / `collapse-idle-overlay` / `reapply-small-overlay` deixam o renderer throttled.
+   * Se abrirmos pelo caminho rápido sem o acordar, o `show()` chega antes do primeiro frame novo
+   * e o DWM apresenta a textura anterior (ilha/dashboard) ou preto. Acordar em TODOS os caminhos.
+   */
+  try {
+    if (typeof mainWindow.webContents?.setBackgroundThrottling === "function") {
+      mainWindow.webContents.setBackgroundThrottling(false);
+    }
+  } catch (e) {
+    /* ignore */
+  }
+
+  const sendOpenMenuAndReveal = (waitForRadialPaint = false) => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
 
+    let radialClientPosition = null;
+    let radialWindowOrigin = null;
+    let radialClientSize = null;
+    try {
+      /**
+       * Minimizada, `updateWindowSize` só enfileira fullscreen; `getBounds()` ainda devolve o
+       * Settings na posição em que foi minimizado. Usar esse rect gerava (440,300) e prendia a
+       * primeira roda ao antigo centro do painel. O rect radial é determinístico, portanto o
+       * payload pode — e deve — antecipar a geometria que será aplicada no restore.
+       */
+      const bounds = wasMinimized
+        ? radialModeBounds(targetDisplay.bounds, radialCenter)
+        : mainWindow.getBounds();
+      radialWindowOrigin = { x: bounds.x, y: bounds.y };
+      radialClientPosition = {
+        x: radialCenter.x - bounds.x,
+        y: radialCenter.y - bounds.y,
+      };
+      radialClientSize = { width: bounds.width, height: bounds.height };
+    } catch (e) {
+      /* renderer falls back to screen coordinates */
+    }
+
+    const paintToken = waitForRadialPaint ? ++radialOpenPaintSequence : undefined;
+    let revealStarted = false;
+    let paintTimeout = null;
+    let onRadialPaint = null;
+
+    const reveal = () => {
+      if (revealStarted) return;
+      revealStarted = true;
+      if (paintTimeout) clearTimeout(paintTimeout);
+      if (onRadialPaint) ipcMain.removeListener("radial-open-paint-done", onRadialPaint);
+
+      setImmediate(async () => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+
+        /**
+         * Radial por cima do painel sem resize: a janela JÁ está visível, no sítio certo e na
+         * barra de tarefas. Repetir `show`/`setSkipTaskbar`/`setVisibleOnAllWorkspaces` aqui só
+         * força recomposição do HWND — e cada recomposição de uma janela layered é um risco de
+         * flash. Neste caminho só é preciso pô-la à frente.
+         */
+        if (panelOverlayKeptWindow) {
+          windowBuriedPassive = false;
+          mainWindow.setIgnoreMouseEvents(false);
+          mainWindow.focus();
+          mainWindow.webContents.focus();
+          if (process.platform === "win32") {
+            mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
+          }
+          return;
+        }
+
+        /**
+         * Fechar Settings dispara a recolha assíncrona para `small`. O atalho global pode chegar
+         * enquanto esse IPC ainda está na fila: nesse caso ele sobrescrevia o primeiro resize do
+         * radial e o HWND era revelado no rect antigo/canto do monitor. O reveal é a barreira final
+         * da abertura; reaplicar fullscreen aqui garante que nenhum resize obsoleto do fechamento
+         * seja o último comando geométrico antes de `show()`.
+         */
+        updateWindowSize("fullscreen", radialCenter);
+
+        /** Defesa final: só um Settings ainda visível por baixo do radial conserva o botão. */
+        mainWindow.setSkipTaskbar(!rendererPanelVisible);
+
+        windowBuriedPassive = false;
+        mainWindow.setIgnoreMouseEvents(false);
+        mainWindow.setOpacity(1);
+        if (!mainWindow.isVisible()) mainWindow.showInactive();
+        if (typeof paintToken === "number") {
+          /**
+           * O renderer preparou o radial com alfa zero. Liberar o bloom somente depois de `show()`
+           * garante que o primeiro frame entregue ao DWM seja transparente, nunca meia animação.
+           */
+          const releaseAnimationTimer = setTimeout(() => {
+            if (!mainWindow || mainWindow.isDestroyed()) return;
+            mainWindow.webContents.send("radial-native-revealed", paintToken);
+          }, 16);
+          releaseAnimationTimer.unref?.();
+        }
+
+        try {
+          const revealBounds = mainWindow.getBounds();
+          const revealClientCenter = {
+            x: radialCenter.x - revealBounds.x,
+            y: radialCenter.y - revealBounds.y,
+          };
+          diagLog(
+            `[RadialOpen] reveal latency=${Date.now() - radialOpenStartedAt}ms bounds=${JSON.stringify(revealBounds)} centerScreen=${JSON.stringify(radialCenter)} centerClient=${JSON.stringify(revealClientCenter)}`,
+          );
+        } catch (e) {
+          /* diagnostic only */
+        }
+
+        mainWindow.focus();
+        mainWindow.webContents.focus();
+        if (process.platform === "win32") {
+          mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
+        }
+
+        /**
+         * O handshake já esperou dois paints completos. Invalidar depois de `show()` fazia o DWM
+         * reapresentar a textura vazia/antiga, percebida como clarão nas primeiras aberturas.
+         */
+      });
+    };
+
+    if (waitForRadialPaint) {
+      onRadialPaint = (_event, acknowledgedToken) => {
+        if (acknowledgedToken !== paintToken) return;
+        reveal();
+      };
+      ipcMain.on("radial-open-paint-done", onRadialPaint);
+      // Fallback only: normal path acknowledges after the next painted animation frame.
+      paintTimeout = setTimeout(reveal, wasMinimized ? 240 : 120);
+      paintTimeout.unref?.();
+    }
+
     mainWindow.webContents.send("open-menu", {
-      x: cursorPoint.x,
-      y: cursorPoint.y,
+      /** Centro real do monitor; nunca usar estas coordenadas como posição livre do cursor. */
+      x: radialCenter.x,
+      y: radialCenter.y,
       source: source,
       /** Main já chamou `updateWindowSize('fullscreen')` (exceto minimizado: bounds em fila). */
       preSizedByMain: !wasMinimized,
+      /** O painel continua no ecrã por baixo do radial — o renderer não o pode fechar. */
+      keepPanel: panelOverlayActive,
+      /**
+       * Rect de ecrã do painel, SEMPRE que ele fica por baixo do radial.
+       *
+       * Antes só era enviado quando a janela tinha sido alargada, partindo do princípio de que no
+       * outro caminho ela ficava do tamanho do painel. Mas a janela do radial é uma caixa quadrada
+       * (988×988 com os valores típicos) e o painel é 880×600: sem rect, ele é desenhado a
+       * `inset-0` e cresce com a janela — as Definições ficavam maiores do que são.
+       *
+       * Mandá-lo sempre remove a ambiguidade: no caminho sem resize o rect coincide com os bounds
+       * da janela, portanto posicionar dá exatamente o mesmo resultado que `inset-0`.
+       */
+      panelRect: panelOverlayActive ? { ...lastWindowedBounds } : null,
+      /** Não depender de window.screenX/Y no primeiro tick após setBounds: ainda podem ser os do Settings. */
+      clientPosition: radialClientPosition,
+      windowOrigin: radialWindowOrigin,
+      clientSize: radialClientSize,
+      paintToken,
     });
 
-    setImmediate(() => {
-      if (!mainWindow || mainWindow.isDestroyed()) return;
-
-      mainWindow.setSkipTaskbar(false);
-      mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-
-      windowBuriedPassive = false;
-      mainWindow.setIgnoreMouseEvents(false);
-      mainWindow.setOpacity(1);
-      mainWindow.show();
-
-      mainWindow.focus();
-      mainWindow.webContents.focus();
-      if (process.platform === "win32") {
-        mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
-      }
-
-      clearSkipTaskbarHideTimer();
-      skipTaskbarHideTimer = setTimeout(() => {
-        skipTaskbarHideTimer = null;
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.setSkipTaskbar(true);
-        }
-      }, 100);
-
-      const invalidatePaintSafe = () => {
-        try {
-          if (
-            mainWindow.webContents &&
-            typeof mainWindow.webContents.invalidate === "function"
-          ) {
-            mainWindow.webContents.invalidate();
-          }
-        } catch (e) {
-          /* ignore */
-        }
-      };
-
-      if (wasMinimized) {
-        invalidatePaintSafe();
-        setImmediate(invalidatePaintSafe);
-      } else {
-        invalidatePaintSafe();
-      }
-    });
+    if (!waitForRadialPaint) reveal();
   };
 
   const wc = mainWindow.webContents;
@@ -992,15 +1552,27 @@ function showMenuAtCursor(source = "shortcut") {
     return;
   }
 
-  /** A janela ociosa fica oculta e throttled. Acordá-la antes dos dois rAF do handshake evita
-   * o estado "abriu mas invisível" e permite ao Chromium entregar a primeira textura do radial. */
+  /**
+   * A janela ociosa fica oculta e throttled. Acordamos o renderer, mas mantemos o HWND escondido:
+   * `showInactive()` aqui expunha exatamente a textura antiga de Settings que o handshake pretende
+   * substituir. Com background throttling desligado, os rAF de preparação continuam a ser pintados.
+   */
   try {
     if (typeof wc.setBackgroundThrottling === "function") {
       wc.setBackgroundThrottling(false);
     }
-    mainWindow.showInactive();
   } catch (e) {
     /* ignore */
+  }
+
+  /**
+   * Repouso normal: o HWND está oculto, mas não minimizado. O próprio `open-menu` monta todas as
+   * camadas em alfa zero e confirma o paint, logo o handshake neutro anterior era redundante e
+   * somava até 72 ms antes de sequer montar a roda. Minimização mantém a preparação especial.
+   */
+  if (!wasMinimized) {
+    sendOpenMenuAndReveal(true);
+    return;
   }
 
   /**
@@ -1021,22 +1593,20 @@ function showMenuAtCursor(source = "shortcut") {
     }
   });
 
-  prepPromise.then(sendOpenMenuAndReveal);
+  prepPromise.then(() => sendOpenMenuAndReveal(true));
 }
 
-/** Modo `small` passivo: HWND ao tamanho do monitor — forward fora do HUD (histórico). */
 /**
- * Em `small` só existe janela para desenhar o HUD (faixa de Pomodoro/Cronómetro). Sem HUD, expandir ao
- * monitor deixa uma janela layered topmost a ecrã inteiro que o DWM compõe em cada frame e que recebe
- * todo o hit-testing do rato — medido em ~22% de `dwm|3d`, com cursor e arrasto lentos em todo o sistema.
- * O renderer mantém esta flag; todos os caminhos que repõem `small` respeitam-na (ver `smallModeBounds`).
+ * Em `small` não há absolutamente nada para desenhar — o HWND encolhe ao canto e é escondido.
+ * Deixá-lo ao tamanho do monitor mantinha uma janela layered topmost que o DWM compõe em cada frame
+ * e que recebe todo o hit-testing do rato: ~22% de `dwm|3d`, com cursor e arrasto lentos em todo o sistema.
+ *
+ * Existia aqui uma flag `overlayHudActive` para o caso de haver um HUD (faixa de Pomodoro/Cronómetro).
+ * Além de os widgets já não existirem, a flag causava um artefacto: ao FECHAR o radial, o renderer
+ * chamava `setWindowSize('small')` de forma síncrona, antes do commit React que a punha a false. O main
+ * ainda a via `true`, expandia o HWND ao monitor inteiro (origem = borda ESQUERDA) com a janela visível,
+ * e via-se o radial a saltar para a esquerda antes de desaparecer.
  */
-const IDLE_OVERLAY_COLLAPSED_SIZE = 8;
-let overlayHudActive = false;
-ipcMain.on("set-overlay-hud-active", (_event, active) => {
-  overlayHudActive = !!active;
-});
-
 /**
  * Radial aberto: caixa quadrada à volta do menu em vez do monitor inteiro — menos área layered para o DWM.
  * `size` vem do renderer (raio + ícone + rótulo + margem de gesto); o fallback cobre a config padrão.
@@ -1044,29 +1614,209 @@ ipcMain.on("set-overlay-hud-active", (_event, active) => {
  * tem de ser bem maior que o círculo, senão um gesto largo sai da janela e a seleção não confirma.
  */
 let radialViewportSize = 988;
-let radialViewportFixed = true;
 ipcMain.on("set-radial-viewport", (_event, payload) => {
   if (!payload || typeof payload !== "object") return;
   const n = Number(payload.size);
   if (Number.isFinite(n) && n >= 320 && n <= 4096) {
     radialViewportSize = Math.round(n);
   }
-  if (typeof payload.fixed === "boolean") radialViewportFixed = payload.fixed;
 });
 
-/** Caixa do radial centrada na âncora (ou no centro do ecrã com `fixedPosition`), limitada ao monitor. */
+/**
+ * Uma janela transparente do tamanho do monitor faz o Windows marcar vídeos/apps por baixo como
+ * ocultos e reduzir a renderização. Este hook fica dormente fora do radial e, durante o modal,
+ * consome apenas cliques/scroll fora da caixa visual da nossa BrowserWindow.
+ */
+let radialMouseBlocker = null;
+let radialMouseBlockerReady = false;
+let pendingRadialMouseBlockCommand = null;
+/**
+ * Quem recebe TRIGGER_DOWN/TRIGGER_UP. O botao de disparo passou a ser capturado pelo hook do
+ * bloqueador em vez de sondado por GetAsyncKeyState: engolir o evento e continuar a deteta-lo
+ * por sondagem e impossivel, porque um hook que devolve 1 esconde o botao do GetAsyncKeyState.
+ */
+let radialTriggerListener = null;
+
+/** Folga de arrasto: abaixo disto a pressao foi um clique, nao uma mira. */
+const TRIGGER_PASSTHROUGH_SLOP_PX = 6;
+
+function radialMouseBlockerAssetPath() {
+  const p = path.join(__dirname, "mouse-blocker.ps1");
+  return isDev ? p : p.replace("app.asar", "app.asar.unpacked");
+}
+
+function writeRadialMouseBlocker(command) {
+  pendingRadialMouseBlockCommand = command;
+  if (!radialMouseBlocker || !radialMouseBlockerReady || !radialMouseBlocker.stdin?.writable) return;
+  try {
+    radialMouseBlocker.stdin.write(`${command}\n`);
+    pendingRadialMouseBlockCommand = null;
+  } catch (e) {
+    diagLog(`[RadialBlocker] comando falhou: ${e.message}`);
+  }
+}
+
+function ensureRadialMouseBlocker() {
+  if (process.platform !== "win32" || radialMouseBlocker) return;
+  radialMouseBlockerReady = false;
+  const child = spawn(
+    "powershell",
+    [
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "RemoteSigned",
+      "-File",
+      radialMouseBlockerAssetPath(),
+      String(process.pid),
+    ],
+    { windowsHide: true },
+  );
+  radialMouseBlocker = child;
+  child.stdout.on("data", (data) => {
+    const text = data.toString();
+    if (radialTriggerListener && text.includes("TRIGGER_")) {
+      try {
+        radialTriggerListener(text);
+      } catch (e) {
+        diagLog(`[RadialBlocker] disparo: ${e.message}`);
+      }
+    }
+    /** Linha isolada: "TRIGGER_READY" tambem contem READY e nao anuncia o arranque. */
+    if (!/^READY\s*$/m.test(text)) return;
+    radialMouseBlockerReady = true;
+    if (pendingRadialMouseBlockCommand) {
+      const command = pendingRadialMouseBlockCommand;
+      pendingRadialMouseBlockCommand = null;
+      writeRadialMouseBlocker(command);
+    }
+  });
+  child.stderr.on("data", (data) => {
+    diagLog(`[RadialBlocker] ${data.toString().trim()}`);
+  });
+  child.on("exit", () => {
+    if (radialMouseBlocker === child) {
+      radialMouseBlocker = null;
+      radialMouseBlockerReady = false;
+    }
+  });
+}
+
+function setRadialMouseBlocking(bounds, monitorBounds) {
+  if (process.platform !== "win32") return;
+  ensureRadialMouseBlocker();
+  writeRadialMouseBlocker(
+    `BLOCK ${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height} ${monitorBounds.x} ${monitorBounds.y} ${monitorBounds.width} ${monitorBounds.height}`,
+  );
+}
+
+/**
+ * Passa a captura do botao de disparo para o hook. `slop` decide o que ainda conta como clique
+ * simples e e devolvido a janela por baixo; acima disso o gesto foi uma mira e nao se devolve nada.
+ */
+function setRadialTriggerCapture(virtualKey, mode, slop) {
+  if (process.platform !== "win32") return;
+  ensureRadialMouseBlocker();
+  writeRadialMouseBlocker(`TRIGGER ${virtualKey} ${mode} ${slop}`);
+}
+
+function clearRadialTriggerCapture() {
+  if (process.platform !== "win32") return;
+  if (!radialMouseBlocker) return;
+  writeRadialMouseBlocker("TRIGGER OFF");
+}
+
+function clearRadialMouseBlocking() {
+  pendingRadialMouseBlockCommand = null;
+  if (!radialMouseBlocker || !radialMouseBlockerReady) return;
+  writeRadialMouseBlocker("UNBLOCK");
+}
+
+function stopRadialMouseBlocker() {
+  pendingRadialMouseBlockCommand = null;
+  if (!radialMouseBlocker) return;
+  const child = radialMouseBlocker;
+  radialMouseBlocker = null;
+  radialMouseBlockerReady = false;
+  try {
+    if (child.stdin?.writable) child.stdin.write("EXIT\n");
+  } catch (e) {
+    /* ignore */
+  }
+  setTimeout(() => {
+    try { if (!child.killed) child.kill(); } catch (e) { /* ignore */ }
+  }, 250);
+}
+
+/**
+ * Radial aberto POR CIMA do painel (Settings/Welcome): a janela é uma só, por isso encolher ao
+ * quadrado do radial fazia o painel desaparecer — era o "pisca e fica só o radial".
+ * Aqui a caixa do radial passa a englobar também o rect do painel, e o renderer desenha-o na
+ * mesma posição de ecrã que tinha. O modo `windowed` continua a guardar esse rect em
+ * `lastWindowedBounds`, portanto fechar o radial devolve a janela ao sítio exato.
+ */
+let panelOverlayActive = false;
+/** Verdadeiro quando o radial abriu por cima do painel SEM tocar nos bounds (ver `keepPanelWindow`). */
+let panelOverlayKeptWindow = false;
+/**
+ * Painel à vista, segundo o renderer. `nativeWindowSizeMode === 'windowed'` NÃO serve para isto:
+ * `hide-window` esconde a janela sem mudar de modo, e o radial seguinte concluía que havia painel
+ * no ecrã — abria sem redimensionar e trazia as definições atrás.
+ */
+let rendererPanelVisible = false;
+ipcMain.on("set-panel-surface-visible", (event, visible) => {
+  rendererPanelVisible = !!visible;
+  /** O renderer usa sendSync: fechar Settings e acionar o radial no mesmo instante não pode ler estado antigo. */
+  event.returnValue = true;
+});
+
+function isMainWindowOnScreen() {
+  try {
+    return (
+      !!mainWindow &&
+      !mainWindow.isDestroyed() &&
+      mainWindow.isVisible() &&
+      !mainWindow.isMinimized()
+    );
+  } catch (e) {
+    return false;
+  }
+}
+
+function radialBoundsUnionWithPanel(radialRect, displayBounds) {
+  if (!panelOverlayActive) return radialRect;
+  const panel = lastWindowedBounds;
+  if (!panel || !Number.isFinite(panel.width) || panel.width <= 0) return radialRect;
+
+  const union = unionScreenRects([radialRect, panel]);
+  if (!union) return radialRect;
+
+  /** Limitado ao monitor: um painel arrastado para fora não pode esticar a janela para lá dele. */
+  const width = Math.min(union.width, displayBounds.width);
+  const height = Math.min(union.height, displayBounds.height);
+  return {
+    x: Math.round(
+      Math.max(displayBounds.x, Math.min(union.x, displayBounds.x + displayBounds.width - width)),
+    ),
+    y: Math.round(
+      Math.max(displayBounds.y, Math.min(union.y, displayBounds.y + displayBounds.height - height)),
+    ),
+    width: Math.round(width),
+    height: Math.round(height),
+  };
+}
+
+/** Caixa do radial sempre centrada no monitor apontado. A posição livre foi descontinuada. */
 function radialModeBounds(displayBounds, point) {
   const side = Math.min(
     radialViewportSize,
     displayBounds.width,
     displayBounds.height,
   );
-  const center = radialViewportFixed
-    ? {
-        x: displayBounds.x + displayBounds.width / 2,
-        y: displayBounds.y + displayBounds.height / 2,
-      }
-    : point;
+  const center = {
+    x: displayBounds.x + displayBounds.width / 2,
+    y: displayBounds.y + displayBounds.height / 2,
+  };
   const half = side / 2;
   const maxX = displayBounds.x + displayBounds.width - side;
   const maxY = displayBounds.y + displayBounds.height - side;
@@ -1078,29 +1828,25 @@ function radialModeBounds(displayBounds, point) {
   };
 }
 
-/** Rect de `small`: monitor inteiro quando há HUD, canto mínimo quando não há. */
+/**
+ * Repouso estável: a superfície transparente usa exatamente os bounds do radial.
+ * Assim abrir não exige hide/show nem resize; como o mouse é ignorado, a área não bloqueia o desktop.
+ */
 function smallModeBounds(displayBounds) {
-  if (overlayHudActive) return { ...displayBounds };
-  return {
-    x: displayBounds.x,
-    y: displayBounds.y,
-    width: IDLE_OVERLAY_COLLAPSED_SIZE,
-    height: IDLE_OVERLAY_COLLAPSED_SIZE,
-  };
+  return radialModeBounds(displayBounds, {
+    x: displayBounds.x + displayBounds.width / 2,
+    y: displayBounds.y + displayBounds.height / 2,
+  });
 }
 
-function applySmallModeFullMonitorBounds(anchorScreenPoint) {
+function applySmallModeCollapsedBounds(anchorScreenPoint) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  const point =
-    anchorScreenPoint &&
-    typeof anchorScreenPoint.x === "number" &&
-    typeof anchorScreenPoint.y === "number" &&
-    !Number.isNaN(anchorScreenPoint.x) &&
-    !Number.isNaN(anchorScreenPoint.y)
-      ? anchorScreenPoint
-      : screen.getCursorScreenPoint();
-  const targetDisplay = screen.getDisplayNearestPoint(point);
-  mainWindow.setBounds(smallModeBounds(targetDisplay.bounds));
+  /** O radial é fixo no monitor principal; repouso nunca segue o cursor. */
+  const targetDisplay = screen.getPrimaryDisplay();
+  const nextBounds = smallModeBounds(targetDisplay.bounds);
+  if (!boundsApproxEqual(mainWindow.getBounds(), nextBounds)) {
+    mainWindow.setBounds(nextBounds);
+  }
 }
 
 function unionScreenRects(rects) {
@@ -1160,6 +1906,9 @@ function updateWindowSize(mode, anchorScreenPoint) {
   try {
     if (mainWindow.isMinimized()) {
       pendingWindowSize = { mode, anchorScreenPoint };
+      /** Minimizada não há painel à vista — não deixar a flag anterior decidir o próximo radial. */
+      panelOverlayActive = false;
+      panelOverlayKeptWindow = false;
       return;
     }
   } catch (e) {
@@ -1185,9 +1934,42 @@ function updateWindowSize(mode, anchorScreenPoint) {
 
   if (mode === "fullscreen") {
     lastWindowHitShapeKey = "__empty__";
-    /** Só a caixa do radial — o renderer remapeia a âncora de ecrã para coordenadas do cliente. */
-    const radialRect = radialModeBounds(b, point);
-    mainWindow.setBounds(radialRect);
+    if (!rendererPanelVisible) {
+      panelOverlayActive = false;
+      panelOverlayKeptWindow = false;
+    }
+    /**
+     * Vir de `windowed` significa que há painel no ecrã: ele fica visível por baixo do radial,
+     * logo a janela tem de continuar a cobri-lo. A flag é o estado, não `previousMode` — reabrir
+     * o radial já em fullscreen não pode perder o painel.
+     */
+    const keepPanelWindow =
+      previousMode === "windowed" &&
+      rendererPanelVisible &&
+      isMainWindowOnScreen();
+    if (keepPanelWindow) {
+      panelOverlayActive = true;
+    }
+    /**
+     * Mantemos a superfície visual compacta para o DWM não congelar vídeos/apps por baixo. O hook
+     * temporário bloqueia os cliques no restante monitor sem criar uma janela que os cubra.
+     */
+    /** Settings visível usa o HWND estável; fora dele a caixa radial continua centrada no monitor. */
+    panelOverlayKeptWindow = keepPanelWindow;
+    if (keepPanelWindow) {
+      /**
+       * Não tocar nos bounds: Settings e radial partilham o frame já composto. Ao fechar,
+       * `windowed` encontra os mesmos bounds e também não recompõe a janela.
+       */
+      const stableBounds = mainWindow.getBounds();
+      setRadialMouseBlocking(stableBounds, b);
+    } else {
+      const radialRect = radialBoundsUnionWithPanel(radialModeBounds(b, point), b);
+      if (!boundsApproxEqual(mainWindow.getBounds(), radialRect)) {
+        mainWindow.setBounds(radialRect);
+      }
+      setRadialMouseBlocking(radialRect, b);
+    }
     mainWindow.setResizable(true);
     mainWindow.setBackgroundColor("#00000000"); // FORCE TRANSPARENCY
     mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
@@ -1202,6 +1984,9 @@ function updateWindowSize(mode, anchorScreenPoint) {
       /* ignore */
     }
   } else if (mode === "windowed") {
+    clearRadialMouseBlocking();
+    panelOverlayActive = false;
+    panelOverlayKeptWindow = false;
     if (mainWindow.isFullScreen()) {
       mainWindow.setFullScreen(false);
     }
@@ -1209,9 +1994,22 @@ function updateWindowSize(mode, anchorScreenPoint) {
     lastWindowHitShapeKey = "__empty__";
     mainWindow.setResizable(true);
     resetLastWindowedBoundsIfIslandCorrupted();
-    isUpdatingBounds = true;
-    mainWindow.setBounds(lastWindowedBounds);
-    isUpdatingBounds = false;
+    /**
+     * Se a janela já está exatamente nestes bounds (caso do radial aberto por cima do painel sem
+     * resize), voltar a aplicá-los é uma recomposição inútil do HWND — e cada uma é um risco de
+     * flash na janela transparente. Fechar o radial passa a não tocar na geometria.
+     */
+    let boundsAlreadyCorrect = false;
+    try {
+      boundsAlreadyCorrect = boundsApproxEqual(mainWindow.getBounds(), lastWindowedBounds);
+    } catch (e) {
+      boundsAlreadyCorrect = false;
+    }
+    if (!boundsAlreadyCorrect) {
+      isUpdatingBounds = true;
+      mainWindow.setBounds(lastWindowedBounds);
+      isUpdatingBounds = false;
+    }
     mainWindow.setBackgroundColor("#00000000"); // Maintain transparency mask
     mainWindow.setAlwaysOnTop(false);
     mainWindow.setIgnoreMouseEvents(false);
@@ -1244,6 +2042,9 @@ function updateWindowSize(mode, anchorScreenPoint) {
       }
     }
   } else if (mode === "small") {
+    clearRadialMouseBlocking();
+    panelOverlayActive = false;
+    panelOverlayKeptWindow = false;
     lastWindowHitShapeKey = "__empty__";
     if (mainWindow.isFullScreen()) {
       mainWindow.setFullScreen(false);
@@ -1255,14 +2056,21 @@ function updateWindowSize(mode, anchorScreenPoint) {
       /* ignore */
     }
     mainWindow.setBackgroundColor("#00000000"); // ESSENTIAL for zero-lag transparency
-    applySmallModeFullMonitorBounds(point);
+    try {
+      mainWindow.setIgnoreMouseEvents(true);
+      mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    } catch (e) {
+      /* ignore */
+    }
+    applySmallModeCollapsedBounds(point);
     mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
     mainWindow.setResizable(true);
-    /*
-     * Ilha: `set-window-hit-shape` com coordinateSpace "screen" encolhe o HWND à ilha — cliques fora
-     * não passam por uma camada transparente a ecrã inteiro (evita congelar o DWM ao clicar noutras apps).
-     * Até lá: overlay ao tamanho do monitor + forward (histórico).
-     */
+    try {
+      if (!mainWindow.isVisible()) mainWindow.showInactive();
+      mainWindow.webContents.setBackgroundThrottling(true);
+    } catch (e) {
+      /* ignore */
+    }
     try {
       if (typeof mainWindow.setShape === "function") {
         mainWindow.setShape([]);
@@ -1270,37 +2078,8 @@ function updateWindowSize(mode, anchorScreenPoint) {
     } catch (e) {
       /* ignore */
     }
-    try {
-      if (overlayHudActive) {
-        mainWindow.setIgnoreMouseEvents(true, { forward: true });
-        mainWindow.showInactive();
-      } else {
-        // No HUD means there is nothing to composite or hit-test. A truly hidden HWND is safer
-        // than a transparent 8x8 forwarding window for high polling-rate mouse drivers.
-        mainWindow.setIgnoreMouseEvents(true);
-        mainWindow.hide();
-      }
-    } catch (e) {
-      /* ignore */
-    }
   }
 
-  /*
-   * `small` e `fullscreen` usam os mesmos bounds no monitor — o SO pode não emitir resize.
-   * Sem invalidate, o DWM/Chromium pode ficar com camadas antigas (congelamento ao abrir o radial com a ilha).
-   */
-  if (previousMode !== mode) {
-    try {
-      if (
-        mainWindow.webContents &&
-        typeof mainWindow.webContents.invalidate === "function"
-      ) {
-        mainWindow.webContents.invalidate();
-      }
-    } catch (e) {
-      /* ignore */
-    }
-  }
 }
 
 /** Recreate the BrowserWindow if it was closed/destroyed (e.g. after errors). */
@@ -1572,7 +2351,7 @@ function getForegroundContextWindows() {
         "-NoProfile",
         "-NonInteractive",
         "-ExecutionPolicy",
-        "Bypass",
+        "RemoteSigned",
         "-File",
         scriptPath,
       ],
@@ -1610,12 +2389,38 @@ function foregroundMatchesBlockedList(win, tokens) {
   return tokensMatchForeground(ownerPath, wtitle, "", tokens);
 }
 
+const autoDetectedGameCache = new Map();
+const AUTO_GAME_CACHE_LIMIT = 256;
+
+function foregroundLooksLikeGame(exePath, cmdline = "") {
+  const exe = String(exePath || "").trim();
+  if (!exe) return false;
+  const commandSignal = /steam_appid|-epicapp=|-epicportal|-fromfl=eac/i.test(String(cmdline || ""));
+  const cacheKey = exe.toLowerCase();
+  if (!commandSignal && autoDetectedGameCache.has(cacheKey)) {
+    return autoDetectedGameCache.get(cacheKey);
+  }
+  const result = detectGameExecutable({ exePath: exe, cmdline });
+  if (!commandSignal) {
+    autoDetectedGameCache.delete(cacheKey);
+    autoDetectedGameCache.set(cacheKey, result);
+    while (autoDetectedGameCache.size > AUTO_GAME_CACHE_LIMIT) {
+      const oldest = autoDetectedGameCache.keys().next().value;
+      if (!oldest) break;
+      autoDetectedGameCache.delete(oldest);
+    }
+  }
+  return result;
+}
+
 // Main function to decide if we should open (atalho global + botão do meio)
 const shouldOpenMenu = async () => {
+  const decisionStartedAt = Date.now();
   if (!gameModeConfig.enabled) return true;
 
   const mode = gameModeConfig.mode === "all" ? "all" : "list";
   const tokens = parseBlockedAppTokens(gameModeConfig.blockedApps);
+  const autoDetectGames = mode === "list" && !!gameModeConfig.autoDetectGames;
 
   let activeResult = null;
   const aw = getActiveWinModule();
@@ -1639,6 +2444,37 @@ const shouldOpenMenu = async () => {
     if (activeResult) return true;
   }
 
+  /**
+   * `active-win` já entrega executável, título e limites da janela ativa. No modo
+   * de lista isso é tudo de que precisamos para decidir o caso normal. Antes,
+   * mesmo com esses dados válidos, cada acionamento ainda iniciava um novo
+   * PowerShell; essa criação de processo acontecia antes de `showMenuAtCursor`
+   * e era percebida como atraso do radial.
+   */
+  if (mode === "list" && activeResult) {
+    const listed = foregroundMatchesBlockedList(activeResult, tokens);
+    const fullscreen = isForegroundWindowFullscreen(activeResult);
+    const activeOwnerPath = activeResult?.owner?.path || "";
+    const autoGame =
+      autoDetectGames &&
+      !!activeOwnerPath &&
+      !isZenithOwnExePath(activeOwnerPath) &&
+      foregroundLooksLikeGame(activeOwnerPath);
+
+    if (fullscreen && (listed || autoGame)) {
+      diagLog(
+        `[GameMode] Blocked: protected fullscreen app (native, decision=${Date.now() - decisionStartedAt}ms)`,
+      );
+      return false;
+    }
+
+    const decisionMs = Date.now() - decisionStartedAt;
+    if (decisionMs >= 20) {
+      diagLog(`[GameMode] Native decision latency=${decisionMs}ms`);
+    }
+    return true;
+  }
+
   let fgCtx = { exe: null, title: "", cmdline: "", bounds: null };
   if (process.platform === "win32") {
     fgCtx = await getForegroundContextWindows();
@@ -1658,8 +2494,8 @@ const shouldOpenMenu = async () => {
     return true;
   }
 
-  // mode === "list": só bloquear se app da lista em primeiro plano E fullscreen
-  if (tokens.length === 0) return true;
+  // mode === "list": apps escolhidos e, opcionalmente, jogos detectados automaticamente.
+  if (tokens.length === 0 && !autoDetectGames) return true;
 
   const listedPs =
     process.platform === "win32" &&
@@ -1674,9 +2510,26 @@ const shouldOpenMenu = async () => {
   const listedAw = !!(activeResult && foregroundMatchesBlockedList(activeResult, tokens));
   const fullscreenAw = !!(activeResult && isForegroundWindowFullscreen(activeResult));
 
-  if ((listedPs && fullscreenPs) || (listedAw && fullscreenAw)) {
+  const autoGamePs =
+    autoDetectGames &&
+    !!fgCtx.exe &&
+    !isZenithOwnExePath(fgCtx.exe) &&
+    foregroundLooksLikeGame(fgCtx.exe, fgCtx.cmdline);
+  const activeOwnerPath = (activeResult?.owner?.path || "").toLowerCase();
+  const autoGameAw =
+    autoDetectGames &&
+    !!activeOwnerPath &&
+    !isZenithOwnExePath(activeOwnerPath) &&
+    foregroundLooksLikeGame(activeOwnerPath);
+
+  if (
+    (listedPs && fullscreenPs) ||
+    (listedAw && fullscreenAw) ||
+    (autoGamePs && fullscreenPs) ||
+    (autoGameAw && fullscreenAw)
+  ) {
     diagLog(
-      `[GameMode] Blocked: listed app fullscreen (ps=${!!(listedPs && fullscreenPs)} aw=${!!(listedAw && fullscreenAw)})`,
+      `[GameMode] Blocked: protected fullscreen app (listPs=${!!(listedPs && fullscreenPs)} listAw=${!!(listedAw && fullscreenAw)} autoPs=${!!(autoGamePs && fullscreenPs)} autoAw=${!!(autoGameAw && fullscreenAw)})`,
     );
     return false;
   }
@@ -1686,8 +2539,90 @@ const shouldOpenMenu = async () => {
 
 let tray = null;
 
+/**
+ * Checks GitHub Releases for a newer NSIS build.  This is deliberately disabled
+ * in development: `latest.yml` only exists beside a published installer.
+ */
+/**
+ * O renderer precisa de saber que há atualização para a assinalar na roda — um selo no hub, que
+ * o utilizador vê quando abre o menu, sem ninguém lhe interromper o que está a fazer.
+ */
+/** Última versão anunciada pelo updater — o painel pede-a ao abrir, para não depender do evento. */
+let lastKnownUpdate = { state: "idle", version: null };
+
+function notifyRendererUpdateState(state, version) {
+  lastKnownUpdate = { state, version: version ?? null };
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    mainWindow.webContents.send("update-state", { state, version });
+  } catch (e) {
+    /* ignore */
+  }
+}
+
+function configureAutoUpdates() {
+  if (!app.isPackaged || process.platform !== "win32") return;
+
+  /**
+   * Build da Store: nem sequer registamos os listeners. Não basta não chamar `checkForUpdates` —
+   * o `autoInstallOnAppQuit` deixaria o instalador a correr à saída, que é exatamente o
+   * comportamento que a certificação procura.
+   */
+  if (isStoreBuild()) {
+    diagLog("[Update] Build da Store — updater desativado");
+    return;
+  }
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on("error", (error) => {
+    diagLog(`[Update] ${error?.message || error}`);
+  });
+
+  autoUpdater.on("update-available", (info) => {
+    diagLog(`[Update] Downloading version ${info.version}`);
+    notifyRendererUpdateState("downloading", info.version);
+  });
+
+  /**
+   * Sem caixa nativa.
+   *
+   * O diálogo do sistema aparecia por cima do que o utilizador estivesse a fazer, com o visual do
+   * Windows e um texto noutra língua do resto da app — e para uma coisa que não é urgente: a
+   * atualização JÁ está descarregada e instala-se sozinha ao sair. O aviso passou para onde não
+   * interrompe: o selo no hub do radial, e uma linha nas Definições com a ação.
+   */
+  autoUpdater.on("update-downloaded", (info) => {
+    diagLog(`[Update] Downloaded version ${info.version}`);
+    notifyRendererUpdateState("ready", info.version);
+  });
+
+  // Let the UI finish starting before the network request begins.
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch((error) => {
+      diagLog(`[Update] Check failed: ${error?.message || error}`);
+    });
+  }, 10_000).unref?.();
+}
+
 app.whenReady().then(async () => {
+  /** Compila/inicializa o helper em repouso; ao abrir o radial o bloqueio entra sem atraso. */
+  ensureRadialMouseBlocker();
   if (!gotTheLock) return;
+
+  configureAutoUpdates();
+
+  /**
+   * Carrega e executa `active-win` durante a inicialização. A primeira carga do
+   * binding nativo não deve acontecer justamente no primeiro acionamento do radial.
+   */
+  const activeWinWarmup = getActiveWinModule();
+  if (activeWinWarmup) {
+    Promise.resolve(activeWinWarmup()).catch((e) => {
+      diagLog(`[Perf] active-win warmup failed: ${e.message}`);
+    });
+  }
 
   try {
     const codeCacheDir = path.join(app.getPath("userData"), "v8-code-cache");
@@ -1704,12 +2639,14 @@ app.whenReady().then(async () => {
     diagLog(`[Persist] userData path unavailable: ${e.message}`);
   }
 
+
   // 1. Initialize Settings Management First (to avoid race conditions with renderer)
   const settingsPath = path.join(app.getPath("userData"), "settings.json");
   let currentSettings = {
     globalShortcut: "Alt+Z",
     enableMouseTrigger: true,
     mouseTriggerMode: "click",
+    mouseTriggerButton: "middle",
     openAtLogin: false,
   };
 
@@ -1755,6 +2692,9 @@ app.whenReady().then(async () => {
     if (ui.mouseTriggerMode === "click" || ui.mouseTriggerMode === "hold") {
       currentSettings.mouseTriggerMode = ui.mouseTriggerMode;
     }
+    if (MOUSE_TRIGGER_BUTTONS.includes(ui.mouseTriggerButton)) {
+      currentSettings.mouseTriggerButton = ui.mouseTriggerButton;
+    }
     if (typeof ui.openAtLogin === "boolean") {
       currentSettings.openAtLogin = ui.openAtLogin;
     }
@@ -1771,6 +2711,9 @@ app.whenReady().then(async () => {
         enableMouseTrigger: currentSettings.enableMouseTrigger !== false,
         mouseTriggerMode:
           currentSettings.mouseTriggerMode === "hold" ? "hold" : "click",
+        mouseTriggerButton: MOUSE_TRIGGER_BUTTONS.includes(currentSettings.mouseTriggerButton)
+          ? currentSettings.mouseTriggerButton
+          : "middle",
         openAtLogin: !!currentSettings.openAtLogin,
       };
       fs.writeFileSync(settingsPath, JSON.stringify(slim, null, 2));
@@ -1790,6 +2733,9 @@ app.whenReady().then(async () => {
     enableMouseTrigger: currentSettings.enableMouseTrigger !== false,
     mouseTriggerMode:
       currentSettings.mouseTriggerMode === "hold" ? "hold" : "click",
+    mouseTriggerButton: MOUSE_TRIGGER_BUTTONS.includes(currentSettings.mouseTriggerButton)
+      ? currentSettings.mouseTriggerButton
+      : "middle",
     performanceMode: false,
   };
   try {
@@ -1804,6 +2750,9 @@ app.whenReady().then(async () => {
       }
       if (fc.mouseTriggerMode === "click" || fc.mouseTriggerMode === "hold") {
         cachedRadialFlags.mouseTriggerMode = fc.mouseTriggerMode;
+      }
+      if (MOUSE_TRIGGER_BUTTONS.includes(fc.mouseTriggerButton)) {
+        cachedRadialFlags.mouseTriggerButton = fc.mouseTriggerButton;
       }
       const ui = extractUiConfigFromPersistenceBlob(fc);
       if (ui) {
@@ -1824,6 +2773,7 @@ app.whenReady().then(async () => {
   } catch (_) {}
 
   let syncMouseHookState = () => {};
+
   /** Assigned after registerGlobalShortcut(); refreshes OS shortcuts when renderer saves config-v2. */
   let refreshShortcutsFromFullConfig = null;
 
@@ -1907,6 +2857,128 @@ app.whenReady().then(async () => {
     }
   };
 
+  /**
+   * Caminho normal de gravação: assíncrono, serializado e sem regravar conteúdo idêntico.
+   *
+   * A versão síncrona acima continua a existir — é a certa para o flush de saída, onde não há
+   * mais loop de eventos para esperar. Mas usá-la em TODAS as alterações punha ~1,2 MB de
+   * `JSON.stringify` + `writeFile` + dois `fsync` no processo main, que é o mesmo processo que
+   * serve o IPC de abrir o radial: era daí que vinham engasgos sem causa aparente.
+   *
+   * Três defesas, por ordem de valor:
+   *   1. hash do conteúdo — o renderer grava a cada alteração de estado, e boa parte é idêntica;
+   *   2. serialização — sem ela duas gravações competiam pelo mesmo ficheiro `.tmp`;
+   *   3. coalescência — se chegarem várias durante uma gravação, só a última interessa.
+   */
+  const fsp = fs.promises;
+  let configWritePending = null;
+  let configWriteLoop = null;
+  let lastConfigWriteOk = true;
+  let lastConfigWriteHash = null;
+
+  const fsyncFileBestEffortAsync = async (filePath) => {
+    let handle = null;
+    try {
+      handle = await fsp.open(filePath, "r+");
+      await handle.sync();
+    } catch (e) {
+      diagLog(`[Persist] fsync ${path.basename(filePath)}: ${e.message}`);
+    } finally {
+      try {
+        await handle?.close();
+      } catch (e) {
+        /* ignore */
+      }
+    }
+  };
+
+  const writeFullConfigAsync = async (config) => {
+    const configPath = path.join(app.getPath("userData"), "config-v2.json");
+    const tempPath = configPath + ".tmp";
+    let toWrite = config;
+    try {
+      await fsp.mkdir(path.dirname(configPath), { recursive: true });
+
+      if (process.platform === "win32" && config && typeof config === "object") {
+        try {
+          toWrite = JSON.parse(JSON.stringify(config));
+          win32Launch.normalizePersistedPayloadWin32(toWrite);
+        } catch (e) {
+          diagLog(`[Persist] win32 command normalize (clone) failed: ${e.message}`);
+        }
+      }
+
+      const json = JSON.stringify(toWrite, null, 2);
+      const hash = crypto.createHash("sha1").update(json).digest("hex");
+      const bytes = Buffer.byteLength(json, "utf-8");
+      /**
+       * Saltar a escrita exige duas provas: o conteúdo é o mesmo que gravámos E o ficheiro em disco
+       * continua a ser esse. Sem a segunda, um primário substituído por fora (foi o que aconteceu
+       * a 12/ago) ficaria desatualizado para sempre — a app nunca mais o reescreveria.
+       */
+      if (hash === lastConfigWriteHash) {
+        const current = await fsp.stat(configPath).catch(() => null);
+        if (current && current.size === bytes) return true;
+        diagLog("[Persist] Primário divergente do último save — a reescrever.");
+      }
+
+      await fsp.writeFile(tempPath, json, "utf-8");
+      await fsyncFileBestEffortAsync(tempPath);
+
+      const tempStat = await fsp.stat(tempPath).catch(() => null);
+      if (!tempStat || tempStat.size === 0) {
+        throw new Error("Temp file is empty or missing after write");
+      }
+
+      try {
+        const primaryStat = await fsp.stat(configPath).catch(() => null);
+        if (primaryStat && primaryStat.size > 0) {
+          await fsp.copyFile(configPath, `${configPath}.bak`);
+        }
+      } catch (e) {
+        diagLog(`[Persist] config-v2.json backup: ${e.message}`);
+      }
+
+      await fsp.rename(tempPath, configPath);
+      await fsyncFileBestEffortAsync(configPath);
+      lastConfigWriteHash = hash;
+      diagLog(`[Persist] save-full-config ok (async) path=${configPath} bytes=${tempStat.size}`);
+      return true;
+    } catch (e) {
+      console.error("Failed to save full config (async):", e);
+      diagLog(`[ERROR] Persistence Failure (async): ${e.message}`);
+      /** Último recurso é o caminho síncrono já provado — perder a config é pior que um engasgo. */
+      lastConfigWriteHash = null;
+      return saveFullConfigToDisk(config);
+    } finally {
+      try {
+        if (fs.existsSync(tempPath)) await fsp.unlink(tempPath);
+      } catch (e) {
+        /* ignore */
+      }
+    }
+  };
+
+  const runConfigWriteLoop = async () => {
+    try {
+      while (configWritePending !== null) {
+        const payload = configWritePending;
+        configWritePending = null;
+        lastConfigWriteOk = await writeFullConfigAsync(payload);
+      }
+    } finally {
+      configWriteLoop = null;
+    }
+  };
+
+  /** @returns {Promise<boolean>} */
+  const saveFullConfigToDiskAsync = async (config) => {
+    configWritePending = config;
+    if (!configWriteLoop) configWriteLoop = runConfigWriteLoop();
+    await configWriteLoop;
+    return lastConfigWriteOk;
+  };
+
   const applyPersistedFullConfigSideEffects = (payload) => {
     if (!payload || typeof payload !== "object") return;
     if (typeof payload.performanceMode === "boolean") {
@@ -1917,6 +2989,9 @@ app.whenReady().then(async () => {
     }
     if (payload.mouseTriggerMode === "click" || payload.mouseTriggerMode === "hold") {
       cachedRadialFlags.mouseTriggerMode = payload.mouseTriggerMode;
+    }
+    if (MOUSE_TRIGGER_BUTTONS.includes(payload.mouseTriggerButton)) {
+      cachedRadialFlags.mouseTriggerButton = payload.mouseTriggerButton;
     }
     const ui = extractUiConfigFromPersistenceBlob(payload);
     if (ui) {
@@ -1934,6 +3009,9 @@ app.whenReady().then(async () => {
       if (ui.mouseTriggerMode === "click" || ui.mouseTriggerMode === "hold") {
         cachedRadialFlags.mouseTriggerMode = ui.mouseTriggerMode;
       }
+      if (MOUSE_TRIGGER_BUTTONS.includes(ui.mouseTriggerButton)) {
+        cachedRadialFlags.mouseTriggerButton = ui.mouseTriggerButton;
+      }
       mergeGameModeConfig(ui.gameMode);
     }
     syncMouseHookState();
@@ -1944,10 +3022,18 @@ app.whenReady().then(async () => {
     }
   };
 
+  /** Caminho síncrono — só para o flush de saída. Invalida o hash: o assíncrono não pode assumir estado. */
   const persistFullConfigFromRenderer = (payload) => {
     const ok = saveFullConfigToDisk(payload);
+    lastConfigWriteHash = null;
     applyPersistedFullConfigSideEffects(payload);
     return ok;
+  };
+
+  /** Caminho normal — os efeitos colaterais aplicam-se já; só a ida ao disco é que espera. */
+  const persistFullConfigFromRendererAsync = async (payload) => {
+    applyPersistedFullConfigSideEffects(payload);
+    return saveFullConfigToDiskAsync(payload);
   };
 
   ipcMain.handle("get-full-config", () => {
@@ -2054,7 +3140,7 @@ app.whenReady().then(async () => {
       if (!payload || typeof payload !== "object") {
         return { ok: false, error: "invalid payload" };
       }
-      const ok = persistFullConfigFromRenderer(payload);
+      const ok = await persistFullConfigFromRendererAsync(payload);
       return ok ? { ok: true } : { ok: false, error: "write failed" };
     } catch (e) {
       diagLog(`[Persist] save-full-config handle: ${e.message}`);
@@ -2076,13 +3162,33 @@ app.whenReady().then(async () => {
     }
   });
 
-  // IPC: Persistence Debug Logger
+  /**
+   * IPC: Persistence Debug Logger.
+   * Era `appendFileSync` a cada gravação — I/O síncrono no main pelo mesmo motivo que a config,
+   * e sem limite de tamanho. Agora é assíncrono e roda numa geração anterior ao passar de 1 MB.
+   */
+  const PERSIST_LOG_MAX_BYTES = 1024 * 1024;
+  let persistLogBytes = null;
   ipcMain.on("save-persistence-log", (event, message) => {
     try {
-      const logPath = path.join(app.getPath("userData"), "zenith-persistence.log");
-      const timestamp = new Date().toISOString();
-      const logEntry = `[${timestamp}] ${message}\n`;
-      fs.appendFileSync(logPath, logEntry, "utf-8");
+      const logPath = path.join(app.getPath("userData"), "rovyl-persistence.log");
+      const logEntry = `[${new Date().toISOString()}] ${message}\n`;
+      const size = Buffer.byteLength(logEntry, "utf-8");
+      if (persistLogBytes === null) {
+        persistLogBytes = fs.existsSync(logPath) ? fs.statSync(logPath).size : 0;
+      }
+      if (persistLogBytes + size > PERSIST_LOG_MAX_BYTES) {
+        try {
+          fs.renameSync(logPath, `${logPath}.1`);
+        } catch (e) {
+          /* ignore */
+        }
+        persistLogBytes = 0;
+      }
+      persistLogBytes += size;
+      fs.appendFile(logPath, logEntry, "utf-8", (err) => {
+        if (err) console.error("Failed to write persistence log:", err);
+      });
     } catch (e) {
       console.error("Failed to write persistence log:", e);
     }
@@ -2090,8 +3196,8 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("export-config", async () => {
     const result = await dialog.showSaveDialog(mainWindow, {
-      title: "Exportar Backup Zenith",
-      defaultPath: path.join(app.getPath("downloads"), "zenith-backup.json"),
+      title: "Export Rovyl Backup",
+      defaultPath: path.join(app.getPath("downloads"), "rovyl-backup.json"),
       filters: [{ name: "JSON", extensions: ["json"] }],
     });
 
@@ -2122,7 +3228,7 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("import-config", async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: "Importar Backup Zenith",
+      title: "Import Rovyl Backup",
       filters: [{ name: "JSON", extensions: ["json"] }],
       properties: ["openFile"],
     });
@@ -2133,7 +3239,7 @@ app.whenReady().then(async () => {
       const data = JSON.parse(fs.readFileSync(result.filePaths[0], "utf-8"));
       
       if (!data.config && !data.settings) {
-        throw new Error("Arquivo de backup inválido: Nenhum dado de configuração encontrado.");
+        throw new Error("Invalid backup file: no configuration data found.");
       }
 
       const configPath = path.join(app.getPath("userData"), "config-v2.json");
@@ -2149,12 +3255,39 @@ app.whenReady().then(async () => {
          */
         const normalized = normalizeFullPersistenceBlob(data.config);
         if (!normalized) {
-          throw new Error("Arquivo de backup inválido: estrutura de workspaces ausente ou vazia.");
+          throw new Error("Invalid backup file: workspace structure is missing or empty.");
         }
         // Garantir mirror de workspaces no nível de raiz (fallback do normalizer)
         if (!Array.isArray(normalized.workspaces) && Array.isArray(normalized.config?.workspaces)) {
           normalized.workspaces = normalized.config.workspaces;
         }
+        /**
+         * A licença NÃO vem no backup — e não pode ir-se embora com ele.
+         *
+         * O perfil ativado vive no `user` dentro do `config-v2.json`, e a importação substitui
+         * esse ficheiro inteiro. Um backup feito antes da ativação (ou noutra máquina) traz
+         * `user: null`, e a app pedia a chave outra vez a seguir a restaurar — apesar de o
+         * dispositivo continuar ativado do lado do servidor.
+         *
+         * A ativação é uma propriedade DESTA instalação, não do conteúdo do backup: se já existe
+         * um perfil ativado, ele sobrevive à importação. Um backup que traga um perfil ativado
+         * continua a poder trazê-lo, para quem restaura numa máquina nova.
+         */
+        try {
+          const currentRaw = fs.existsSync(configPath)
+            ? JSON.parse(fs.readFileSync(configPath, "utf-8"))
+            : null;
+          const currentUser = currentRaw && (currentRaw.user || (currentRaw.config && currentRaw.config.user));
+          const importedUser = normalized.user || (normalized.config && normalized.config.user);
+          if (currentUser && currentUser.isPremium === true && !(importedUser && importedUser.isPremium === true)) {
+            normalized.user = currentUser;
+            if (normalized.config) normalized.config.user = currentUser;
+            diagLog("[Import] Licença desta instalação preservada — o backup não trazia perfil ativado");
+          }
+        } catch (e) {
+          diagLog(`[Import] Não foi possível preservar a licença: ${e.message}`);
+        }
+
         const toWrite = JSON.stringify(normalized, null, 2);
         // Escrita atómica idêntica ao saveFullConfigToDisk
         const tempPath = configPath + ".tmp";
@@ -2162,7 +3295,37 @@ app.whenReady().then(async () => {
         fs.renameSync(tempPath, configPath);
       }
       if (data.settings) fs.writeFileSync(settingsPath, JSON.stringify(data.settings, null, 2));
-      if (data.iconCache) fs.writeFileSync(iconCachePath, JSON.stringify(data.iconCache, null, 2));
+
+      /**
+       * Ícones de um backup antigo não são reaproveitáveis.
+       *
+       * O backup guarda os `customIconUrl` já resolvidos — imagens em base64 — e o cache de
+       * ícones. Se esse material foi produzido por um pipeline anterior, restaurá-lo repõe
+       * exatamente os ícones defeituosos que motivaram a correção: com placa, com halo, ou
+       * simplesmente do produto errado. E a cura automática nunca os substitui, porque ela só
+       * preenche quem está SEM ícone; um ícone errado, para ela, é um ícone presente.
+       *
+       * Quando a proveniência não corresponde ao pipeline atual, descartamos os dois: os ícones
+       * embutidos na config e o cache. Ficam por resolver, e a cura resolve-os de novo — agora
+       * pelo caminho correto. Favicons de atalhos web são poupados: vêm da net, não do Windows.
+       */
+      const backupIconVersion = data.iconCache && data.iconCache.__pipelineVersion;
+      const iconsAreCurrent = backupIconVersion === ICON_PIPELINE_VERSION;
+
+      if (iconsAreCurrent) {
+        fs.writeFileSync(iconCachePath, JSON.stringify(data.iconCache, null, 2));
+      } else {
+        try {
+          if (fs.existsSync(iconCachePath)) fs.unlinkSync(iconCachePath);
+        } catch (e) {
+          /* non-fatal */
+        }
+        const stripped = stripStaleNativeIcons(configPath);
+        diagLog(
+          `[Import] Ícones do backup descartados (pipeline ${backupIconVersion ?? "desconhecido"} ` +
+            `≠ ${ICON_PIPELINE_VERSION}); ${stripped} entradas ficam para reextração`,
+        );
+      }
 
       // Criar o .bak imediatamente — se o before-quit disparar mesmo assim, o save do renderer
       // iria sobrescrever apenas o primary (o .bak preserva o backup importado).
@@ -2202,54 +3365,30 @@ app.whenReady().then(async () => {
     }
   });
 
+  /**
+   * Fonte única de verdade para "isto é um IDE com projetos recentes?": a mesma resolução que o
+   * MRU usa. O renderer adivinhava por palavras-chave, e `electron.app.Antigravity` (o agente)
+   * batia em "antigravity" — passava por IDE e oferecia recentes que não existem.
+   */
+  ipcMain.handle("app-supports-recents", (event, appName, appCommand) =>
+    Boolean(resolveIdeGlobalStorage(appName, appCommand)),
+  );
+
   ipcMain.handle("get-app-recents", async (event, appName, appCommand) => {
     diagLog(`[Recents] Fetching for appName: "${appName}", appCommand: "${appCommand}"`);
-    const appData = process.env.APPDATA;
-    let storagePath = "";
 
+    /** Usados mais abaixo, ao converter cada entrada do MRU no comando que abre a pasta. */
     const lowerName = appName ? appName.toLowerCase() : "";
     const lowerCommand = appCommand ? appCommand.toLowerCase() : "";
 
-    // 1. Precise Match (by Name)
-    if (lowerName === "antigravity") {
-      storagePath = path.join(appData, "Antigravity", "User", "globalStorage", "storage.json");
-    } else if (lowerName === "cursor") {
-      storagePath = path.join(appData, "Cursor", "User", "globalStorage", "storage.json");
-    } else if (lowerName === "code" || lowerName === "visual studio code") {
-      storagePath = path.join(appData, "Code", "User", "globalStorage", "storage.json");
-    } 
-    // 2. Inclusion Match (if name match failed)
-    else if (lowerName.includes("antigravity")) {
-      storagePath = path.join(appData, "Antigravity", "User", "globalStorage", "storage.json");
-    } else if (lowerName.includes("cursor")) {
-      storagePath = path.join(appData, "Cursor", "User", "globalStorage", "storage.json");
-    } else if (lowerName.includes("code")) {
-      storagePath = path.join(appData, "Code", "User", "globalStorage", "storage.json");
-    }
-    // 3. Command Path Match (Final fallback) — prefer executable path so "Antigravity" vs "Cursor" never share storage
-    else if (lowerCommand.includes("\\antigravity\\") || lowerCommand.includes("/antigravity/") || lowerCommand.includes("antigravity.exe")) {
-      storagePath = path.join(appData, "Antigravity", "User", "globalStorage", "storage.json");
-    } else if (lowerCommand.includes("\\cursor\\") || lowerCommand.includes("/cursor/") || lowerCommand.endsWith("cursor.exe")) {
-      storagePath = path.join(appData, "Cursor", "User", "globalStorage", "storage.json");
-    } else if (
-      (lowerCommand.includes("\\code\\") || lowerCommand.includes("/code/") || lowerCommand.includes("code.exe")) &&
-      !lowerCommand.includes("cursor") &&
-      !lowerCommand.includes("antigravity")
-    ) {
-      storagePath = path.join(appData, "Code", "User", "globalStorage", "storage.json");
-    }
-
-    // 4. Resolve ambiguous label "Code" vs VS Code: if command is literally generic, prefer VS Code storage when name says visual studio / vscode
-    if (!storagePath && (lowerName.includes("visual studio code") || lowerName === "vscode")) {
-      storagePath = path.join(appData, "Code", "User", "globalStorage", "storage.json");
-    }
-    
-    if (!storagePath || !appData) {
+    /** Descoberta em vez de caminho fixo — ver `resolveIdeGlobalStorage`. */
+    const globalStorageDir = resolveIdeGlobalStorage(appName, appCommand);
+    if (!globalStorageDir) {
+      diagLog(`[Recents] Nenhum perfil de IDE corresponde a "${appName}" / "${appCommand}"`);
       return [];
     }
 
-    const globalStorageDir = path.dirname(storagePath);
-    const storageJsonPath = storagePath;
+    const storageJsonPath = path.join(globalStorageDir, "storage.json");
     const vscdbPath = path.join(globalStorageDir, "state.vscdb");
     const hasJson = fs.existsSync(storageJsonPath);
     const hasVscdb = fs.existsSync(vscdbPath);
@@ -2309,6 +3448,21 @@ app.whenReady().then(async () => {
         const itemLowerName = appName ? appName.toLowerCase() : "";
         // 2. Identify if it's an IDE that supports recent folders
         let appCommandString = normalizeAumidIdeCommands((appCommand || "").trim());
+
+        /** Atalhos descobertos pelo Windows podem ser AUMIDs, que não aceitam argumento de pasta. */
+        const ideIdentity = `${itemLowerName} ${lowerCommand}`;
+        if (ideIdentity.includes("cursor")) {
+          appCommandString = resolveCursorExePath();
+        } else if (ideIdentity.includes("antigravity")) {
+          appCommandString = resolveAntigravityExePath();
+        } else if (
+          ideIdentity.includes("visual studio code") ||
+          ideIdentity.includes("visualstudiocode") ||
+          itemLowerName === "code" ||
+          itemLowerName === "vscode"
+        ) {
+          appCommandString = resolveVsCodeExePath();
+        }
         
         // If we don't have a command passed, try to infer it from the name
         if (!appCommandString) {
@@ -2343,6 +3497,13 @@ app.whenReady().then(async () => {
           diagLog(`[Recents] App not recognized as IDE: ${appName}`);
         }
 
+        let workingDirectory = decoded;
+        try {
+          if (fs.existsSync(decoded) && !fs.statSync(decoded).isDirectory()) {
+            workingDirectory = path.dirname(decoded);
+          }
+        } catch (e) { /* manter o caminho decodificado */ }
+
         return {
           id: `recent-${uri}`,
           label: label || decoded,
@@ -2350,7 +3511,8 @@ app.whenReady().then(async () => {
           iconSource: "lucide",
           command: command,
           commandType: "app",
-          description: decoded
+          description: decoded,
+          workingDirectory,
         };
       });
 
@@ -2370,7 +3532,7 @@ app.whenReady().then(async () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     try {
       if (mainWindow.isMinimized()) return;
-      if (nativeWindowSizeMode === "windowed") {
+      if (nativeWindowSizeMode === "windowed" && rendererPanelVisible) {
         mainWindow.setSkipTaskbar(false);
       }
     } catch (e) {
@@ -2391,43 +3553,7 @@ app.whenReady().then(async () => {
     tray = new Tray(resizedIcon);
     const contextMenu = Menu.buildFromTemplate([
       {
-        label: "Abrir Dashboard Zenith",
-        click: async () => {
-          if (!mainWindow || mainWindow.isDestroyed()) {
-            mainWindow = await createWindow();
-            setupMainWindow(mainWindow);
-          }
-
-          // Must match open-settings / show-window: passive hide leaves ignoreMouseEvents(true).
-          // Clearing windowBuriedPassive before restoring input would skip attachWindowUserRestoreGuards().
-          clearSkipTaskbarHideTimer();
-          windowBuriedPassive = false;
-          /** Evita aplicar `small` pendente após minimizar — senão o radial/dashboard ficam no rect antigo. */
-          pendingWindowSize = null;
-          mainWindow.setSkipTaskbar(false);
-          mainWindow.setVisibleOnAllWorkspaces(false);
-          mainWindow.setIgnoreMouseEvents(false);
-
-          // Não chamar `updateWindowSize` aqui: expandir o HWND antes do React desmontar a ilha causa frames
-          // vazios / ilha no topo e pode atrasar o compositor. O renderer faz `setWindowSize('windowed')` em
-          // `useLayoutEffect` logo após `flushSync` em `open-dashboard`.
-          /**
-           * Ordem crítica: IPC primeiro; opacidade 0 antes de `show()` para não pintar a ilha no rect antigo.
-           * Não expandir o HWND aqui — só o renderer após `flushSync` (`apply-window-size` `windowed`).
-           * `show()` só para restaurar minimizada / garantir delivery do IPC; foco/opacidade final vêm do `show-window`
-           * que o renderer envia **depois** de `applyWindowSize` (microtask).
-           */
-          mainWindow.webContents.send("open-dashboard");
-          mainWindow.setOpacity(0);
-          try {
-            mainWindow.show();
-          } catch (e) {
-            /* ignore */
-          }
-        },
-      },
-      {
-        label: "Abrir Configurações",
+        label: "Open Settings",
         click: async () => {
           try {
             await ensureMainWindow();
@@ -2437,16 +3563,15 @@ app.whenReady().then(async () => {
           }
         },
       },
-      { type: "separator" },
-      { label: "Sair", click: () => app.quit() },
+      { label: "Quit", click: () => app.quit() },
     ]);
-    tray.setToolTip("Zenith Radial Menu");
+    tray.setToolTip("Rovyl");
     tray.setContextMenu(contextMenu);
 
     // Feedback de início
-    console.log("Zenith iniciado com sucesso em background.");
+    console.log("Rovyl started successfully in the background.");
   } catch (err) {
-    console.error("Erro ao criar tray icon:", err);
+    console.error("Failed to create tray icon:", err);
   }
 
   /**
@@ -2465,7 +3590,7 @@ app.whenReady().then(async () => {
   const altZOverlayHint = (shortcutStr) => {
     const k = shortcutCompactKey(shortcutStr);
     if (k === "alt+z" || k === "option+z") {
-      return " Alt+Z costuma estar reservado à sobreposição NVIDIA GeForce Experience (ou a outra app). Desativa esse atalho lá ou escolhe outro atalho para o Zenith em Definições.";
+      return " Alt+Z is commonly reserved by the NVIDIA GeForce Experience overlay or another app. Disable it there or choose a different shortcut in Rovyl Settings.";
     }
     return "";
   };
@@ -2496,6 +3621,17 @@ app.whenReady().then(async () => {
     let shortcut = currentSettings.globalShortcut || "Alt+Z";
     const openRadialFromShortcut = async (sourceShortcut) => {
       diagLog(`${sourceShortcut} shortcut triggered`);
+      /**
+       * Fechar diretamente evita passar novamente pelo fluxo de show/resize e, principalmente,
+       * não deixa a tecla que acionou o toggle confirmar o app/workspace atualmente apontado.
+       */
+      if (workspaceShortcutsMenuOpen && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("open-menu", {
+          source: "shortcut",
+          closeOnly: true,
+        });
+        return;
+      }
       const allowed = await shouldOpenMenu();
       if (!allowed) return;
       showMenuAtCursor("shortcut");
@@ -2652,6 +3788,9 @@ app.whenReady().then(async () => {
     if (settings.mouseTriggerMode === "click" || settings.mouseTriggerMode === "hold") {
       patch.mouseTriggerMode = settings.mouseTriggerMode;
     }
+    if (MOUSE_TRIGGER_BUTTONS.includes(settings.mouseTriggerButton)) {
+      patch.mouseTriggerButton = settings.mouseTriggerButton;
+    }
     if (typeof settings.openAtLogin === "boolean") patch.openAtLogin = settings.openAtLogin;
     if (Array.isArray(settings.workspaces)) patch.workspaces = settings.workspaces;
     if (Object.keys(patch).length === 0) return;
@@ -2663,6 +3802,10 @@ app.whenReady().then(async () => {
     }
     if (patch.mouseTriggerMode !== undefined) {
       cachedRadialFlags.mouseTriggerMode = patch.mouseTriggerMode;
+    }
+    if (patch.mouseTriggerButton !== undefined) {
+      cachedRadialFlags.mouseTriggerButton = patch.mouseTriggerButton;
+      syncMouseHookState();
     }
 
     if (patch.globalShortcut) {
@@ -2710,7 +3853,7 @@ app.whenReady().then(async () => {
 
   /** Windows: run NSIS uninstaller from registry, or open Apps settings; dev → Apps; macOS: reveal .app in Finder. */
   ipcMain.handle("open-system-uninstall", async () => {
-    const displayName = "Zenith OS";
+    const displayName = "Rovyl";
     try {
       if (process.platform === "win32") {
         if (isDev) {
@@ -2732,7 +3875,7 @@ app.whenReady().then(async () => {
         try {
           const out = execFileSync(
             "powershell.exe",
-            ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
+            ["-NoProfile", "-ExecutionPolicy", "RemoteSigned", "-Command", ps],
             {
               encoding: "utf8",
               windowsHide: true,
@@ -2827,16 +3970,232 @@ app.whenReady().then(async () => {
     });
   }
 
-  function emitGoogleAuthSuccess(email, name, picture) {
-    const isAdmin = email === "henrycauan3222@gmail.com";
+  /**
+   * Impressão digital ESTÁVEL da máquina.
+   *
+   * O `MachineGuid` é escrito pelo Windows na instalação do sistema e não muda com reinstalações
+   * de aplicações, limpezas de perfil nem atualizações. O UUID do hardware serve de alternativa
+   * quando o registo não é legível. Só se cai no aleatório se ambos falharem — e aí volta a valer
+   * o ficheiro em disco.
+   */
+  function readStableMachineId() {
+    if (process.platform !== "win32") return null;
+    const attempts = [
+      () =>
+        execFileSync(
+          "reg",
+          ["query", "HKLM\\SOFTWARE\\Microsoft\\Cryptography", "/v", "MachineGuid"],
+          { encoding: "utf8", windowsHide: true, timeout: 4000 },
+        ),
+      () =>
+        execFileSync(
+          "wmic",
+          ["csproduct", "get", "uuid"],
+          { encoding: "utf8", windowsHide: true, timeout: 4000 },
+        ),
+    ];
+    for (const attempt of attempts) {
+      try {
+        const output = attempt();
+        const match = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.exec(output);
+        if (match) return match[0].toLowerCase();
+      } catch (e) {
+        /* tenta o seguinte */
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Identificador do dispositivo para o servidor de licenças.
+   *
+   * Era um valor ALEATÓRIO guardado na pasta de dados da app. Qualquer coisa que apagasse essa
+   * pasta — reinstalar, limpar o perfil, testar com `--user-data-dir` — produzia um identificador
+   * novo, e o servidor contava a MESMA máquina como mais um dispositivo. Três ativações no mesmo
+   * computador esgotavam o limite de três.
+   *
+   * Agora deriva-se do `MachineGuid` do Windows: o mesmo computador devolve sempre o mesmo
+   * identificador, haja ou não pasta de dados. O ficheiro passa a ser só cache.
+   */
+  function getOrCreateLicenseDeviceId() {
+    const devicePath = path.join(app.getPath("userData"), "license-device.json");
+    const machineId = readStableMachineId();
+
+    if (machineId) {
+      const deviceId = crypto
+        .createHash("sha256")
+        .update(`rovyl:${machineId}`)
+        .digest("hex");
+      try {
+        const saved = JSON.parse(fs.readFileSync(devicePath, "utf8"));
+        if (saved.deviceId !== deviceId) {
+          diagLog("[License] deviceId migrado para a impressão digital estável da máquina");
+        }
+      } catch (e) {
+        /* ficheiro ausente ou ilegível — escrever de novo */
+      }
+      try {
+        fs.writeFileSync(devicePath, JSON.stringify({ deviceId, source: "machine-guid" }), {
+          encoding: "utf8",
+          mode: 0o600,
+        });
+      } catch (e) {
+        /* o identificador é derivável na mesma; o ficheiro é só cache */
+      }
+      return deviceId;
+    }
+
+    /** Sem identificador de máquina: comportamento antigo, com o ficheiro a mandar. */
+    try {
+      const saved = JSON.parse(fs.readFileSync(devicePath, "utf8"));
+      if (typeof saved.deviceId === "string" && saved.deviceId.length >= 32) return saved.deviceId;
+    } catch (_) {}
+    const deviceId = crypto.randomUUID() + crypto.randomBytes(24).toString("hex");
+    fs.writeFileSync(devicePath, JSON.stringify({ deviceId }), { encoding: "utf8", mode: 0o600 });
+    return deviceId;
+  }
+
+  async function activateRovylLicense(idToken) {
+    const endpoint = process.env.ROVYL_LICENSE_API_URL || "https://rovyl-red.vercel.app/api/license/activate";
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "User-Agent": `Rovyl/${app.getVersion()}` },
+      body: JSON.stringify({
+        idToken,
+        deviceId: getOrCreateLicenseDeviceId(),
+        deviceName: `${os.hostname()} · ${os.platform()} ${os.release()}`,
+      }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result.licensed !== true) {
+      const error = new Error(result.error || "Rovyl purchase could not be verified.");
+      error.code = result.code || "LICENSE_DENIED";
+      throw error;
+    }
+    return result;
+  }
+
+  async function activateRovylLicenseKey(licenseKey) {
+    const endpoint = process.env.ROVYL_LICENSE_KEY_API_URL || "https://rovyl-red.vercel.app/api/license/activate-key";
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "User-Agent": `Rovyl/${app.getVersion()}` },
+      body: JSON.stringify({
+        licenseKey,
+        deviceId: getOrCreateLicenseDeviceId(),
+        deviceName: `${os.hostname()} · ${os.platform()} ${os.release()}`,
+      }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result.licensed !== true) {
+      const error = new Error(result.error || "This Rovyl license could not be activated.");
+      error.code = result.code || "LICENSE_DENIED";
+      throw error;
+    }
+    return result;
+  }
+
+  /**
+   * Libertar o lugar do dispositivo no servidor.
+   *
+   * Sem isto, "Remove license" só apagava o perfil local: o lugar continuava ocupado e o
+   * utilizador ficava sem forma de o reaver — foi assim que se esgotaram três lugares numa só
+   * máquina. A chamada é tolerante por desenho: se a rota ainda não existir, ou a rede falhar,
+   * devolve o motivo e a app remove a licença localmente na mesma, para nunca ficar presa.
+   */
+  async function deactivateRovylLicenseDevice() {
+    const endpoint =
+      process.env.ROVYL_LICENSE_DEACTIVATE_API_URL ||
+      "https://rovyl-red.vercel.app/api/license/deactivate";
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "User-Agent": `Rovyl/${app.getVersion()}` },
+      body: JSON.stringify({ deviceId: getOrCreateLicenseDeviceId() }),
+    });
+    if (response.status === 404) {
+      const error = new Error("O serviço de licenças ainda não expõe desativação.");
+      error.code = "DEACTIVATE_UNAVAILABLE";
+      throw error;
+    }
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(result.error || "Não foi possível libertar este dispositivo.");
+      error.code = result.code || "DEACTIVATE_FAILED";
+      throw error;
+    }
+    return result;
+  }
+
+  ipcMain.handle("deactivate-rovyl-license", async () => {
+    try {
+      const result = await deactivateRovylLicenseDevice();
+      diagLog("[License] Dispositivo libertado no servidor");
+      return { ok: true, result };
+    } catch (error) {
+      diagLog(`[License] Desativação remota falhou: ${error?.message}`);
+      return {
+        ok: false,
+        error: error?.message || "Não foi possível libertar este dispositivo.",
+        code: error?.code || "DEACTIVATE_FAILED",
+      };
+    }
+  });
+
+  /**
+   * Chave de desenvolvimento — ativação local, sem servidor e sem gastar dispositivos.
+   *
+   * No binário fica só o SHA-256; a chave em si nunca é escrita no código, portanto quem
+   * desmontar o executável encontra um hash e não uma chave. Continua a ser uma porta: quem a
+   * souber ativa qualquer instalação. Trata-a como uma credencial — não a metas em capturas de
+   * ecrã, commits ou vídeos.
+   */
+  const DEV_LICENSE_KEY_SHA256 =
+    "b94dc0c453f99b63185c20e3fa538c7d89528328a5cf30fa92dd5fe358510972";
+
+  function isDevLicenseKey(licenseKey) {
+    if (typeof licenseKey !== "string" || !licenseKey.trim()) return false;
+    const digest = crypto
+      .createHash("sha256")
+      .update(licenseKey.trim().toUpperCase())
+      .digest("hex");
+    /** Comparação em tempo constante: uma comparação normal vaza o prefixo por temporização. */
+    const a = Buffer.from(digest, "hex");
+    const b = Buffer.from(DEV_LICENSE_KEY_SHA256, "hex");
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+  }
+
+  ipcMain.handle("activate-rovyl-license", async (_event, licenseKey) => {
+    if (isDevLicenseKey(licenseKey)) {
+      diagLog("[License] Chave de desenvolvimento aceite — ativação local, sem servidor");
+      return {
+        ok: true,
+        license: {
+          name: "Rovyl Dev",
+          email: "dev@rovyl.app",
+          isPremium: true,
+          isAdmin: true,
+          planTier: "pro",
+        },
+      };
+    }
+
+    try {
+      const license = await activateRovylLicenseKey(licenseKey);
+      return { ok: true, license };
+    } catch (error) {
+      return { ok: false, error: error?.message || "Could not activate this license.", code: error?.code || "LICENSE_DENIED" };
+    }
+  });
+
+  function emitGoogleAuthSuccess(license) {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("google-auth-success", {
-        email,
-        name,
-        avatarUrl: picture,
-        isAdmin,
-        isPremium: isAdmin,
-        planTier: isAdmin ? "pro" : "free",
+        email: license.email,
+        name: license.name,
+        avatarUrl: license.avatarUrl,
+        isAdmin: license.isAdmin === true,
+        isPremium: true,
+        planTier: "pro",
       });
       mainWindow.show();
       mainWindow.focus();
@@ -2846,7 +4205,7 @@ app.whenReady().then(async () => {
   function sendZenithAuthSuccessHtml(res) {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     res.end(`<!DOCTYPE html>
-<html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Zenith — signed in</title>
+<html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Rovyl — signed in</title>
 <style>
   *{box-sizing:border-box}
   body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#0a0a0a;color:#e8e8e8;-webkit-font-smoothing:antialiased}
@@ -2869,8 +4228,8 @@ app.whenReady().then(async () => {
     <div class="card-inner">
       <div class="strip" aria-hidden="true"></div>
       <div class="icon-wrap" aria-hidden="true"><div class="icon-in"><svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div></div>
-      <h1>Signed in to Zenith</h1>
-      <p>This page finished linking your account. Return to the Zenith window &mdash; it should already be signed in.</p>
+      <h1>Signed in to Rovyl</h1>
+      <p>This page finished linking your account. Return to the Rovyl window &mdash; it should already be signed in.</p>
       <p class="sub">You can close this tab.</p>
     </div>
   </div>
@@ -2888,6 +4247,11 @@ app.whenReady().then(async () => {
 
     const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
     const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+    /**
+     * Sem valor por omissao: o ID identifica o projeto Google Cloud de quem publica, e num
+     * repositorio publico uma bifurcacao herdaria silenciosamente o projeto do autor.
+     * Quem compila define o seu em `.env.local` — ver `.env.example`.
+     */
     const GOOGLE_WEB_CLIENT_ID = process.env.GOOGLE_WEB_CLIENT_ID;
     const allowedAuds = [GOOGLE_WEB_CLIENT_ID, GOOGLE_CLIENT_ID].filter(Boolean);
 
@@ -2902,8 +4266,8 @@ app.whenReady().then(async () => {
       const msg =
         "Google sign-in needs an OAuth client ID. Add GOOGLE_WEB_CLIENT_ID (same as the website / VITE_GOOGLE_CLIENT_ID) or GOOGLE_CLIENT_ID to .env.local in:\n\n" +
         (userDataHint || "AppData") +
-        "\n\nThen restart Zenith.";
-      dialog.showErrorBox("Zenith — Google sign-in", msg);
+        "\n\nThen restart Rovyl.";
+      dialog.showErrorBox("Rovyl — Google sign-in", msg);
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send("google-auth-error", {
           code: "MISSING_OAUTH_CONFIG",
@@ -2935,7 +4299,7 @@ app.whenReady().then(async () => {
           return;
         }
         verifyGoogleIdToken(idToken)
-          .then((data) => {
+          .then(async (data) => {
             if (!allowedAuds.includes(data.aud)) {
               diagLog(`[Auth] id_token aud rejected: ${data.aud}`);
               res.writeHead(400, { "Content-Type": "text/plain" });
@@ -2946,7 +4310,8 @@ app.whenReady().then(async () => {
             const name = data.name || (email ? String(email).split("@")[0] : "User");
             const picture = data.picture;
             diagLog(`[Auth] Web id_token OK: ${email}`);
-            emitGoogleAuthSuccess(email, name, picture);
+            const license = await activateRovylLicense(idToken);
+            emitGoogleAuthSuccess({ ...license, name: license.name || name, avatarUrl: license.avatarUrl || picture });
             sendZenithAuthSuccessHtml(res);
             if (authServer) {
               try {
@@ -2956,9 +4321,13 @@ app.whenReady().then(async () => {
             }
           })
           .catch((e) => {
-            diagLog(`[Auth] id_token verify failed: ${e.message}`);
-            res.writeHead(400, { "Content-Type": "text/plain" });
-            res.end("Could not verify sign-in.");
+            diagLog(`[Auth] Sign-in/license failed (${e.code || "AUTH_ERROR"}): ${e.message}`);
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send("google-auth-error", { code: e.code || "LICENSE_DENIED", message: e.message });
+            }
+            dialog.showErrorBox("Rovyl — license required", e.message);
+            res.writeHead(e.code === "PURCHASE_REQUIRED" ? 403 : 400, { "Content-Type": "text/plain; charset=utf-8" });
+            res.end(e.code === "PURCHASE_REQUIRED" ? "No Rovyl purchase was found for this Google account." : "Could not verify your Rovyl license.");
           });
         return;
       }
@@ -3010,20 +4379,28 @@ app.whenReady().then(async () => {
                     return;
                 }
 
-                if (tokenData.access_token) {
+                if (tokenData.access_token && tokenData.id_token) {
                     diagLog("[Auth] Access token received, fetching user info...");
                     
                     // Fetch user info
                     https.get(`https://www.googleapis.com/oauth2/v3/userinfo?access_token=${tokenData.access_token}`, (userRes) => {
                         let userBody = '';
                         userRes.on('data', (d) => userBody += d);
-                        userRes.on('end', () => {
+                        userRes.on('end', async () => {
                             const userInfo = JSON.parse(userBody);
                             const { email, name, picture } = userInfo;
                             
                             diagLog(`[Auth] Successfully authenticated as ${email}`);
-                            emitGoogleAuthSuccess(email, name, picture);
-                            sendZenithAuthSuccessHtml(res);
+                            try {
+                              const license = await activateRovylLicense(tokenData.id_token);
+                              emitGoogleAuthSuccess({ ...license, name: license.name || name, avatarUrl: license.avatarUrl || picture });
+                              sendZenithAuthSuccessHtml(res);
+                            } catch (e) {
+                              diagLog(`[Auth] Legacy license failed (${e.code || "LICENSE_DENIED"}): ${e.message}`);
+                              dialog.showErrorBox("Rovyl — license required", e.message);
+                              res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
+                              res.end("No active Rovyl license was found for this account.");
+                            }
                             
                             if (authServer) {
                                 authServer.close();
@@ -3032,7 +4409,7 @@ app.whenReady().then(async () => {
                         });
                     });
                 } else {
-                    diagLog("[Auth] Error: Failed to exchange code for token: " + body);
+                    diagLog("[Auth] Error: Failed to exchange code for an ID token: " + body);
                     res.end("Authentication failed.");
                 }
             });
@@ -3056,9 +4433,9 @@ app.whenReady().then(async () => {
       diagLog(`[Auth] HTTP server error: ${err.code || ""} ${err.message}`);
       const detail =
         err.code === "EADDRINUSE"
-          ? "Port 3892 is already in use. Close another Zenith instance or any app using that port, then try again."
+          ? "Port 3892 is already in use. Close another Rovyl instance or any app using that port, then try again."
           : err.message;
-      dialog.showErrorBox("Zenith — Google sign-in", detail);
+      dialog.showErrorBox("Rovyl — Google sign-in", detail);
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send("google-auth-error", {
           code: err.code,
@@ -3071,7 +4448,7 @@ app.whenReady().then(async () => {
     authServer.listen(3892, () => {
       diagLog("[Auth] Local callback server listening on port 3892");
       const base =
-        process.env.ZENITH_WEB_AUTH_URL || "https://zenithos.online/auth";
+        process.env.ZENITH_WEB_AUTH_URL || "https://rovyl-red.vercel.app/auth";
       const sep = base.includes("?") ? "&" : "?";
       const webAuthUrl = `${base}${sep}client=desktop`;
       diagLog(`[Auth] Opening browser (web sign-in): ${webAuthUrl}`);
@@ -3115,43 +4492,130 @@ app.whenReady().then(async () => {
 
   // 2. PowerShell middle-button monitor (GetAsyncKeyState; never intercepts cursor movement)
   let mouseHook = null;
-  /** If the first MMB opened the radial immediately, the second MMB (double-click → settings) would race fullscreen vs windowed. We defer the radial slightly so a second MMB can cancel it and open settings only — no overlay conflict. */
-  /** Single MMB opens radial after this delay so a second MMB can cancel → settings only (no fullscreen race). */
-  const MMB_MENU_DEBOUNCE_MS = 65;
-  let mmbMenuDebounceTimer = null;
+  /** Botão com que a sonda atual foi lançada — comparado para saber se é preciso relançá-la. */
+  let activeMouseHookButton = "middle";
+  let activeMouseHookMode = null;
+  /**
+   * Limiar real do modo "segurar". Um clique MMB normal costuma terminar antes deste tempo:
+   * o MIDDLE_UP cancela o timer e o navegador recebe o gesto normalmente (por exemplo, para
+   * fechar uma aba). Somente manter o botão premido por 200 ms abre o radial.
+   * O modo "click" não passa por este timer.
+   */
+  const MMB_HOLD_OPEN_DELAY_MS = 200;
+  let mmbHoldOpenTimer = null;
+  let mmbIsDown = false;
+  /** Invalida uma verificação assíncrona se o botão for solto ou surgir um gesto mais novo. */
+  let mmbHoldGestureId = 0;
   let mmbFirstDownAt = 0;
   let mmbClickDownAt = 0;
+  /** O MIDDLE_UP que pertence ao MMB usado apenas para fechar não pode selecionar a fatia ativa. */
+  let suppressNextMmbRelease = false;
+
+  /**
+   * Modo "segurar": o radial abre com o botão do meio AINDA premido. No Windows a captura do rato
+   * pertence à janela que recebeu o WM_MBUTTONDOWN (o desktop / a app por baixo), por isso a nossa
+   * janela não recebe UM ÚNICO `mousemove` enquanto o botão não é largado — o ângulo nunca atualiza
+   * e nada fica selecionável. Sondamos o cursor no main e reenviamos ao renderer, que o reproduz
+   * como um `mousemove` real. Só corre entre o MIDDLE_DOWN que abriu o radial e o MIDDLE_UP.
+   */
+  const MMB_CURSOR_POLL_MS = 8;
+  /**
+   * Rede de segurança: o fim normal da sonda é o MIDDLE_UP, mas se o processo do hook morrer com o
+   * botão premido esse evento nunca chega. Sem este limite ficava um intervalo de 8 ms a enviar IPC
+   * para sempre — exatamente o tipo de fuga que só se manifesta depois de horas de uso.
+   * Nenhum gesto de "segurar" real dura um minuto.
+   */
+  const MMB_CURSOR_MAX_MS = 60000;
+  let mmbCursorTimer = null;
+  let mmbCursorStartedAt = 0;
+  let mmbLastCursor = { x: NaN, y: NaN };
+
+  const stopMmbCursorTracking = () => {
+    if (!mmbCursorTimer) return;
+    clearInterval(mmbCursorTimer);
+    mmbCursorTimer = null;
+    mmbCursorStartedAt = 0;
+    mmbLastCursor = { x: NaN, y: NaN };
+  };
+
+  const startMmbCursorTracking = () => {
+    stopMmbCursorTracking();
+    mmbCursorStartedAt = Date.now();
+    mmbCursorTimer = setInterval(() => {
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        stopMmbCursorTracking();
+        return;
+      }
+      if (Date.now() - mmbCursorStartedAt > MMB_CURSOR_MAX_MS) {
+        diagLog("[MouseHook] Sonda do cursor terminada por tempo limite (MIDDLE_UP não chegou).");
+        stopMmbCursorTracking();
+        return;
+      }
+      let point;
+      try {
+        point = screen.getCursorScreenPoint();
+      } catch (e) {
+        return;
+      }
+      if (point.x === mmbLastCursor.x && point.y === mmbLastCursor.y) return;
+      mmbLastCursor = point;
+      try {
+        mainWindow.webContents.send("mmb-cursor", { x: point.x, y: point.y });
+      } catch (e) {
+        /* ignore */
+      }
+    }, MMB_CURSOR_POLL_MS);
+  };
+
+  /** Definido mais abaixo; o bloqueador chama-o com as linhas TRIGGER_*. */
+  let handleTriggerData = null;
 
   const startMouseHook = () => {
     if (mouseHook) return;
-    const psScriptPath = getAssetPath("mouse-hook.ps1");
-    diagLog(`Starting Middle Button Monitor: ${psScriptPath}`);
-    mouseHook = spawn(
-      "powershell",
-      [
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        psScriptPath,
-      ],
-      { windowsHide: true },
+    activeMouseHookButton = cachedRadialFlags.mouseTriggerButton;
+    activeMouseHookMode = cachedRadialFlags.mouseTriggerMode;
+    const virtualKey = MOUSE_TRIGGER_VK[activeMouseHookButton] ?? MOUSE_TRIGGER_VK.middle;
+    const mode = cachedRadialFlags.mouseTriggerMode === "click" ? "click" : "hold";
+    diagLog(
+      `Mouse trigger capturado pelo hook (${activeMouseHookButton}, ${mode}, folga ${TRIGGER_PASSTHROUGH_SLOP_PX}px)`,
     );
-    try {
-      os.setPriority(mouseHook.pid, os.constants.priority.PRIORITY_BELOW_NORMAL);
-    } catch (e) {
-      /* ignore */
-    }
+    /** Marcador de "ativo": ja nao ha processo proprio, mas o resto do codigo testa a verdade disto. */
+    mouseHook = { active: true };
+    radialTriggerListener = (text) => {
+      if (handleTriggerData) void handleTriggerData(text);
+    };
+    setRadialTriggerCapture(virtualKey, mode, TRIGGER_PASSTHROUGH_SLOP_PX);
 
-    mouseHook.stdout.on("data", async (data) => {
+    handleTriggerData = async (data) => {
       const lines = data.toString().split(/\r?\n/);
       for (const line of lines) {
         const msg = line.trim();
         if (!msg) continue;
 
-        if (msg === "MIDDLE_DOWN") {
+        if (msg === "TRIGGER_DOWN") {
           const now = Date.now();
+          mmbIsDown = true;
+          const holdGestureId = ++mmbHoldGestureId;
+          /**
+           * O renderer sincroniza `workspaceShortcutsMenuOpen` com o estado real do radial.
+           * Quando já está aberto, fechar imediatamente no DOWN e consumir o UP correspondente;
+           * assim um app/workspace sob o cursor nunca é executado pelo gesto de toggle.
+           */
+          if (workspaceShortcutsMenuOpen && mainWindow && !mainWindow.isDestroyed()) {
+            if (mmbHoldOpenTimer) {
+              clearTimeout(mmbHoldOpenTimer);
+              mmbHoldOpenTimer = null;
+            }
+            mmbFirstDownAt = 0;
+            mmbClickDownAt = 0;
+            suppressNextMmbRelease = true;
+            stopMmbCursorTracking();
+            mainWindow.webContents.send("open-menu", {
+              source: cachedRadialFlags.mouseTriggerMode === "click" ? "mmb-click" : "mmb",
+              closeOnly: true,
+            });
+            continue;
+          }
           if (cachedRadialFlags.mouseTriggerMode === "click") {
             mmbClickDownAt = now;
             continue;
@@ -3161,12 +4625,12 @@ app.whenReady().then(async () => {
           // Second MMB while radial open is still deferred (timer pending): open settings only — no radial this gesture
           if (
             mmbFirstDownAt &&
-            mmbMenuDebounceTimer &&
+            mmbHoldOpenTimer &&
             sinceFirst >= 8
           ) {
-            if (mmbMenuDebounceTimer) {
-              clearTimeout(mmbMenuDebounceTimer);
-              mmbMenuDebounceTimer = null;
+            if (mmbHoldOpenTimer) {
+              clearTimeout(mmbHoldOpenTimer);
+              mmbHoldOpenTimer = null;
             }
             mmbFirstDownAt = 0;
             (async () => {
@@ -3179,29 +4643,44 @@ app.whenReady().then(async () => {
             })();
           } else {
             // Start (or restart) a single-MMB gesture: defer radial so double-MMB can cancel
-            if (mmbMenuDebounceTimer) {
-              clearTimeout(mmbMenuDebounceTimer);
-              mmbMenuDebounceTimer = null;
+            if (mmbHoldOpenTimer) {
+              clearTimeout(mmbHoldOpenTimer);
+              mmbHoldOpenTimer = null;
             }
             mmbFirstDownAt = now;
-            mmbMenuDebounceTimer = setTimeout(async () => {
-              mmbMenuDebounceTimer = null;
+            mmbHoldOpenTimer = setTimeout(async () => {
+              mmbHoldOpenTimer = null;
               mmbFirstDownAt = 0;
               const allowed = await shouldOpenMenu();
-              if (!allowed) return;
+              /** O clique pode ter terminado enquanto a verificação de modo de jogo aguardava. */
+              if (
+                !allowed ||
+                !mmbIsDown ||
+                mmbHoldGestureId !== holdGestureId ||
+                cachedRadialFlags.mouseTriggerMode !== "hold"
+              ) return;
               showMenuAtCursor("mmb");
-            }, MMB_MENU_DEBOUNCE_MS);
+              /** Botão ainda premido: sem esta sonda o renderer não recebe `mousemove` nenhum. */
+              startMmbCursorTracking();
+            }, MMB_HOLD_OPEN_DELAY_MS);
           }
-        } else if (msg === "MIDDLE_UP") {
+        } else if (msg === "TRIGGER_UP") {
+          mmbIsDown = false;
+          mmbHoldGestureId += 1;
+          stopMmbCursorTracking();
+          if (suppressNextMmbRelease) {
+            suppressNextMmbRelease = false;
+            continue;
+          }
           if (cachedRadialFlags.mouseTriggerMode === "click") {
             mmbClickDownAt = 0;
             const allowed = await shouldOpenMenu();
             if (allowed) showMenuAtCursor("mmb-click");
             continue;
           }
-          if (mmbMenuDebounceTimer) {
-            clearTimeout(mmbMenuDebounceTimer);
-            mmbMenuDebounceTimer = null;
+          if (mmbHoldOpenTimer) {
+            clearTimeout(mmbHoldOpenTimer);
+            mmbHoldOpenTimer = null;
             mmbFirstDownAt = 0;
             continue;
           }
@@ -3210,34 +4689,41 @@ app.whenReady().then(async () => {
           }
         }
       }
-    });
-
-    mouseHook.stderr.on("data", (data) => {
-      console.error(`MouseHook Error: ${data}`);
-    });
-
-    mouseHook.on("error", (err) =>
-      console.error("Mouse Hook Process Error:", err),
-    );
+    };
   };
 
   const stopMouseHook = () => {
     if (!mouseHook) return;
-    if (mmbMenuDebounceTimer) {
-      clearTimeout(mmbMenuDebounceTimer);
-      mmbMenuDebounceTimer = null;
+    mmbIsDown = false;
+    mmbHoldGestureId += 1;
+    stopMmbCursorTracking();
+    if (mmbHoldOpenTimer) {
+      clearTimeout(mmbHoldOpenTimer);
+      mmbHoldOpenTimer = null;
     }
     mmbFirstDownAt = 0;
     mmbClickDownAt = 0;
     diagLog("Stopping Mouse Hook");
-    mouseHook.kill();
+    radialTriggerListener = null;
+    clearRadialTriggerCapture();
     mouseHook = null;
   };
+
+  stopMouseHookForShutdown = stopMouseHook;
 
   syncMouseHookState = () => {
     // MMB remains global, but uses GetAsyncKeyState polling rather than WH_MOUSE_LL. The old
     // low-level hook was invoked synchronously for every pointer movement and could delay the cursor.
     const wantHook = cachedRadialFlags.enableMouseTrigger;
+    /** Trocar de botão exige relançar a sonda: o VK é passado no arranque do processo. */
+    /** Botao OU modo: ambos vao no comando TRIGGER, logo qualquer um exige re-armar a captura. */
+    if (
+      mouseHook &&
+      (activeMouseHookButton !== cachedRadialFlags.mouseTriggerButton ||
+        activeMouseHookMode !== cachedRadialFlags.mouseTriggerMode)
+    ) {
+      stopMouseHook();
+    }
     if (wantHook) startMouseHook();
     else stopMouseHook();
   };
@@ -3315,9 +4801,102 @@ function resolveCursorExePath() {
   return "cursor";
 }
 
+function resolveVsCodeExePath() {
+  if (process.platform !== "win32") return "code";
+  const candidates = [
+    path.join(process.env.LOCALAPPDATA || "", "Programs", "Microsoft VS Code", "Code.exe"),
+    path.join(process.env.PROGRAMFILES || "C:\\Program Files", "Microsoft VS Code", "Code.exe"),
+    path.join(process.env["ProgramFiles(x86)"] || "", "Microsoft VS Code", "Code.exe"),
+  ];
+  for (const candidate of candidates) {
+    try { if (candidate && fs.existsSync(candidate)) return candidate; } catch (e) { /* ignore */ }
+  }
+  return "code";
+}
+
+/**
+ * "Antigravity" sao dois produtos: o IDE (`Antigravity IDE.exe`, com MRU) e o agente
+ * (`Antigravity.exe`, sem MRU e sem argumento de pasta). Abrir um projeto recente tem de usar o
+ * IDE, por isso ele vem sempre primeiro — o agente fica como ultimo recurso para instalacoes
+ * antigas em que o IDE ainda se chamava so "Antigravity".
+ */
+function resolveAntigravityExePath() {
+  if (process.platform !== "win32") return "antigravity";
+  const local = process.env.LOCALAPPDATA || "";
+  const programFiles = process.env.PROGRAMFILES || "C:\\Program Files";
+  const candidates = [
+    path.join(local, "Programs", "Antigravity IDE", "Antigravity IDE.exe"),
+    path.join(local, "Programs", "Google", "Antigravity IDE", "Antigravity IDE.exe"),
+    path.join(programFiles, "Antigravity IDE", "Antigravity IDE.exe"),
+    path.join(local, "Programs", "Antigravity", "Antigravity.exe"),
+    path.join(local, "Programs", "Google", "Antigravity", "Antigravity.exe"),
+    path.join(programFiles, "Antigravity", "Antigravity.exe"),
+  ];
+  for (const candidate of candidates) {
+    try { if (candidate && fs.existsSync(candidate)) return candidate; } catch (e) { /* ignore */ }
+  }
+  return "antigravity";
+}
+
 /**
  * Rewrites Cursor/VS Code–style AUMID tokens to a real .exe or PATH shim so spawn/cmd succeed.
  */
+/**
+ * Um id do tipo `electron.app.Antigravity` NAO e um AUMID do Windows: e o AppUserModelID que uma
+ * app Electron define para agrupar janelas na barra de tarefas. Nao existe em `shell:AppsFolder`,
+ * portanto lanca-lo por ai falha e o erro mostrado ao utilizador e o proprio id. O nome a seguir a
+ * `electron.app.` e, porem, o do produto — e isso chega para encontrar o executavel instalado.
+ *
+ * AUMIDs reais (MSIX) trazem sempre `!` (`Microsoft.WindowsTerminal_8wekyb3d8bbwe!App`) e passam
+ * intactos por aqui.
+ */
+function resolveElectronAumidExe(rawCommand) {
+  if (process.platform !== "win32" || !rawCommand || typeof rawCommand !== "string") return null;
+  const command = rawCommand.trim().replace(/^"|"$/g, "");
+  const match = /^electron\.app\.([^\s"!\\/]+)$/i.exec(command);
+  if (!match) return null;
+
+  const product = match[1];
+  const wanted = product.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const roots = [
+    path.join(process.env.LOCALAPPDATA || "", "Programs"),
+    process.env.PROGRAMFILES || "C:\\Program Files",
+    process.env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)",
+  ].filter(Boolean);
+
+  for (const root of roots) {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(root, { withFileTypes: true });
+    } catch (e) {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name.toLowerCase().replace(/[^a-z0-9]/g, "") !== wanted) continue;
+      const dir = path.join(root, entry.name);
+      /** O executavel costuma repetir o nome da pasta; caso contrario, o primeiro .exe do topo. */
+      const candidates = [path.join(dir, `${entry.name}.exe`), path.join(dir, `${product}.exe`)];
+      for (const candidate of candidates) {
+        try {
+          if (fs.existsSync(candidate)) return candidate;
+        } catch (e) {
+          /* continua */
+        }
+      }
+      try {
+        const exe = fs
+          .readdirSync(dir, { withFileTypes: true })
+          .find((file) => file.isFile() && /\.exe$/i.test(file.name) && !/^unins/i.test(file.name));
+        if (exe) return path.join(dir, exe.name);
+      } catch (e) {
+        /* continua */
+      }
+    }
+  }
+  return null;
+}
+
 function normalizeAumidIdeCommands(cmd) {
   if (!cmd || typeof cmd !== "string") return cmd;
   let s = cmd;
@@ -3327,6 +4906,15 @@ function normalizeAumidIdeCommands(cmd) {
   s = s.replace(/"Anysphere\.Cursor(?:![^"]*)?"/gi, `"${cursorExe}"`);
   s = s.replace(/shell:AppsFolder\\Anysphere\.Cursor(?:![^\s"]*)?/gi, `"${cursorExe}"`);
   s = s.replace(/^(shell:AppsFolder\\)?Anysphere\.Cursor(?:![^\s"]*)?(?=\s|$)/i, token);
+
+  /** `electron.app.X` nao existe em AppsFolder: trocar pelo executavel real antes de lancar. */
+  const head = s.trim().split(/\s+/)[0];
+  const electronExe = resolveElectronAumidExe(head);
+  if (electronExe) {
+    const quoted = /\s/.test(electronExe) ? `"${electronExe}"` : electronExe;
+    s = `${quoted}${s.trim().slice(head.length)}`;
+    diagLog(`[Exec] AppUserModelID de Electron "${head}" resolvido para ${electronExe}`);
+  }
   return s;
 }
 
@@ -3377,6 +4965,55 @@ function addIdeNewWindowFlag(cmd) {
   return cmd;
 }
 
+function removeIdeNewWindowFlag(cmd) {
+  if (!cmd || typeof cmd !== "string") return cmd;
+  return cmd.replace(/\s+(?:-n|--new-window)(?=\s|$)/i, "");
+}
+
+/** Pequeno working set mantido em RAM; o Windows também conserva estas páginas no file cache. */
+const prewarmedExecutableBuffers = new Map();
+let prewarmAppsSignature = "";
+ipcMain.on("prewarm-apps", async (_event, rawCommands) => {
+  const commands = Array.isArray(rawCommands)
+    ? [...new Set(rawCommands.filter((value) => typeof value === "string" && value.trim()).map((value) => value.trim()))]
+    : [];
+  const signature = commands.slice().sort().join("\u0000");
+  if (signature === prewarmAppsSignature) return;
+  prewarmAppsSignature = signature;
+  prewarmedExecutableBuffers.clear();
+
+  const MAX_APPS = 8;
+  const MAX_BYTES_PER_APP = 8 * 1024 * 1024;
+  for (const original of commands.slice(0, MAX_APPS)) {
+    try {
+      let launch = normalizeAumidIdeCommands(resolveShellPath(original));
+      const lower = launch.toLowerCase();
+      if (lower.includes("cursor") && (lower.includes("!") || !/\.exe(?:"|\s|$)/i.test(lower))) {
+        launch = resolveCursorExePath();
+      } else if (lower.includes("antigravity") && (lower.includes("!") || !/\.exe(?:"|\s|$)/i.test(lower))) {
+        launch = resolveAntigravityExePath();
+      } else if ((lower.includes("visualstudiocode") || lower.includes("visual studio code")) && !/\.exe(?:"|\s|$)/i.test(lower)) {
+        launch = resolveVsCodeExePath();
+      }
+      const { exe } = win32Launch.splitWin32SpawnExeAndArgs(launch);
+      const stat = await fs.promises.stat(exe);
+      if (!stat.isFile()) continue;
+      const length = Math.min(stat.size, MAX_BYTES_PER_APP);
+      const handle = await fs.promises.open(exe, "r");
+      try {
+        const buffer = Buffer.allocUnsafe(length);
+        const { bytesRead } = await handle.read(buffer, 0, length, 0);
+        prewarmedExecutableBuffers.set(exe.toLowerCase(), buffer.subarray(0, bytesRead));
+        diagLog(`[Prewarm] Cached ${(bytesRead / 1024 / 1024).toFixed(1)} MB from ${exe}`);
+      } finally {
+        await handle.close();
+      }
+    } catch (e) {
+      diagLog(`[Prewarm] Skipped "${original}": ${e.message}`);
+    }
+  }
+});
+
 // Helper function to escape command strings for Windows
 const escapeCommand = (cmd) => {
   // If it's a GUID/AUMID (contains ! or is wrapped in {}), don't escape for common paths
@@ -3409,7 +5046,7 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
     if (mainWindow) {
       mainWindow.webContents.send(
         "execution-error",
-        "Comando vazio ou inválido",
+        "Empty or invalid command",
       );
     }
     return;
@@ -3420,7 +5057,10 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
   // CRITICAL: Resolve GUIDs to real paths FIRST, before any detection logic
   let resolvedCommand = resolveShellPath(trimmedCommand);
   resolvedCommand = normalizeAumidIdeCommands(resolvedCommand);
-  resolvedCommand = addIdeNewWindowFlag(resolvedCommand);
+  const prefersProcessReuse = options?.launchMode === "reuse" || options?.launchMode === "prewarm";
+  resolvedCommand = prefersProcessReuse
+    ? removeIdeNewWindowFlag(resolvedCommand)
+    : addIdeNewWindowFlag(resolvedCommand);
   if (process.platform === "win32") {
     try {
       const canon = win32Launch.canonicalizeWin32LaunchCommand(resolvedCommand);
@@ -3512,7 +5152,7 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
     spawn("powershell", [
       "-NoProfile",
       "-ExecutionPolicy",
-      "Bypass",
+      "RemoteSigned",
       "-File",
       scriptPath,
       "-vks",
@@ -3522,7 +5162,7 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
       if (mainWindow) {
         mainWindow.webContents.send(
           "execution-error",
-          "Erro ao iniciar simulador de teclas",
+          "Failed to start key simulator",
         );
       }
     });
@@ -3749,7 +5389,7 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
   };
 
   // Helper to run terminal commands in a specific directory
-  const runAutoCommands = async (cmds, targetPath, openEmptyIfNoCmds = false) => {
+  const runAutoCommands = async (cmds, targetPath, openEmptyIfNoCmds = false, explicitWorkingDirectory) => {
     const commandsToRun = (cmds && Array.isArray(cmds) && cmds.length > 0) 
       ? cmds.filter(c => c && c.trim() !== "") 
       : [];
@@ -3761,7 +5401,7 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
     
     const terminal = getPreferredTerminal();
     let workingDir = process.cwd();
-    const resolvedWd = extractTerminalWorkingDir(targetPath);
+    const resolvedWd = extractTerminalWorkingDir(explicitWorkingDirectory) || extractTerminalWorkingDir(targetPath);
     if (resolvedWd) workingDir = resolvedWd;
 
     diagLog(`  → [AutoCommands] Starting execution of ${finalCmds.length} command(s) in ${workingDir}`);
@@ -3800,7 +5440,7 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
     if (commandType === "url") {
       diagLog("  → Detected: Explicit URL (from commandType)");
       await tryExecution("shell.openExternal", resolvedCommand);
-      runAutoCommands(options.terminalCommands, resolvedCommand, options?.openTerminal);
+      runAutoCommands(options.terminalCommands, resolvedCommand, options?.openTerminal, options?.workingDirectory);
       diagLog(
         `\n✓✓✓ EXEC_SUCCESS: Launched URL with 'shell.openExternal' ✓✓✓\n`,
       );
@@ -3813,7 +5453,7 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
       if (options?.openTerminal || (options?.terminalCommands && options.terminalCommands.length > 0)) {
         diagLog("  → Folder + Open Terminal (or AutoCommands) requested");
         try {
-          await runAutoCommands(options.terminalCommands, resolvedCommand, options?.openTerminal);
+          await runAutoCommands(options.terminalCommands, resolvedCommand, options?.openTerminal, options?.workingDirectory);
           diagLog(`\n✓✓✓ EXEC_SUCCESS: Terminal(s) spawned for folder ✓✓✓\n`);
         } catch (err) {
           diagLog(`[Exec] Failed to run auto-commands, falling back to basic folder open: ${err.message}`);
@@ -3875,7 +5515,7 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
             
             if (options?.openTerminal || (options?.terminalCommands && options.terminalCommands.length > 0)) {
               diagLog(`[Exec] Launching IDE Folder with AutoCommands: ${finalCommand}`);
-              await runAutoCommands(options?.terminalCommands, finalCommand, options?.openTerminal);
+              await runAutoCommands(options?.terminalCommands, finalCommand, options?.openTerminal, options?.workingDirectory);
             }
             
             return;
@@ -3887,7 +5527,7 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
         // Terminal cwd is derived from the full launch line (last quoted path = project folder).
         if (options?.openTerminal || (options?.terminalCommands && options.terminalCommands.length > 0)) {
           diagLog(`[Exec] IDE + terminal: resolving cwd from launch command`);
-          await runAutoCommands(options.terminalCommands, finalCommand, options.openTerminal);
+          await runAutoCommands(options.terminalCommands, finalCommand, options.openTerminal, options?.workingDirectory);
           skipTerminalAfterLaunchLoop = true;
         }
         
@@ -3956,7 +5596,7 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
       try {
         await tryExecution(method, resolvedCommand);
         if (!skipTerminalAfterLaunchLoop) {
-          await runAutoCommands(options.terminalCommands, resolvedCommand, options?.openTerminal);
+          await runAutoCommands(options.terminalCommands, resolvedCommand, options?.openTerminal, options?.workingDirectory);
         }
         console.log(`\n✓✓✓ EXEC_SUCCESS: Launched with '${method}' ✓✓✓\n`);
         return; // Success! Exit early
@@ -3967,13 +5607,13 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
     }
 
     // If we get here, all methods failed
-    const finalError = `Falha ao executar "${resolvedCommand.substring(0, 50)}${resolvedCommand.length > 50 ? "..." : ""}". Erro: ${lastError?.message || "Desconhecido"}`;
+    const finalError = `Failed to run "${resolvedCommand.substring(0, 50)}${resolvedCommand.length > 50 ? "..." : ""}". Error: ${lastError?.message || "Unknown"}`;
     console.error(`\n✗✗✗ EXEC_ABORT: ${finalError} ✗✗✗\n`);
     if (mainWindow) {
       mainWindow.webContents.send("execution-error", finalError);
     }
   } catch (err) {
-    const finalError = `Erro inesperado ao executar comando: ${err.message}`;
+    const finalError = `Unexpected error while running command: ${err.message}`;
     console.error(`\n✗✗✗ EXEC_ABORT: ${finalError} ✗✗✗\n`);
     if (mainWindow) {
       mainWindow.webContents.send("execution-error", finalError);
@@ -3984,6 +5624,20 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
 // IPC: Recebe comando para esconder janela
 ipcMain.on("hide-window", () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  clearRadialMouseBlocking();
+  if (nativeWindowSizeMode === "small") {
+    windowBuriedPassive = false;
+    try {
+      mainWindow.setIgnoreMouseEvents(true);
+      applySmallModeCollapsedBounds(undefined);
+      if (!mainWindow.isVisible()) mainWindow.showInactive();
+      mainWindow.webContents.setBackgroundThrottling(true);
+    } catch (e) {
+      /* ignore */
+    }
+    return;
+  }
 
   windowBuriedPassive = true;
 
@@ -3999,6 +5653,215 @@ ipcMain.on("hide-window", () => {
 });
 
 // IPC: Show Window explicitly
+/** Helper persistente: arrancar um powershell por pedido custaria mais do que o utilizador demora a escrever. */
+let foregroundFocusHelper = null;
+let foregroundFocusHelperReady = false;
+let pendingForegroundHwnd = null;
+let foregroundStealBusyUntil = 0;
+
+function foregroundFocusAssetPath() {
+  const p = path.join(__dirname, "foreground-focus.ps1");
+  return isDev ? p : p.replace("app.asar", "app.asar.unpacked");
+}
+
+function ensureForegroundFocusHelper() {
+  if (process.platform !== "win32" || foregroundFocusHelper) return;
+  foregroundFocusHelperReady = false;
+  const child = spawn(
+    "powershell",
+    ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "RemoteSigned", "-File", foregroundFocusAssetPath()],
+    { windowsHide: true },
+  );
+  foregroundFocusHelper = child;
+  child.stdout.on("data", (data) => {
+    const text = data.toString().trim();
+    if (text.includes("READY")) {
+      foregroundFocusHelperReady = true;
+      if (pendingForegroundHwnd) {
+        const hwnd = pendingForegroundHwnd;
+        pendingForegroundHwnd = null;
+        writeForegroundFocus(hwnd);
+      }
+      return;
+    }
+    diagLog(`[Foreground] ${text}`);
+  });
+  child.stderr.on("data", (data) => diagLog(`[Foreground] ${data.toString().trim()}`));
+  child.on("exit", () => {
+    if (foregroundFocusHelper === child) {
+      foregroundFocusHelper = null;
+      foregroundFocusHelperReady = false;
+    }
+  });
+  child.on("error", (err) => diagLog(`[Foreground] falhou: ${err.message}`));
+}
+
+function writeForegroundFocus(hwnd) {
+  if (!foregroundFocusHelper || !foregroundFocusHelperReady || !foregroundFocusHelper.stdin?.writable) {
+    pendingForegroundHwnd = hwnd;
+    return;
+  }
+  try {
+    foregroundFocusHelper.stdin.write(`FOCUS ${hwnd}\n`);
+  } catch (e) {
+    diagLog(`[Foreground] escrita falhou: ${e.message}`);
+  }
+}
+
+function stopForegroundFocusHelper() {
+  pendingForegroundHwnd = null;
+  if (!foregroundFocusHelper) return;
+  const child = foregroundFocusHelper;
+  foregroundFocusHelper = null;
+  foregroundFocusHelperReady = false;
+  try {
+    if (child.stdin?.writable) child.stdin.write("EXIT\n");
+  } catch (e) {
+    /* ignore */
+  }
+  setTimeout(() => {
+    try { if (!child.killed) child.kill(); } catch (e) { /* ignore */ }
+  }, 200).unref?.();
+}
+
+/**
+ * Windows aplica o foreground lock a quem não recebeu o último input: o radial é mostrado com
+ * `showInactive()` e nem `focus()` nem `app.focus({ steal: true })` lhe dão teclado — as teclas
+ * continuam a cair na app por baixo. Só partilhando a fila de input com a thread em primeiro plano
+ * (no helper) é que `SetForegroundWindow` passa.
+ */
+function stealForegroundForMainWindow() {
+  if (process.platform !== "win32") return;
+  if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return;
+  const now = Date.now();
+  if (now < foregroundStealBusyUntil) return;
+  foregroundStealBusyUntil = now + 250;
+
+  let hwnd;
+  try {
+    hwnd = mainWindow.getNativeWindowHandle().readBigUInt64LE(0).toString();
+  } catch (e) {
+    diagLog(`[Foreground] HWND indisponível: ${e.message}`);
+    return;
+  }
+  ensureForegroundFocusHelper();
+  writeForegroundFocus(hwnd);
+}
+
+/**
+ * Superfícies com campo de texto (gate da licença) pedem o teclado explicitamente. O renderer só
+ * envia isto quando `document.hasFocus()` é falso, portanto NÃO confiamos em `isFocused()` aqui:
+ * o Electron reporta foco assim que `focus()` é chamado, mesmo quando o Windows o recusou — foi
+ * exatamente essa leitura otimista que travava o roubo nativo e obrigava ao clique.
+ */
+/** Versão real do executável — o rodapé das definições mostra-a. */
+/**
+ * A app foi aberta pelo arranque do Windows?
+ *
+ * A varredura do Menu Iniciar é adiada 20 s para não competir com o login — nessa altura o disco
+ * e o CPU estão saturados e uma sondagem em PowerShell deixa o sistema lento. Só que esse adiamento
+ * aplicava-se SEMPRE, mesmo quando o utilizador abre a app à mão a meio do dia, e nesse caso ele
+ * fica 20 s à espera de atalhos sem motivo nenhum. Saber a origem do arranque separa os dois casos.
+ */
+ipcMain.handle("was-opened-at-login", () => {
+  try {
+    return app.getLoginItemSettings().wasOpenedAtLogin === true;
+  } catch (e) {
+    return false;
+  }
+});
+
+ipcMain.handle("get-app-version", () => app.getVersion());
+
+/**
+ * O renderer esconde as linhas de atualização quando a app veio da Store — deixar lá um botão
+ * "Check now" que devolve sempre erro é pior do que não ter botão nenhum.
+ */
+ipcMain.handle("get-build-channel", () => (isStoreBuild() ? "store" : "direct"));
+
+/** Estado atual, para o painel se pintar mesmo que tenha aberto depois do evento. */
+ipcMain.handle("get-update-state", () => lastKnownUpdate);
+
+/**
+ * Verificação a pedido. O arranque já verifica sozinho passados 10 s; isto é para quem quer
+ * confirmar agora — e para dar uma resposta visível a quem carrega no botão.
+ */
+ipcMain.handle("check-for-updates", async () => {
+  if (!app.isPackaged || process.platform !== "win32") {
+    return { ok: false, code: "UNSUPPORTED", state: lastKnownUpdate.state };
+  }
+  /** Na Store o botão nem aparece; o guarda fica para o caso de alguém chamar o canal à mão. */
+  if (isStoreBuild()) {
+    return { ok: false, code: "STORE_BUILD", state: "idle" };
+  }
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    const version = result?.updateInfo?.version;
+    if (version && version !== app.getVersion()) {
+      return { ok: true, state: "downloading", version };
+    }
+    return { ok: true, state: "current", version: app.getVersion() };
+  } catch (error) {
+    diagLog(`[Update] Manual check failed: ${error?.message || error}`);
+    return { ok: false, code: "CHECK_FAILED", error: error?.message || String(error) };
+  }
+});
+
+/** Reinício para instalar — o utilizador escolhe o momento, na linha das Definições. */
+ipcMain.on("install-update-now", () => {
+  if (isStoreBuild()) return;
+  if (lastKnownUpdate.state !== "ready") return;
+  diagLog("[Update] Instalação pedida pelo utilizador");
+  updateInstallInProgress = true;
+
+  /**
+   * Parar os helpers ANTES de sair. O `will-quit` também os para, mas o `quitAndInstall` corre o
+   * instalador assim que o processo termina, e um PowerShell órfão com um ficheiro da pasta de
+   * instalação aberto chega para a substituição falhar.
+   */
+  stopMouseHookForShutdown();
+  stopRadialMouseBlocker();
+  stopForegroundFocusHelper();
+
+  /**
+   * `isForceRunAfter: true` — sem isto o NSIS instala e NÃO relança a app, obrigando o utilizador
+   * a abri-la à mão. Uma app que vive na bandeja simplesmente desaparecia depois de atualizar.
+   */
+  autoUpdater.quitAndInstall(false, true);
+});
+
+ipcMain.on("request-keyboard-focus", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  /** Antes do reveal a janela ainda está oculta; o renderer volta a pedir a seguir. */
+  if (!mainWindow.isVisible()) return;
+  try {
+    windowBuriedPassive = false;
+    mainWindow.setIgnoreMouseEvents(false);
+    if (process.platform === "win32") {
+      mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
+    }
+    app.focus({ steal: true });
+    mainWindow.moveTop();
+    mainWindow.focus();
+    mainWindow.webContents.focus();
+  } catch (e) {
+    /* ignore */
+  }
+
+  stealForegroundForMainWindow();
+  /** O `focus()` do Electron só se reflete depois de o HWND ser mesmo o foreground. */
+  const settle = setTimeout(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    try {
+      mainWindow.focus();
+      mainWindow.webContents.focus();
+    } catch (e) {
+      /* ignore */
+    }
+  }, 180);
+  settle.unref?.();
+});
+
 ipcMain.on("show-window", () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
@@ -4065,6 +5928,7 @@ ipcMain.on("set-window-opacity", (event, opacity) => {
   mainWindow.setOpacity(v);
 });
 
+
 ipcMain.handle("get-onboarding-apps", async () => {
   return new Promise((resolve) => {
     const targetApps = ["Chrome", "Edge", "Discord", "Spotify", "Steam", "VS Code", "Visual Studio Code", "Notepad", "Calculadora", "Calculator"];
@@ -4090,7 +5954,7 @@ ipcMain.handle("get-onboarding-apps", async () => {
     const tempPath = path.join(app.getPath("userData"), "temp-onboarding.ps1");
     try {
       fs.writeFileSync(tempPath, psScriptContent, "utf8");
-      exec(`powershell -NoProfile -ExecutionPolicy Bypass -File "${tempPath}"`, (error, stdout) => {
+      exec(`powershell -NoProfile -ExecutionPolicy RemoteSigned -File "${tempPath}"`, (error, stdout) => {
         try { fs.unlinkSync(tempPath); } catch (e) {}
         if (error || !stdout) { resolve([]); return; }
         try {
@@ -4181,7 +6045,7 @@ ipcMain.handle("get-startup-apps", async () => {
     const tempScriptPath = path.join(app.getPath("userData"), "temp-discovery.ps1");
     try {
       fs.writeFileSync(tempScriptPath, psScriptContent, "utf8");
-      exec(`powershell -NoProfile -ExecutionPolicy Bypass -File "${tempScriptPath}"`, { maxBuffer: 1024 * 1024 * 5 }, (error, stdout, stderr) => {
+      exec(`powershell -NoProfile -ExecutionPolicy RemoteSigned -File "${tempScriptPath}"`, { maxBuffer: 1024 * 1024 * 5 }, (error, stdout, stderr) => {
         try { fs.unlinkSync(tempScriptPath); } catch (e) {}
         if (error) { diagLog(`[Discovery] PowerShell error: ${error.message}`); resolve([]); return; }
         if (!stdout || stdout.trim() === "" || stdout.trim() === "[]") { diagLog("[Discovery] No apps found"); resolve([]); return; }
@@ -4226,7 +6090,7 @@ ipcMain.handle("ensure-window-interactive", () => {
   return true;
 });
 
-/** Pré-aquece small↔fullscreen (HWND encolhido pela ilha) — 1.ª abertura do radial deixa de “travar” no DWM. */
+/** Compatibilidade: a geometria estável já elimina a transição small↔fullscreen. */
 let radialTransitionWarmed = false;
 ipcMain.handle("warm-radial-transition", () => {
   if (radialTransitionWarmed) return true;
@@ -4241,43 +6105,14 @@ ipcMain.handle("warm-radial-transition", () => {
     return true;
   }
 
-  const cur = mainWindow.getBounds();
-  const point = {
-    x: Math.round(cur.x + cur.width / 2),
-    y: Math.round(cur.y + cur.height / 2),
-  };
-
-  let prevOpacity = 1;
-  try {
-    prevOpacity = mainWindow.getOpacity();
-  } catch (e) {
-    /* ignore */
-  }
-
-  try {
-    mainWindow.setOpacity(0);
-  } catch (e) {
-    /* ignore */
-  }
-
-  updateWindowSize("fullscreen", point);
-  updateWindowSize("small", point);
-
-  try {
-    mainWindow.setOpacity(prevOpacity);
-  } catch (e) {
-    /* ignore */
-  }
-
+  /** `small` e radial já partilham os mesmos bounds; não há transição nativa a aquecer. */
   radialTransitionWarmed = true;
   return true;
 });
 
 /**
- * Repouso sem HUD: encolhe o HWND a um canto em vez de deixar uma janela layered topmost a ecrã inteiro.
- * Uma camada transparente do tamanho do monitor fica sempre composta pelo DWM e recebe todo o hit-testing
- * do rato (`setIgnoreMouseEvents` com `forward`) — é o que tornava o cursor e o resto do sistema lentos.
- * Mesmo mecanismo já usado pela ilha via `set-window-hit-shape`; o radial reexpande em `updateWindowSize`.
+ * Repouso sem HUD: conserva apenas o quadrado compacto do radial, totalmente transparente e com
+ * mouse passthrough. Não é uma camada do tamanho do monitor e não há hide/show/resize ao abrir.
  */
 ipcMain.handle("collapse-idle-overlay", () => {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
@@ -4290,20 +6125,20 @@ ipcMain.handle("collapse-idle-overlay", () => {
   if (nativeWindowSizeMode !== "small") return false;
 
   const cur = mainWindow.getBounds();
-  const disp = screen.getDisplayNearestPoint({
-    x: Math.round(cur.x + cur.width / 2),
-    y: Math.round(cur.y + cur.height / 2),
-  });
-  const nb = {
-    x: disp.bounds.x,
-    y: disp.bounds.y,
-    width: IDLE_OVERLAY_COLLAPSED_SIZE,
-    height: IDLE_OVERLAY_COLLAPSED_SIZE,
-  };
+  const disp = screen.getPrimaryDisplay();
+  const nb = smallModeBounds(disp.bounds);
   const key = JSON.stringify(nb);
   lastWindowHitShapeKey = key;
   try {
     if (typeof mainWindow.setShape === "function") mainWindow.setShape([]);
+  } catch (e) {
+    /* ignore */
+  }
+  try {
+    mainWindow.setIgnoreMouseEvents(true);
+    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    if (!mainWindow.isVisible()) mainWindow.showInactive();
+    mainWindow.webContents.setBackgroundThrottling(true);
   } catch (e) {
     /* ignore */
   }
@@ -4314,15 +6149,8 @@ ipcMain.handle("collapse-idle-overlay", () => {
       /* ignore */
     }
   }
-  /** Nada visível aqui — retire completamente o HWND do compositor e do encaminhamento do rato. */
-  try {
-    mainWindow.setIgnoreMouseEvents(true);
-    mainWindow.hide();
-    mainWindow.webContents.setBackgroundThrottling(true);
-  } catch (e) {
-    /* ignore */
-  }
-  diagLog("[Overlay] Repouso sem HUD: janela nativa oculta (sem composição ou hit-testing).");
+  windowBuriedPassive = false;
+  diagLog("[Overlay] Repouso estável: superfície radial transparente e mouse passthrough.");
   return true;
 });
 
@@ -4343,49 +6171,13 @@ ipcMain.handle("reapply-small-overlay", () => {
     }
     return true;
   }
-  if (!overlayHudActive) {
-    try {
-      mainWindow.setIgnoreMouseEvents(true);
-      mainWindow.hide();
-      mainWindow.webContents.setBackgroundThrottling(true);
-    } catch (e) {
-      /* ignore */
-    }
-    return true;
-  }
-  const cur = mainWindow.getBounds();
-  /** Centro do HWND — não usar o cursor: com vários monitores o rato pode estar noutro ecrã e “puxar” a ilha. */
-  const point = {
-    x: Math.round(cur.x + cur.width / 2),
-    y: Math.round(cur.y + cur.height / 2),
-  };
-  const disp = screen.getDisplayNearestPoint(point);
-  /** Sem HUD o alvo é o canto encolhido — nunca o monitor inteiro (ver `smallModeBounds`). */
-  const targetB = smallModeBounds(disp.bounds);
-  /**
-   * O renderer chama isto várias vezes (ilha idle, fechar pomodoro, etc.). Repetir `updateWindowSize('small')`
-   * com `setBounds` + show/focus no mesmo estado faz o DWM piscar e o rect “fantasma” atrás da ilha.
-   * Só forçamos o caminho pesado quando o HWND ainda está encolhido (ilha) ou o modo não é `small`.
-   */
-  const forwardHitEmpty =
-    lastWindowHitShapeKey === "__empty__" || lastWindowHitShapeKey === "";
-  if (
-    nativeWindowSizeMode === "small" &&
-    boundsApproxEqual(cur, targetB) &&
-    forwardHitEmpty
-  ) {
-    try {
-      mainWindow.setIgnoreMouseEvents(true, { forward: true });
-    } catch (e) {
-      /* ignore */
-    }
-    return true;
-  }
-  updateWindowSize("small", point);
+  /** Modo `small`: manter bounds do radial e superfície transparente estável. */
   try {
-    mainWindow.show();
-    mainWindow.focus();
-    mainWindow.webContents.focus();
+    mainWindow.setIgnoreMouseEvents(true);
+    applySmallModeCollapsedBounds(undefined);
+    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    if (!mainWindow.isVisible()) mainWindow.showInactive();
+    mainWindow.webContents.setBackgroundThrottling(true);
   } catch (e) {
     /* ignore */
   }
@@ -4435,8 +6227,9 @@ ipcMain.handle("set-window-hit-shape", (event, rects, opts = {}) => {
               if (!mainWindow || mainWindow.isDestroyed()) return;
               if (mainWindow.isMinimized()) return;
               if (nativeWindowSizeMode !== "small") return;
-              applySmallModeFullMonitorBounds(undefined);
-              mainWindow.setIgnoreMouseEvents(true, { forward: true });
+              mainWindow.setIgnoreMouseEvents(true);
+              applySmallModeCollapsedBounds(undefined);
+              if (!mainWindow.isVisible()) mainWindow.showInactive();
             } catch (e) {
               /* ignore */
             }
@@ -4571,24 +6364,17 @@ ipcMain.on("quit-app", () => {
       diagLog("[Reset] Deleted icon-cache.json");
     }
 
-    // Limpar também a pasta legada (dev: zenith-radial-menu) para evitar que a migração
-    // restaure um ficheiro obsoleto com mainStartMenuDiscoveryDone:true mas sem apps.
+    // Clear both pre-rebrand profiles so a factory reset cannot migrate stale data back.
     try {
       const appData = app.getPath("appData");
-      let legacyName = "zenith-radial-menu";
-      try {
-        const pkgPath = path.join(__dirname, "..", "package.json");
-        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
-        if (pkg && typeof pkg.name === "string" && pkg.name.trim()) {
-          legacyName = pkg.name.trim();
-        }
-      } catch (_) {}
-      const legacyDir = path.join(appData, legacyName);
-      for (const f of ["config-v2.json", "config-v2.json.bak", "settings.json"]) {
-        const legacy = path.join(legacyDir, f);
-        if (fs.existsSync(legacy)) {
-          fs.unlinkSync(legacy);
-          diagLog(`[Reset] Deleted legacy ${f} from ${legacyName}`);
+      for (const legacyName of ["Zenith OS", "zenith-radial-menu"]) {
+        const legacyDir = path.join(appData, legacyName);
+        for (const f of ["config-v2.json", "config-v2.json.bak", "settings.json"]) {
+          const legacy = path.join(legacyDir, f);
+          if (fs.existsSync(legacy)) {
+            fs.unlinkSync(legacy);
+            diagLog(`[Reset] Deleted legacy ${f} from ${legacyName}`);
+          }
         }
       }
     } catch (le) {
@@ -4602,10 +6388,12 @@ ipcMain.on("quit-app", () => {
 
     // Clear internal caches
     iconCache.clear();
+    markIconCacheDirty();
     gameModeConfig = {
       enabled: false,
       mode: "list",
       blockedApps: "",
+      autoDetectGames: false,
     };
 
     diagLog("[Reset] Configuration reset completed. Restarting...");
@@ -4685,48 +6473,6 @@ ipcMain.handle("select-image", async () => {
   }
 });
 
-/** Pomodoro ambient: copy selected audio into userData/pomodoro-ambient. */
-ipcMain.handle("select-pomodoro-audio", async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ["openFile"],
-    filters: [
-      {
-        name: "Audio",
-        extensions: ["mp3", "wav", "ogg", "m4a", "aac", "flac", "opus", "webm"],
-      },
-      { name: "All Files", extensions: ["*"] },
-    ],
-  });
-  if (result.canceled || result.filePaths.length === 0) return null;
-  const srcPath = result.filePaths[0];
-  try {
-    const dir = path.join(app.getPath("userData"), "pomodoro-ambient");
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const ext = path.extname(srcPath) || ".mp3";
-    const destPath = path.join(dir, `ambient-${crypto.randomUUID()}${ext}`);
-    fs.copyFileSync(srcPath, destPath);
-    return destPath;
-  } catch (e) {
-    diagLog(`[select-pomodoro-audio] ${e.message}`);
-  }
-  return null;
-});
-
-ipcMain.handle("remove-managed-pomodoro-audio", async (_, filePath) => {
-  try {
-    if (!filePath || typeof filePath !== "string") return;
-    let p = filePath.trim();
-    if (p.startsWith("file:")) p = url.fileURLToPath(p);
-    p = path.resolve(p);
-    const base = path.resolve(path.join(app.getPath("userData"), "pomodoro-ambient"));
-    const rel = path.relative(base, p);
-    if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return;
-    if (fs.existsSync(p)) fs.unlinkSync(p);
-  } catch (e) {
-    diagLog(`[remove-managed-pomodoro-audio] ${e.message}`);
-  }
-});
-
 // Delete a copied custom icon file (only if path is under userData/custom-icons).
 ipcMain.handle("remove-managed-custom-icon", async (_, urlOrPath) => {
   try {
@@ -4749,32 +6495,158 @@ ipcMain.handle("remove-managed-custom-icon", async (_, urlOrPath) => {
 const iconCachePath = path.join(app.getPath("userData"), "icon-cache.json");
 let iconCache = new Map();
 
+// Bump whenever extract-icon.ps1 changes how icons are produced, so cached
+// entries rendered by the old pipeline are dropped instead of outliving it.
+const ICON_PIPELINE_VERSION = 7;
+const ICON_CACHE_MAX_ENTRIES = 600;
+
+/**
+ * Remove os ícones nativos já gravados na config em disco, para a cura os voltar a resolver.
+ * Atalhos web (`http…`) mantêm o favicon: não vêm do pipeline do Windows.
+ */
+function stripStaleNativeIcons(configFilePath) {
+  let removed = 0;
+  try {
+    const blob = JSON.parse(fs.readFileSync(configFilePath, "utf-8"));
+    const isWebShortcut = (item) =>
+      item.commandType === "url" || /^https?:/i.test(String(item.command || ""));
+
+    const walk = (items) => {
+      if (!Array.isArray(items)) return;
+      for (const item of items) {
+        if (item && item.customIconUrl && !isWebShortcut(item)) {
+          delete item.customIconUrl;
+          removed += 1;
+        }
+        if (item && Array.isArray(item.children)) walk(item.children);
+      }
+    };
+    const walkWorkspaces = (workspaces) => {
+      if (!Array.isArray(workspaces)) return;
+      for (const ws of workspaces) walk(ws && ws.apps);
+    };
+
+    walkWorkspaces(blob.workspaces);
+    walkWorkspaces(blob.config && blob.config.workspaces);
+    walk(blob.apps);
+
+    if (removed > 0) {
+      const tempPath = `${configFilePath}.tmp`;
+      fs.writeFileSync(tempPath, JSON.stringify(blob, null, 2), "utf-8");
+      fs.renameSync(tempPath, configFilePath);
+    }
+  } catch (e) {
+    diagLog(`[Import] Não foi possível limpar ícones antigos: ${e.message}`);
+  }
+  return removed;
+}
+
 const loadIconCache = () => {
   try {
     if (fs.existsSync(iconCachePath)) {
       const data = JSON.parse(fs.readFileSync(iconCachePath, "utf-8"));
-      iconCache = new Map(Object.entries(data));
-      diagLog(`[IconCache] Loaded ${iconCache.size} icons from disk`);
+      if (data && data.__pipelineVersion === ICON_PIPELINE_VERSION && data.icons) {
+        iconCache = new Map(Object.entries(data.icons));
+        while (iconCache.size > ICON_CACHE_MAX_ENTRIES) {
+          const oldest = iconCache.keys().next().value;
+          if (!oldest) break;
+          iconCache.delete(oldest);
+        }
+        diagLog(`[IconCache] Loaded ${iconCache.size} icons from disk`);
+      } else {
+        iconCache = new Map();
+        diagLog("[IconCache] Discarded cache from an older icon pipeline");
+      }
     }
   } catch (e) {
     diagLog(`[IconCache] Failed to load icon cache: ${e.message}`);
   }
 };
 
-const saveIconCache = () => {
+/**
+ * O cache é o maior ficheiro da app (ícones em data URL) e era reescrito por inteiro a cada
+ * minuto, houvesse ou não ícones novos — só se resolvem ícones ao descobrir apps, portanto a
+ * esmagadora maioria dessas escritas gravava exatamente o mesmo conteúdo.
+ * Marcar como sujo custa uma atribuição; a escrita passou a assíncrona pelo mesmo motivo da config.
+ */
+let iconCacheDirty = false;
+let iconCacheWriting = false;
+let iconCacheSaveTimer = null;
+
+const scheduleIconCacheSave = () => {
+  if (!iconCacheDirty || iconCacheSaveTimer) return;
+  iconCacheSaveTimer = setTimeout(() => {
+    iconCacheSaveTimer = null;
+    saveIconCache();
+  }, 15000);
+  iconCacheSaveTimer.unref?.();
+};
+
+const markIconCacheDirty = () => {
+  iconCacheDirty = true;
+  scheduleIconCacheSave();
+};
+
+const rememberFileIcon = (filePath, data) => {
+  iconCache.delete(filePath);
+  iconCache.set(filePath, { data });
+  while (iconCache.size > ICON_CACHE_MAX_ENTRIES) {
+    const oldest = iconCache.keys().next().value;
+    if (!oldest) break;
+    iconCache.delete(oldest);
+  }
+  markIconCacheDirty();
+};
+
+const saveIconCache = ({ sync = false } = {}) => {
+  if (iconCacheWriting && !sync) return;
+  if (!iconCacheDirty) return;
+  if (iconCacheSaveTimer) {
+    clearTimeout(iconCacheSaveTimer);
+    iconCacheSaveTimer = null;
+  }
   try {
-    const data = Object.fromEntries(iconCache);
-    fs.writeFileSync(iconCachePath, JSON.stringify(data));
+    const data = {
+      __pipelineVersion: ICON_PIPELINE_VERSION,
+      icons: Object.fromEntries(iconCache),
+    };
+    const json = JSON.stringify(data);
+    /** Limpo antes da escrita: um `set` que chegue durante o I/O tem de sujar outra vez. */
+    iconCacheDirty = false;
+    /** `will-quit`: assíncrono aqui perdia-se — o processo sai antes do callback. */
+    if (sync) {
+      fs.writeFileSync(iconCachePath, json);
+      return;
+    }
+    iconCacheWriting = true;
+    fs.writeFile(iconCachePath, json, (err) => {
+      iconCacheWriting = false;
+      if (err) {
+        iconCacheDirty = true;
+        diagLog(`[IconCache] Failed to save icon cache: ${err.message}`);
+      }
+      if (iconCacheDirty) scheduleIconCacheSave();
+    });
   } catch (e) {
+    iconCacheWriting = false;
+    iconCacheDirty = true;
     diagLog(`[IconCache] Failed to save icon cache: ${e.message}`);
   }
 };
 
-// Start periodic save to prevent data loss on crash
-setInterval(saveIconCache, 60000); // Every minute
-
 /** In-memory favicon data URLs — hostname lowercased */
 const faviconDataUrlCache = new Map();
+const FAVICON_CACHE_MAX_ENTRIES = 128;
+
+const rememberFavicon = (hostname, dataUrl) => {
+  faviconDataUrlCache.delete(hostname);
+  faviconDataUrlCache.set(hostname, dataUrl);
+  while (faviconDataUrlCache.size > FAVICON_CACHE_MAX_ENTRIES) {
+    const oldest = faviconDataUrlCache.keys().next().value;
+    if (!oldest) break;
+    faviconDataUrlCache.delete(oldest);
+  }
+};
 
 function sniffImageMimeFromBuffer(buf) {
   if (!buf || buf.length < 4) return "image/png";
@@ -4814,7 +6686,7 @@ function fetchUrlBodyBuffer(targetUrl, maxBytes = 524288, redirectDepth = 0) {
       {
         headers: {
           "User-Agent":
-            "Mozilla/5.0 (compatible; ZenithRadialMenu/1.0; +https://github.com)",
+            "Mozilla/5.0 (compatible; Rovyl/1.0; +https://github.com)",
           Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
         },
         timeout: 12000,
@@ -4891,7 +6763,7 @@ ipcMain.handle("get-website-favicon-data-url", async (_event, pageUrl) => {
       if (!buf || buf.length < 16) continue;
       const mime = sniffImageMimeFromBuffer(buf);
       const dataUrl = `data:${mime};base64,${buf.toString("base64")}`;
-      faviconDataUrlCache.set(hostKey, dataUrl);
+      rememberFavicon(hostKey, dataUrl);
       diagLog(`[Favicon] ${hostname} ok (${mime}, ${buf.length}b)`);
       return dataUrl;
     }
@@ -4902,6 +6774,40 @@ ipcMain.handle("get-website-favicon-data-url", async (_event, pageUrl) => {
     return null;
   }
 });
+
+// Each extraction is its own PowerShell process (~1.3s, mostly Add-Type
+// compiling the interop shim). A picker showing dozens of rows would otherwise
+// spawn dozens of them at once and thrash the machine.
+const ICON_EXTRACTION_CONCURRENCY = 4;
+let activeIconExtractions = 0;
+const iconExtractionQueue = [];
+
+const runQueuedIconExtractions = () => {
+  while (
+    activeIconExtractions < ICON_EXTRACTION_CONCURRENCY &&
+    iconExtractionQueue.length
+  ) {
+    const job = iconExtractionQueue.shift();
+    activeIconExtractions++;
+    job()
+      .then(job.resolve, job.reject)
+      .finally(() => {
+        activeIconExtractions--;
+        runQueuedIconExtractions();
+      });
+  }
+};
+
+const enqueueIconExtraction = (job) =>
+  new Promise((resolve, reject) => {
+    job.resolve = resolve;
+    job.reject = reject;
+    iconExtractionQueue.push(job);
+    runQueuedIconExtractions();
+  });
+
+/** Deduplicates concurrent requests for the same target. */
+const inFlightIconRequests = new Map();
 
 ipcMain.handle("get-file-icon", async (event, filePath) => {
   try {
@@ -4919,6 +6825,23 @@ ipcMain.handle("get-file-icon", async (event, filePath) => {
       }
     }
 
+    if (inFlightIconRequests.has(filePath)) {
+      return inFlightIconRequests.get(filePath);
+    }
+    const pending = extractIconUncached(filePath).finally(() =>
+      inFlightIconRequests.delete(filePath),
+    );
+    inFlightIconRequests.set(filePath, pending);
+    return pending;
+  } catch (error) {
+    diagLog(`[IconRequest] Critical error in get-file-icon for ${filePath}: ${error.message}`);
+    console.error("Critical error in get-file-icon:", error);
+    return null;
+  }
+});
+
+async function extractIconUncached(filePath) {
+  try {
     diagLog(`[IconRequest] Fetching icon for: ${filePath}`);
 
     // 1. Resolve shell paths
@@ -4966,26 +6889,15 @@ ipcMain.handle("get-file-icon", async (event, filePath) => {
     const isExplicitFile =
       resolvedPath.includes("\\") || resolvedPath.includes("/");
 
-    // 2. Try Electron Native first if it's a file path
-    if (isExplicitFile && !isAUMID) {
-      try {
-        const icon = await app.getFileIcon(resolvedPath, { size: "large" });
-        if (icon) {
-          diagLog(`[IconRequest] Success via Native Electron for ${resolvedPath}`);
-          const dataUrl = icon.toDataURL();
-          iconCache.set(filePath, { data: dataUrl });
-          return dataUrl;
-        }
-      } catch (e) {
-        diagLog(`[IconRequest] Native extraction failed for ${resolvedPath}: ${e.message}`);
-      }
-    }
-
-    // 3. PowerShell extraction — use spawn + argv so AUMIDs like Microsoft.X_y!App are not mangled by cmd.exe / string parsing
+    // 2. PowerShell extraction is the primary path for every target type.
+    // app.getFileIcon returns a small, unnormalized shell icon, so mixing it in
+    // for file paths made those apps render at a different size and resolution
+    // than the packaged apps that always came through the script.
+    // spawn + argv, so AUMIDs like Microsoft.X_y!App are not mangled by cmd.exe.
     const psScript = getAssetPath("extract-icon.ps1");
     diagLog(`[IconRequest] Trying PowerShell extraction for ${resolvedPath}`);
 
-    const iconData = await new Promise((resolve) => {
+    const iconData = await enqueueIconExtraction(() => new Promise((resolve) => {
       const chunks = [];
       const psExe = path.join(
         process.env.SystemRoot || "C:\\Windows",
@@ -4996,7 +6908,7 @@ ipcMain.handle("get-file-icon", async (event, filePath) => {
       );
       const child = spawn(
         fs.existsSync(psExe) ? psExe : "powershell.exe",
-        ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psScript, "-Target", resolvedPath],
+        ["-NoProfile", "-ExecutionPolicy", "RemoteSigned", "-File", psScript, "-Target", resolvedPath],
         { windowsHide: true },
       );
       child.stdout.on("data", (d) => chunks.push(d));
@@ -5016,21 +6928,27 @@ ipcMain.handle("get-file-icon", async (event, filePath) => {
         const dataLine = lines.find((line) => line.startsWith("data:image"));
         resolve(dataLine || null);
       });
-    });
+    }));
 
     if (iconData) {
       diagLog(`[IconRequest] Success via PowerShell for ${filePath}`);
-      iconCache.set(filePath, { data: iconData });
+      rememberFileIcon(filePath, iconData);
       return iconData;
     }
 
-    // 4. Final Fallback
+    // 3. Last resort, file paths only. An AUMID means nothing to getFileIcon —
+    // it yields the generic unknown-file icon, which reads as a wrong icon
+    // rather than a missing one, so let the UI draw its own placeholder.
+    if (isAUMID || !isExplicitFile) {
+      diagLog(`[IconRequest] No icon available for ${filePath}`);
+      return null;
+    }
     diagLog(`[IconRequest] Falling back to generic Native extraction for ${resolvedPath}`);
     try {
       const icon = await app.getFileIcon(resolvedPath, { size: "large" });
       const dataUrl = icon.toDataURL();
       diagLog(`[IconRequest] Final fallback success for ${resolvedPath}`);
-      iconCache.set(filePath, { data: dataUrl });
+      rememberFileIcon(filePath, dataUrl);
       return dataUrl;
     } catch (e) {
       diagLog(`[IconRequest] All extraction methods failed for ${filePath}. Error: ${e.message}`);
@@ -5041,7 +6959,7 @@ ipcMain.handle("get-file-icon", async (event, filePath) => {
     console.error("Critical error in get-file-icon:", error);
     return null;
   }
-});
+}
 
 function stripBom(str) {
   return String(str || "").replace(/^\uFEFF/, "").trim();
@@ -5093,7 +7011,7 @@ ipcMain.handle("get-installed-apps", async (event, forceRefresh = false) => {
       }
     `.replace(/#.*$/gm, "");
 
-    const command = `powershell -NoProfile -ExecutionPolicy Bypass -Command "${psScript
+    const command = `powershell -NoProfile -ExecutionPolicy RemoteSigned -Command "${psScript
       .replace(/"/g, '\\"')
       .replace(/[\r\n]+/g, " ")
       .trim()}"`;
@@ -5128,6 +7046,10 @@ app.on("window-all-closed", (e) => {
 });
 
 app.on("will-quit", () => {
-  saveIconCache();
+  /** Primeiro os helpers: enquanto viverem, o instalador não consegue tocar na pasta. */
+  stopMouseHookForShutdown();
+  stopRadialMouseBlocker();
+  stopForegroundFocusHelper();
+  saveIconCache({ sync: true });
   globalShortcut.unregisterAll();
 });

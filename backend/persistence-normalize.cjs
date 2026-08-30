@@ -2,6 +2,8 @@
 
 /**
  * Top-level keys of the full persistence blob (v2). Everything else in a flat legacy file is treated as UIConfig.
+ * `notes` / `alarms` / `noteWorkspaces` / `activeNoteWorkspaceId` são de widgets removidos: continuam listados
+ * para que um ficheiro antigo e plano não os despeje dentro do UIConfig — mas já não são devolvidos ao renderer.
  */
 const PERSISTENCE_TOP_KEYS = new Set([
   "user",
@@ -14,7 +16,7 @@ const PERSISTENCE_TOP_KEYS = new Set([
 
 /**
  * Normalize disk JSON so the renderer always receives the v2 shape:
- * { user, apps?, config, notes?, alarms?, noteWorkspaces?, activeNoteWorkspaceId? }
+ * { user, apps?, config }
  *
  * Returns null if the payload is empty or missing workspace data (caller may try .bak or block saves).
  */
@@ -36,13 +38,6 @@ function normalizeFullPersistenceBlob(raw) {
       user: raw.user ?? null,
       apps: Array.isArray(raw.apps) ? raw.apps : undefined,
       config,
-      notes: Array.isArray(raw.notes) ? raw.notes : undefined,
-      alarms: Array.isArray(raw.alarms) ? raw.alarms : undefined,
-      noteWorkspaces: Array.isArray(raw.noteWorkspaces) ? raw.noteWorkspaces : undefined,
-      activeNoteWorkspaceId:
-        typeof raw.activeNoteWorkspaceId === "string"
-          ? raw.activeNoteWorkspaceId
-          : undefined,
     };
   }
 
@@ -92,13 +87,6 @@ function normalizeFullPersistenceBlob(raw) {
         user: raw.user ?? null,
         apps: Array.isArray(raw.apps) ? raw.apps : undefined,
         config: { ...config, workspaces },
-        notes: Array.isArray(raw.notes) ? raw.notes : undefined,
-        alarms: Array.isArray(raw.alarms) ? raw.alarms : undefined,
-        noteWorkspaces: Array.isArray(raw.noteWorkspaces) ? raw.noteWorkspaces : undefined,
-        activeNoteWorkspaceId:
-          typeof raw.activeNoteWorkspaceId === "string"
-            ? raw.activeNoteWorkspaceId
-            : undefined,
       };
     }
   }

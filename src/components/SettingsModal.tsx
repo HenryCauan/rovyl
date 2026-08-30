@@ -3,12 +3,11 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AppItem, UIConfig, UserProfile, CLOCK_HUD_POSITIONS } from '../types';
 import { ICON_MAP, getIcon } from '../iconMap';
-import { AVAILABLE_WIDGETS } from '../defaults';
 import { AppSelector } from './AppSelector';
 import { SmartIcon } from './SmartIcon';
 import {
     X, Save, RotateCcw, Monitor, LayoutGrid, Palette, Check,
-    Plus, Trash2, Clock, Keyboard, AlertTriangle, RotateCw, AlarmClock,
+    Plus, Trash2, Clock, Keyboard, AlertTriangle, RotateCw,
     Gamepad2, AppWindow, Settings2, Folder, ChevronRight, CornerUpLeft,
     Image as ImageIcon, Upload, Search, FileType,
     LayoutDashboard, Box, Command, ChevronDown, Play, CheckCircle2,
@@ -18,7 +17,7 @@ import {
     Layout, Compass, Laptop, Smartphone, Bell, GripVertical, ChevronLeft, LogOut,
     Layers, Shield, PackageX
 } from 'lucide-react';
-import { ZenithLogo } from './ZenithLogo';
+import { RovylLogo } from './RovylLogo';
 import { IconPicker } from './IconPicker';
 import { getTranslation, LANGUAGES } from '../translations';
 import { Tooltip } from './Tooltip';
@@ -1007,140 +1006,6 @@ const AppEditorModal = React.memo(({
 
 
 
-const WidgetsTab = React.memo(({ config, setConfig }: { config: UIConfig, setConfig: (c: any) => void }) => {
-    const commandsInWorkspaces = useMemo(() => {
-        const s = new Set<string>();
-        for (const ws of config.workspaces) {
-            for (const a of ws.apps) {
-                if (a.command) s.add(a.command);
-            }
-        }
-        return s;
-    }, [config.workspaces]);
-
-    const appCommandsByWorkspace = useMemo(
-        () => config.workspaces.map(ws => {
-            const cmd = new Set<string>();
-            for (const a of ws.apps) {
-                if (a.command) cmd.add(a.command);
-            }
-            return cmd;
-        }),
-        [config.workspaces]
-    );
-
-    return (
-        <motion.div
-            className="pt-20 pb-24 h-full overflow-y-auto custom-scrollbar"
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 10 }}
-            transition={{ duration: 0.3 }}
-        >
-            <div className="max-w-4xl mx-auto px-6 md:px-10 lg:px-12">
-                <motion.div
-                    className="mb-12"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.4, delay: 0.1 }}
-                >
-                    <h3 className="text-xl font-semibold text-white mb-1 tracking-tight">{getTranslation(config, 'tabs.widgets')}</h3>
-                    <p className="text-[11px] text-white/30 font-medium tracking-wide leading-relaxed mt-1 max-w-2xl">
-                        {getTranslation(config, 'widgets.desc') || 'Adicione ferramentas independentes e utilitários ao seu hub radial. Melhore sua produtividade com cronômetros, alarmes e sensores de sistema integrados.'}
-                    </p>
-                </motion.div>
-
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {AVAILABLE_WIDGETS.map((widget, index) => {
-                        const Icon = getIcon(widget.iconName);
-                        const isDeployed = commandsInWorkspaces.has(widget.command);
-
-                        return (
-                            <motion.div
-                                key={widget.id}
-                                className="p-5 rounded-xl bg-white/[0.015] border border-white/5 hover:border-white/10 hover:bg-white/[0.03] flex flex-col transition-all duration-500 group relative overflow-hidden shadow-lg"
-                                initial={{ opacity: 0, y: 15 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: index * 0.05, duration: 0.5 }}
-                            >
-                                {isDeployed && (
-                                    <div className="absolute top-4 right-4 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-green-500/10 border border-green-500/20">
-                                        <div className="w-1 h-1 rounded-full bg-green-500 animate-pulse" />
-                                        <span className="text-[9px] font-black text-green-500 uppercase tracking-[0.15em]">{getTranslation(config, 'status.active') || 'Active'}</span>
-                                    </div>
-                                )}
-
-                                <div className="flex items-center gap-3 mb-4 relative z-10">
-                                    <div className="w-9 h-9 rounded-lg bg-black/40 border border-white/5 flex items-center justify-center text-white/30 group-hover:text-white group-hover:border-white/10 transition-all duration-500 shrink-0">
-                                        <Icon size={18} strokeWidth={1.25} />
-                                    </div>
-                                    <div className="min-w-0">
-                                        <h4 className="font-medium text-white text-sm tracking-tight truncate leading-tight">
-                                            {getTranslation(config, `widgets.${widget.id}.name`) || widget.name}
-                                        </h4>
-                                        <p className="text-[9px] text-white/20 font-semibold uppercase tracking-[0.2em]">{widget.id.split('_')[0]} {getTranslation(config, 'widgets.module') || 'Module'}</p>
-                                    </div>
-                                </div>
-
-                                <div className="mb-6 relative z-10">
-                                    <p className="text-[11px] text-white/40 font-medium leading-relaxed line-clamp-2 min-h-[32px]">
-                                        {getTranslation(config, `widgets.${widget.id}.desc`) || widget.description}
-                                    </p>
-                                </div>
-
-                                <div className="mt-auto space-y-4 relative z-10">
-                                    <div className="flex items-center justify-between">
-                                        <label className="text-[9px] font-black text-white/20 uppercase tracking-[0.25em]">{getTranslation(config, 'widgets.integration') || 'Module Integration'}</label>
-                                        <div className="h-px flex-1 bg-white/5 mx-3" />
-                                    </div>
-                                    <div className="flex flex-wrap gap-1.5 mt-2">
-                                        {config.workspaces.map((ws, wsIndex) => {
-                                            const isInside = appCommandsByWorkspace[wsIndex]?.has(widget.command) ?? false;
-                                            return (
-                                                <motion.button
-                                                    key={ws.id}
-                                                    whileTap={{ scale: 0.95 }}
-                                                    onClick={() => {
-                                                        const newWorkspaces = [...config.workspaces];
-                                                        if (isInside) {
-                                                            newWorkspaces[wsIndex].apps = newWorkspaces[wsIndex].apps.filter(a => a.command !== widget.command);
-                                                        } else {
-                                                            const newWidgetApp: AppItem = {
-                                                                id: crypto.randomUUID(),
-                                                                type: 'app',
-                                                                label: widget.defaultLabel,
-                                                                iconName: widget.iconName,
-                                                                iconSource: 'lucide',
-                                                                command: widget.command,
-                                                                description: widget.description
-                                                            };
-                                                            newWorkspaces[wsIndex].apps.push(newWidgetApp);
-                                                        }
-                                                        setConfig({ ...config, workspaces: newWorkspaces });
-                                                    }}
-                                                    className={`px-3 py-2 rounded-lg text-[9px] font-bold transition-all border duration-200 ${isInside
-                                                        ? 'bg-white text-black border-white'
-                                                        : 'bg-white/5 text-white/30 border-white/5 hover:border-white/20 hover:text-white'
-                                                        }`}
-                                                    title={`${getTranslation(config, 'action.toggle') || 'Toggle'} for ${ws.name}`}
-                                                >
-                                                    {ws.name}
-                                                </motion.button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                                <div className="absolute -bottom-8 -right-8 w-32 h-32 bg-white/[0.01] rounded-full blur-[40px] group-hover:bg-white/[0.03] transition-colors duration-700" />
-                            </motion.div>
-                        );
-                    })}
-                </div>
-            </div>
-        </motion.div>
-    );
-});
-
 const SETTINGS_RANGE =
     'h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/[0.06] accent-white';
 
@@ -1335,7 +1200,7 @@ const SettingsSegmentGroup = React.memo(
     ),
 );
 
-const CENTER_BUTTON_MODES = ['app', 'widget', 'command', 'none', 'cancel'] as const;
+const CENTER_BUTTON_MODES = ['app', 'command', 'none', 'cancel'] as const;
 
 const VisualsTab = React.memo(({ config, setConfig }: { config: UIConfig; setConfig: (c: any) => void }) => {
     const t = (key: string) => getTranslation(config, key);
@@ -2469,7 +2334,7 @@ const ShortcutRecorderField: React.FC<{
     );
 };
 
-type SettingsTab = 'apps' | 'zenith_apps' | 'workspaces' | 'interface' | 'visuals' | 'widgets' | 'gamemode' | 'user' | 'dashboard';
+type SettingsTab = 'apps' | 'workspaces' | 'interface' | 'visuals' | 'widgets' | 'gamemode' | 'user' | 'dashboard';
 
 const InterfaceTab = React.memo((props: {
     config: UIConfig,
@@ -2644,31 +2509,6 @@ const InterfaceTab = React.memo((props: {
                                             {t('action.select_app')}
                                         </button>
                                     </div>
-                                </motion.div>
-                            ) : null}
-
-                            {config.centerButton.type === 'widget' ? (
-                                <motion.div
-                                    key="center-widget"
-                                    initial={{ opacity: 0, height: 0 }}
-                                    animate={{ opacity: 1, height: 'auto' }}
-                                    exit={{ opacity: 0, height: 0 }}
-                                    className="overflow-hidden"
-                                >
-                                    <select
-                                        value={AVAILABLE_WIDGETS.find((w) => w.command === config.centerButton.target)?.id || ''}
-                                        onChange={(e) => handleCenterTargetChange(e.target.value, 'widget')}
-                                        className="w-full cursor-pointer rounded-xl border border-white/[0.08] bg-black/20 p-3 text-sm text-white outline-none transition-colors hover:bg-white/[0.04] focus:border-white/20"
-                                    >
-                                        <option value="" disabled className="bg-[#111] text-white/50">
-                                            {t('interface.select_module')}
-                                        </option>
-                                        {AVAILABLE_WIDGETS.map((w) => (
-                                            <option key={w.id} value={w.id} className="bg-[#111] text-white">
-                                                {w.name}
-                                            </option>
-                                        ))}
-                                    </select>
                                 </motion.div>
                             ) : null}
 
@@ -3116,6 +2956,21 @@ const GameModeTab = React.memo(({ config, setConfig }: { config: UIConfig, setCo
                                         title={t('gamemode.process_list')}
                                         description={t('gamemode.block_list_hint_list_only')}
                                     >
+                                        <SettingsToggleRow
+                                            label={t('gamemode.auto_detect_games')}
+                                            description={t('gamemode.auto_detect_games_desc')}
+                                            enabled={config.gameMode?.autoDetectGames ?? false}
+                                            onToggle={() =>
+                                                setConfig({
+                                                    ...config,
+                                                    gameMode: {
+                                                        ...config.gameMode,
+                                                        autoDetectGames: !(config.gameMode?.autoDetectGames ?? false),
+                                                    },
+                                                })
+                                            }
+                                        />
+
                                         <div className="flex min-h-[2rem] flex-wrap gap-2">
                                             {blockedRows.length === 0 ? (
                                                 <span className="py-0.5 text-[12px] text-white/38">
@@ -3236,7 +3091,7 @@ const UserTab = React.memo(({
                             <div className="min-w-0 flex-1 text-center sm:text-left">
                                 <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
                                     <h4 className="text-lg font-semibold tracking-tight text-white/95">
-                                        {user?.name || 'Zenith User'}
+                                        {user?.name || 'Rovyl User'}
                                     </h4>
                                     {user?.isAdmin ? (
                                         <span className="rounded-md border border-red-500/20 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-400">
@@ -3245,7 +3100,7 @@ const UserTab = React.memo(({
                                     ) : null}
                                 </div>
                                 <p className="mt-1 truncate text-[13px] text-white/42">
-                                    {user?.email || 'unlinked_identity@zenith.os'}
+                                    {user?.email || 'unlinked_identity@rovyl.app'}
                                 </p>
                             </div>
                         </div>
@@ -3718,7 +3573,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         try {
             const result = await window.electron.importConfig();
             if (result.success) {
-                setStatus({ type: 'success', message: getTranslation(config, 'user.import_success') || 'Backup imported successfully. Zenith will relaunch...' });
+                setStatus({ type: 'success', message: getTranslation(config, 'user.import_success') || 'Backup imported successfully. Rovyl will relaunch...' });
             } else if (result.error) {
                 setStatus({ type: 'error', message: result.error });
             }
@@ -3789,7 +3644,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
             // Ctrl + [1-6] for tabs
             if (e.ctrlKey && !e.shiftKey && !e.altKey) {
-                const tabs: SettingsTab[] = ['workspaces', 'zenith_apps', 'interface', 'visuals', 'widgets', 'gamemode'];
+                const tabs: SettingsTab[] = ['workspaces', 'interface', 'visuals', 'widgets', 'gamemode'];
                 const tabIndex = parseInt(e.key) - 1;
                 if (tabIndex >= 0 && tabIndex < tabs.length) {
                     e.preventDefault();
@@ -4271,10 +4126,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         setFolderPath(newPath);
     };
 
-    const handleCenterTypeChange = (type: 'app' | 'widget' | 'command' | 'none' | 'cancel') => {
+    const handleCenterTypeChange = (type: 'app' | 'command' | 'none' | 'cancel') => {
         const defaults = {
             app: { target: '', label: 'APP', iconName: 'Box' },
-            widget: { target: '', label: 'WIDGET', iconName: 'AppWindow' },
             command: { target: '', label: 'TERMINAL', iconName: 'Terminal' },
             none: { target: '', label: '', iconName: 'Circle' },
             cancel: { target: '', label: 'FECHAR', iconName: 'X' }
@@ -4282,13 +4136,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         setConfig(prev => ({ ...prev, centerButton: { ...prev.centerButton, type, ...defaults[type as keyof typeof defaults] } }));
     };
 
-    const handleCenterTargetChange = (targetId: string, type: 'app' | 'widget') => {
+    const handleCenterTargetChange = (targetId: string, type: 'app') => {
         if (type === 'app') {
             const app = flatApps.find(a => a.id === targetId);
             if (app) setConfig(prev => ({ ...prev, centerButton: { ...prev.centerButton, target: app.id, label: app.label.toUpperCase().substring(0, 8), iconName: app.iconName } }));
-        } else if (type === 'widget') {
-            const widget = AVAILABLE_WIDGETS.find(w => w.id === targetId);
-            if (widget) setConfig(prev => ({ ...prev, centerButton: { ...prev.centerButton, target: widget.command, label: widget.defaultLabel.toUpperCase(), iconName: widget.iconName } }));
         }
     };
 
@@ -4767,10 +4618,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                 whileTap={{ scale: 0.98 }}
                                             >
                                                 <div className="w-8 h-8 bg-white text-black rounded-xl flex items-center justify-center shadow-lg group-hover/logo:shadow-white/10 transition-shadow">
-                                                    <ZenithLogo size={18} />
+                                                    <RovylLogo size={18} />
                                                 </div>
                                                 <div className="flex flex-col">
-                                                    <h2 className="text-[12px] font-bold text-white tracking-[0.1em] uppercase group-hover/logo:text-white transition-colors">Zenith</h2>
+                                                    <h2 className="text-[12px] font-bold text-white tracking-[0.1em] uppercase group-hover/logo:text-white transition-colors">Rovyl</h2>
                                                     <span className="text-[8px] text-white/30 font-black tracking-widest uppercase group-hover/logo:text-white/50 transition-colors">Kernel Settings</span>
                                                 </div>
                                             </motion.div>
@@ -4787,7 +4638,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                 whileHover={{ scale: 1.05 }}
                                                 whileTap={{ scale: 0.95 }}
                                             >
-                                                <ZenithLogo size={20} />
+                                                <RovylLogo size={20} />
                                             </motion.div>
                                         </Tooltip>
                                     )}
@@ -4839,7 +4690,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             {!isCompact && <SectionHeader label={getTranslation(config, 'sidebar.core')} isExpanded={isSidebarExpanded} />}
 
                             <NavButton tab="workspaces" label={getTranslation(config, 'sidebar.workspaces')} icon={LayoutGrid} isSidebarExpanded={isCompact ? false : isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} isCompact={isCompact} />
-                            <NavButton tab="zenith_apps" label={getTranslation(config, 'sidebar.zenith_widgets')} icon={AppWindow} isSidebarExpanded={isCompact ? false : isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} isCompact={isCompact} />
 
                             {!isCompact && <SectionHeader label={getTranslation(config, 'sidebar.personalization')} isExpanded={isSidebarExpanded} />}
                             <NavButton tab="interface" label={getTranslation(config, 'sidebar.interface')} icon={Settings2} isSidebarExpanded={isCompact ? false : isSidebarExpanded} activeTab={activeTab} setActiveTab={setActiveTab} isCompact={isCompact} />
@@ -5012,7 +4862,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 />
                             ) : (
                                 <>
-                                    {activeTab === 'zenith_apps' && <WidgetsTab key="widgets" config={config} setConfig={setConfig} />}
                                     {activeTab === 'visuals' && <VisualsTab key="visuals" config={config} setConfig={setConfig} />}
                                     {activeTab === 'workspaces' && (
                                         <WorkspacesTab

@@ -5,7 +5,7 @@ import {
     Crown, LogIn, Book, X, User, CreditCard, HelpCircle, CheckCircle2,
     MapPin, ImagePlus,
 } from 'lucide-react';
-import { ZenithLogo } from './ZenithLogo';
+import { RovylLogo } from './RovylLogo';
 import { UIConfig, SubscriptionTier, UserProfile } from '../types';
 import { getTranslation } from '../translations';
 import {
@@ -156,10 +156,10 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                     <div className="p-6 sm:p-10 pb-8 flex flex-col items-center w-full">
                                 {/* Logo */}
                                 <div className="w-16 h-16 sm:w-20 sm:h-20 bg-black rounded-2xl flex items-center justify-center mb-6 shadow-2xl overflow-hidden border border-white/10">
-                                    <ZenithLogo size={70} />
+                                    <RovylLogo size={70} />
                                 </div>
                                 {/* Title */}
-                                <h1 className="text-3xl sm:text-4xl font-light tracking-[0.25em] text-white mb-2 pl-2">ZENITH</h1>
+                                <h1 className="text-3xl sm:text-4xl font-light tracking-[0.25em] text-white mb-2 pl-2">ROVYL</h1>
                                 {/* Version Badge */}
                                 <div className="flex items-center gap-2 bg-white/5 border border-white/5 rounded-full px-3 py-1 mb-6">
                                     <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
