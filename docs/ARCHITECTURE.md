@@ -173,7 +173,7 @@ npm run dist -- --publish always
 Always go through `scripts/run-electron-builder.mjs` — which is what `npm run dist` does —
 rather than calling `electron-builder` directly. The runner picks the output directory, and
 `ZENITH_BUILD_OUTPUT` overrides it. That override is the escape hatch for a real and
-recurring failure: Windows security software opens `build-outwin-unpackedesourcesapp.asar`
+recurring failure: Windows security software opens `build-out/win-unpacked/resources/app.asar`
 to inspect it and does not always let go, and the next packaging run dies on
 `EnsureEmptyDir` because it cannot delete a file nothing of yours is holding. Build
 somewhere else and the run completes; the stale file disappears on the next reboot.
