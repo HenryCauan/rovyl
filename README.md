@@ -151,7 +151,7 @@ window-handshake invariants. If it fails, the handshake was broken, not the test
 
 - **Microsoft Store** — [Rovyl](https://apps.microsoft.com/detail/9N03SVPMXSV1)
 - **Website and docs** — [rovyl-red.vercel.app](https://rovyl-red.vercel.app)
-- **Releases and issues** — [HenryCauan/rovylapp](https://github.com/HenryCauan/rovylapp)
+- **Releases** — [github.com/HenryCauan/rovyl/releases](https://github.com/HenryCauan/rovyl/releases)
 - **Privacy policy** — [rovyl-red.vercel.app/privacy](https://rovyl-red.vercel.app/privacy)
 
 ## License

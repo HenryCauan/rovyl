@@ -131,7 +131,7 @@ the Store forbids one, and a submission with `autoInstallOnAppQuit` active fails
 certification — and skips the license gate, because the Store collected payment before it
 handed over the package.
 
-The direct build keeps both: `electron-updater` against the `rovylapp` releases, and a
+The direct build keeps both: `electron-updater` against this repository's releases, and a
 license key. There is no native update dialog — the main process emits `update-state`, the
 wheel shows a badge on the hub, and Settings → Advanced offers the restart.
 
@@ -167,13 +167,13 @@ period, is the fix.
 
 ```bash
 npm run build
-$env:GH_TOKEN = "<token with contents:write on rovylapp>"
+$env:GH_TOKEN = "<token with contents:write on this repository>"
 npx electron-builder --win --publish always
 ```
 
-`build.publish` in `package.json` points at `HenryCauan/rovylapp`. That repository must be
-public and have at least one commit — GitHub refuses to create a release on an empty
-repository, and the updater needs anonymous read access.
+`build.publish` in `package.json` points at this repository, so the source and the builds
+made from it live in one place. It must be public: the updater reads `latest.yml` from the
+release assets anonymously.
 
 The Store package is built with `npm run dist:store` and uploaded manually in Partner
 Center. `build.appx` carries the identity values issued by the Store; a fork will need its

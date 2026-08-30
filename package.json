@@ -76,7 +76,7 @@
     "publish": {
       "provider": "github",
       "owner": "HenryCauan",
-      "repo": "rovylapp",
+      "repo": "rovyl",
       "releaseType": "release"
     },
     "afterPack": "./scripts/after-pack-win-icon.cjs",
