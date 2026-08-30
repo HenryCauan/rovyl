@@ -5,6 +5,23 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.send("execute-command", command, commandType, options),
   hideWindow: () => ipcRenderer.send("hide-window"),
   showWindow: () => ipcRenderer.send("show-window"),
+  /** Superfícies com campo de texto (gate da licença) precisam do HWND em foreground para receber teclas. */
+  requestKeyboardFocus: () => ipcRenderer.send("request-keyboard-focus"),
+  getAppVersion: () => ipcRenderer.invoke("get-app-version"),
+  /** "store" quando a app corre a partir do pacote MSIX — as linhas de atualização somem. */
+  getBuildChannel: () => ipcRenderer.invoke("get-build-channel"),
+  getUpdateState: () => ipcRenderer.invoke("get-update-state"),
+  checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),
+  installUpdateNow: () => ipcRenderer.send("install-update-now"),
+  /** Estado da atualização automática — alimenta o selo no hub do radial. */
+  onUpdateState: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("update-state", listener);
+    return () => ipcRenderer.removeListener("update-state", listener);
+  },
+  /** Distingue arranque com o Windows de abertura manual — ver o adiamento da varredura. */
+  wasOpenedAtLogin: () => ipcRenderer.invoke("was-opened-at-login"),
+  appSupportsRecents: (appName, appCommand) => ipcRenderer.invoke("app-supports-recents", appName, appCommand),
   onOpenMenu: (callback) => {
     const listener = (event, data) => callback(data);
     ipcRenderer.on("open-menu", listener);
@@ -18,6 +35,15 @@ contextBridge.exposeInMainWorld("electron", {
   },
   notifyRadialPrepPaintDone: () =>
     ipcRenderer.send("radial-prep-paint-done"),
+  /** Confirma que o DOM do radial já atravessou um paint antes de o main revelar o HWND. */
+  notifyRadialOpenPaintDone: (paintToken) =>
+    ipcRenderer.send("radial-open-paint-done", paintToken),
+  /** Main revelou o HWND já pintado; só agora a animação visual pode sair do frame transparente. */
+  onRadialNativeRevealed: (callback) => {
+    const listener = (_event, paintToken) => callback(paintToken);
+    ipcRenderer.on("radial-native-revealed", listener);
+    return () => ipcRenderer.removeListener("radial-native-revealed", listener);
+  },
   onOpenDashboard: (callback) => {
     const listener = (event) => callback();
     ipcRenderer.on("open-dashboard", listener);
@@ -27,6 +53,12 @@ contextBridge.exposeInMainWorld("electron", {
     const listener = (event) => callback();
     ipcRenderer.on("mouse-up", listener);
     return () => ipcRenderer.removeListener("mouse-up", listener);
+  },
+  /** Posição do cursor sondada pelo main enquanto o botão do meio está premido (o Windows retém a captura noutra janela). */
+  onMmbCursor: (callback) => {
+    const listener = (_event, point) => callback(point);
+    ipcRenderer.on("mmb-cursor", listener);
+    return () => ipcRenderer.removeListener("mmb-cursor", listener);
   },
   onMmbRelease: (callback) => {
     const listener = (event) => callback();
@@ -65,10 +97,16 @@ contextBridge.exposeInMainWorld("electron", {
   warmRadialTransition: () => ipcRenderer.invoke("warm-radial-transition"),
   reapplySmallOverlay: () => ipcRenderer.invoke("reapply-small-overlay"),
   collapseIdleOverlay: () => ipcRenderer.invoke("collapse-idle-overlay"),
-  setOverlayHudActive: (active) =>
-    ipcRenderer.send("set-overlay-hud-active", !!active),
   setRadialViewport: (payload) =>
     ipcRenderer.send("set-radial-viewport", payload),
+  /** Estado geométrico crítico: o próximo atalho pode ocorrer no mesmo tick do fecho de Settings. */
+  setPanelSurfaceVisible: (visible) => {
+    try {
+      return !!ipcRenderer.sendSync("set-panel-surface-visible", !!visible);
+    } catch (_) {
+      return false;
+    }
+  },
   setWindowHitShape: (rects, opts) =>
     ipcRenderer.invoke("set-window-hit-shape", rects, opts || {}),
   setWindowOpacity: (opacity) => ipcRenderer.send("set-window-opacity", opacity),
@@ -76,6 +114,7 @@ contextBridge.exposeInMainWorld("electron", {
   getMainWindowContentBounds: () =>
     ipcRenderer.invoke("get-main-window-content-bounds"),
   setGameMode: (config) => ipcRenderer.send("set-game-mode", config),
+  prewarmApps: (commands) => ipcRenderer.send("prewarm-apps", commands),
   setLoginItemSettings: (settings) =>
     ipcRenderer.send("set-login-item-settings", settings),
   getFileIcon: (path) => ipcRenderer.invoke("get-file-icon", path),
@@ -99,10 +138,8 @@ contextBridge.exposeInMainWorld("electron", {
   selectImage: () => ipcRenderer.invoke("select-image"),
   removeManagedCustomIcon: (urlOrPath) =>
     ipcRenderer.invoke("remove-managed-custom-icon", urlOrPath),
-  selectPomodoroAudio: () => ipcRenderer.invoke("select-pomodoro-audio"),
-  removeManagedPomodoroAudio: (filePath) =>
-    ipcRenderer.invoke("remove-managed-pomodoro-audio", filePath),
-  getInstalledApps: () => ipcRenderer.invoke("get-installed-apps"),
+  getInstalledApps: (forceRefresh = false) =>
+    ipcRenderer.invoke("get-installed-apps", forceRefresh),
   getOnboardingApps: () => ipcRenderer.invoke("get-onboarding-apps"),
   getStartupApps: () => ipcRenderer.invoke("get-startup-apps"),
   onExecutionError: (callback) => {
@@ -166,6 +203,9 @@ contextBridge.exposeInMainWorld("electron", {
   setWorkspaceShortcutsState: (isOpen, workspaceSwitchMode) =>
     ipcRenderer.send("set-workspace-shortcuts", isOpen, workspaceSwitchMode),
   startGoogleAuth: () => ipcRenderer.send("start-google-auth"),
+  activateRovylLicense: (licenseKey) => ipcRenderer.invoke("activate-rovyl-license", licenseKey),
+  /** Liberta o lugar deste dispositivo no servidor de licenças. */
+  deactivateRovylLicense: () => ipcRenderer.invoke("deactivate-rovyl-license"),
   onGoogleAuthSuccess: (callback) => {
     const listener = (event, user) => callback(user);
     ipcRenderer.on("google-auth-success", listener);

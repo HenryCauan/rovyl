@@ -34,7 +34,7 @@ export const IconPicker: React.FC<IconPickerProps> = ({
 }) => {
   const compact = variant === 'compact';
   const [searchTerm, setSearchTerm] = useState('');
-  const [visibleCount, setVisibleCount] = useState(compact ? 80 : 64);
+  const [visibleCount, setVisibleCount] = useState(compact ? 140 : 64);
 
   const searchTokens = React.useMemo(
     () => searchTerm.toLowerCase().trim().split(/\s+/).filter(Boolean),
@@ -72,21 +72,34 @@ export const IconPicker: React.FC<IconPickerProps> = ({
     [filteredIcons, visibleCount]);
 
   React.useEffect(() => {
-    setVisibleCount(compact ? 80 : 64);
+    setVisibleCount(compact ? 140 : 64);
   }, [searchTerm, compact]);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, clientHeight, scrollHeight } = e.currentTarget;
     if (scrollHeight - scrollTop - clientHeight < 100) {
-      const step = compact ? 80 : 64;
+      const step = compact ? 140 : 64;
       setVisibleCount(prev => Math.min(prev + step, filteredIcons.length));
     }
   };
 
-  const iconBtnSize = compact ? 18 : 24;
-  const gridClass = compact
-    ? 'grid grid-cols-8 sm:grid-cols-9 gap-1.5'
-    : 'grid grid-cols-6 gap-2';
+  const iconBtnSize = compact ? 16 : 19;
+  /**
+   * `grid-cols-N` + `aspect-square` amarra o TAMANHO da célula à largura do painel: num painel
+   * largo, 9 colunas davam quadrados de ~50px com um ícone de 18px no meio — muito ar, poucos
+   * ícones à vista. Com `auto-fill` a célula tem tamanho fixo e é o NÚMERO de colunas que
+   * responde à largura, que é o que uma grelha de ícones quer.
+   */
+  /**
+   * As duas variantes passam a responder à largura pelo NÚMERO de colunas, e não pelo tamanho da
+   * célula. `grid-cols-6` amarrava seis colunas fixas: num modal largo davam quadrados de ~85px
+   * com um glifo perdido no meio — o mesmo defeito que o comentário acima já descrevia para a
+   * variante compacta, e que só tinha sido corrigido de um lado.
+   */
+  const gridClass = compact ? 'grid gap-1' : 'grid gap-1.5';
+  const gridStyle = compact
+    ? { gridTemplateColumns: 'repeat(auto-fill, minmax(30px, 1fr))', gridAutoRows: '30px' }
+    : { gridTemplateColumns: 'repeat(auto-fill, minmax(42px, 1fr))', gridAutoRows: '42px' };
 
   return (
     <div className={`flex flex-col ${compact ? 'gap-2' : 'gap-3 h-full'} ${className}`}>
@@ -115,7 +128,8 @@ export const IconPicker: React.FC<IconPickerProps> = ({
       </p>
 
       <div
-        className={`${gridClass} overflow-y-auto overflow-x-hidden pr-0.5 custom-scrollbar content-start ${compact ? 'min-h-0 max-h-[168px] pb-1' : 'flex-1 pb-2'}`}
+        className={`${gridClass} overflow-y-auto overflow-x-hidden pr-0.5 custom-scrollbar content-start ${compact ? 'min-h-0 max-h-[232px] pb-1' : 'flex-1 pb-2'}`}
+        style={gridStyle}
         onScroll={handleScroll}
       >
         {visibleIcons.map(iconName => {
@@ -132,12 +146,12 @@ export const IconPicker: React.FC<IconPickerProps> = ({
               }}
               className={
                 compact
-                  ? `aspect-square rounded-md flex items-center justify-center transition-all duration-150 relative
+                  ? `rounded-md flex items-center justify-center transition-all duration-150 relative
                 ${isSelected
                     ? 'bg-white text-black ring-1 ring-inset ring-white/95 shadow-[0_0_0_1px_rgba(255,255,255,0.4)] z-10'
                     : 'bg-white/[0.04] text-white/40 border border-white/[0.06] hover:border-white/20 hover:bg-white/[0.08] hover:text-white/85 active:scale-[0.97]'
                   }`
-                  : `aspect-square rounded-lg flex items-center justify-center
+                  : `rounded-lg flex items-center justify-center
                 transition-all duration-200 relative
                 ${isSelected
                     ? 'bg-white text-black shadow-[0_0_16px_rgba(255,255,255,0.15)] scale-105'
@@ -152,7 +166,10 @@ export const IconPicker: React.FC<IconPickerProps> = ({
         })}
 
         {filteredIcons.length === 0 && (
-          <div className={compact ? 'col-span-8 sm:col-span-9 py-6 text-center' : 'col-span-6 py-10 text-center'}>
+          <div
+            className={compact ? 'py-6 text-center' : 'col-span-6 py-10 text-center'}
+            style={compact ? { gridColumn: '1 / -1' } : undefined}
+          >
             <p className="text-white/20 text-xs font-medium">
               {getTranslation(config, 'iconPicker.no_results')}
             </p>

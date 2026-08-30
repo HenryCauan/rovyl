@@ -1,38 +1,27 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { flushSync } from 'react-dom';
 import { RadialMenu } from './components/RadialMenu';
+import { LicenseGate } from './components/LicenseGate';
 import { Toast } from './components/Toast';
-import { SettingsModal } from './components/SettingsModal';
-import { NotesWidget } from './components/NotesWidget';
-import { AlarmWidget } from './components/AlarmWidget';
-import { StopwatchWidget } from './components/StopwatchWidget';
-import { PomodoroWidget } from './components/PomodoroWidget';
-import { WelcomeScreen } from './components/WelcomeScreen';
-import { usePomodoro } from './hooks/usePomodoro';
-import { Coordinates, AppItem, UIConfig, Note, NoteWorkspace, Alarm, UserProfile, Workspace, PomodoroMode } from './types';
+import { Coordinates, AppItem, UIConfig, UserProfile, Workspace } from './types';
 import {
-  DEFAULT_APPS,
   DEFAULT_UI_CONFIG,
   MINIMAL_MAIN_WORKSPACE_APPS,
+  stripInternalWidgetApps,
+  stripInternalWidgetsFromConfig,
   workspaceContainsBundledDemoApp,
 } from './defaults';
-import { MousePointer2, Settings, Minus, X, Maximize, Square, AlertTriangle } from 'lucide-react';
-import { startAlarmRingtone } from './alarmAudio';
-import { AlarmRingingOverlay } from './components/AlarmRingingOverlay';
-import { PomodoroCompleteOverlay } from './components/PomodoroCompleteOverlay';
-import { StartMenuResolvingOverlay } from './components/StartMenuResolvingOverlay';
+import { Minus, X, Maximize, Square, AlertTriangle, ArrowLeft, ArrowRight, PanelLeftClose } from 'lucide-react';
 import type { Language } from './translations';
-import {
-  loadPomodoroUiPrefs,
-  playPomodoroSegmentEnd,
-  resumePomodoroAudio,
-  shouldPlayPomodoroSounds,
-} from './pomodoroSounds';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useStopwatchHudSnapshot } from './stopwatchHudStore';
-import { compactTimerHudShouldShow } from './utils/compactTimerHudVisibility';
-import { CompactTimerHud } from './components/CompactTimerHud';
 import { isLikelyWebUrl, resolveWebsiteIconFields } from './siteFavicon';
+
+/** Settings is the largest UI surface; radial-only sessions never need to parse or retain it. */
+const PrecisionSettings = React.lazy(() =>
+  import('./components/PrecisionSettings').then((module) => ({
+    default: module.PrecisionSettings,
+  })),
+);
 
 const LS_MAIN_DISCOVERY_DONE = 'zenith_main_discovery_done';
 
@@ -48,41 +37,61 @@ function isWebShortcutItem(item: AppItem): boolean {
 /** Legacy first-run flag — used only to avoid double-running in odd edge cases; repair no longer skips on this alone. */
 const LS_ZENITH_INITIALIZED_LEGACY = 'zenith_initialized';
 
-/** Atrasar Get-StartApps/PowerShell no arranque — competir com o login do Windows satura disco/CPU e pode deixar o PC (e o Edge) lento. */
-const START_MENU_DISCOVERY_DEFER_MS = 20_000;
+/**
+ * Adiamento da varredura do Menu Iniciar.
+ *
+ * Arrancar com o Windows: 20 s. Competir com o login satura disco e CPU, e uma sondagem em
+ * PowerShell nesse momento deixa o sistema todo lento.
+ *
+ * Abertura manual: quase imediato. O mesmo adiamento aplicava-se aos dois casos, e o resultado
+ * era o utilizador a instalar, abrir, e encontrar a roda vazia durante vinte segundos — sem nada
+ * a acontecer nem nada a explicá-lo. Aberta à mão, a máquina está ociosa e não há o que evitar.
+ */
+const START_MENU_DISCOVERY_DEFER_LOGIN_MS = 20_000;
+const START_MENU_DISCOVERY_DEFER_MANUAL_MS = 600;
 
 type StartMenuDiscoveryRow = { Name?: string; Path?: string; Command?: string };
+
+/** Caixa em coordenadas de ecrã (ou de cliente, depois de remapeada) — usada pelo painel sob o radial. */
+type ScreenRect = { x: number; y: number; width: number; height: number };
 
 /** Builds Main workspace apps from `get-startup-apps` and appends internal Zenith shortcuts from defaults. */
 async function buildMainAppsFromStartMenuDiscovery(
   raw: StartMenuDiscoveryRow[],
 ): Promise<AppItem[]> {
   const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const;
-  const built = await Promise.all(
-    raw.map(async (app, idx) => {
-      const cmd = String(app.Command || app.Path || '').trim();
-      let iconUrl = '';
-      try {
-        if (window.electron?.getFileIcon && cmd) {
-          iconUrl = (await window.electron.getFileIcon(cmd)) || '';
+  const built: AppItem[] = [];
+  const DISCOVERY_ICON_BATCH = 4;
+  for (let offset = 0; offset < raw.length; offset += DISCOVERY_ICON_BATCH) {
+    const chunk = raw.slice(offset, offset + DISCOVERY_ICON_BATCH);
+    const chunkBuilt = await Promise.all(
+      chunk.map(async (app, chunkIndex) => {
+        const idx = offset + chunkIndex;
+        const cmd = String(app.Command || app.Path || '').trim();
+        let iconUrl = '';
+        try {
+          if (window.electron?.getFileIcon && cmd) {
+            iconUrl = (await window.electron.getFileIcon(cmd)) || '';
+          }
+        } catch {
+          /* ignore */
         }
-      } catch {
-        /* ignore */
-      }
-      return {
-        id: crypto.randomUUID(),
-        type: 'app' as const,
-        label: app.Name?.trim() || 'App',
-        iconName: '',
-        iconSource: 'native' as const,
-        customIconUrl: iconUrl,
-        command: cmd,
-        commandType: 'app' as const,
-        description: cmd ? `Menu Iniciar: ${cmd}` : '',
-        direction: directions[idx % 8],
-      };
-    }),
-  );
+        return {
+          id: crypto.randomUUID(),
+          type: 'app' as const,
+          label: app.Name?.trim() || 'App',
+          iconName: '',
+          iconSource: 'native' as const,
+          customIconUrl: iconUrl,
+          command: cmd,
+          commandType: 'app' as const,
+          description: cmd ? `Menu Iniciar: ${cmd}` : '',
+          direction: directions[idx % 8],
+        };
+      }),
+    );
+    built.push(...chunkBuilt);
+  }
   return [...built, ...MINIMAL_MAIN_WORKSPACE_APPS];
 }
 
@@ -131,18 +140,10 @@ function sanitizeFullPersistenceForDisk(d: {
   user: UserProfile | null;
   apps: AppItem[];
   config: UIConfig;
-  notes: Note[];
-  alarms: Alarm[];
-  noteWorkspaces: NoteWorkspace[];
-  activeNoteWorkspaceId: string;
 }): {
   user: UserProfile | null;
   apps: AppItem[];
   config: UIConfig;
-  notes: Note[];
-  alarms: Alarm[];
-  noteWorkspaces: NoteWorkspace[];
-  activeNoteWorkspaceId: string;
   /** Espelho na raiz do JSON — `normalizeFullPersistenceBlob` funde isto se `config.workspaces` vier vazio no disco. */
   workspaces: Workspace[];
 } | null {
@@ -175,35 +176,51 @@ function sanitizeFullPersistenceForDisk(d: {
 export default function App() {
   /* zenith-verify:radial-handshake-renderer — overlays/handshake radial; ver scripts/verify-radial-windowing.mjs */
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isLicenseGateOpen, setIsLicenseGateOpen] = useState(false);
+  /** Atualização descarregada e à espera de reinício — assinalada com um selo no hub do radial. */
+  const [updateReady, setUpdateReady] = useState(false);
+
+  useEffect(() => {
+    const off = window.electron?.onUpdateState?.((payload) => {
+      setUpdateReady(payload?.state === 'ready');
+    });
+    return () => { off?.(); };
+  }, []);
+
+  /** Pedido pendente para as definições abrirem no cartão da licença; o painel consome-o. */
+  const [licenseEditorRequested, setLicenseEditorRequested] = useState(false);
   /** Esconde dashboard/definições antes do `await applyWindowSize('fullscreen')` — sem isto, ao restaurar da bandeja aparece um frame da última UI. */
   const [radialOpenAwaitingFullscreen, setRadialOpenAwaitingFullscreen] = useState(false);
+  /**
+   * A cobertura da espera só pode ser opaca se havia painel opaco no ecrã para mascarar.
+   * Vinda da bandeja/ilha não há textura antiga, e o preto pintava os bounds antigos da
+   * janela — um retângulo preto a piscar no sítio do radial.
+   */
+  const [radialAwaitCoverOpaque, setRadialAwaitCoverOpaque] = useState(false);
+  /**
+   * Painel (Settings/Welcome) que continua no ecrã por baixo do radial.
+   * `…ScreenRect` é a verdade (coordenadas de ecrã, imunes ao resize da janela);
+   * `…ClientRect` é a mesma caixa nas coordenadas da janela já alargada, recalculada
+   * sempre que a geometria muda — tal como a âncora do radial.
+   */
+  const [panelOverlayScreenRect, setPanelOverlayScreenRect] = useState<ScreenRect | null>(null);
+  /** O painel fica no ecrã por baixo do radial (com ou sem reposicionamento). */
+  const [panelKeptUnderRadial, setPanelKeptUnderRadial] = useState(false);
+  const [panelOverlayClientRect, setPanelOverlayClientRect] = useState<ScreenRect | null>(null);
+  const panelOverlayScreenRectRef = useRef<ScreenRect | null>(null);
+  panelOverlayScreenRectRef.current = panelOverlayScreenRect;
   /** Um frame sólido antes de minimizar — evita o Windows guardar bitmap do dashboard e flash ao reabrir o radial. */
   const [minimizeNeutralCoverActive, setMinimizeNeutralCoverActive] = useState(false);
   /** Main: `prepare-radial-show` — pintar antes de `show()` para não expor textura antiga (minimizado/dashboard). */
   const [radialPreShowSolidCover, setRadialPreShowSolidCover] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(true);
+  /** Two-paint transparent close phase so DWM never caches Settings as the idle HWND texture. */
+  const [panelNeutralizingClose, setPanelNeutralizingClose] = useState(false);
   const isDashboardOpenRef = useRef(false);
   const isSettingsOpenRef = useRef(false);
 
   // Standalone Settings Window Mode - REMOVED
   // const isSettingsWindow = window.location.hash === '#settings' || window.location.search.includes('window=settings');
-
-  // Widget States
-  const [isNotesOpen, setIsNotesOpen] = useState(false);
-  const [isAlarmWidgetOpen, setIsAlarmWidgetOpen] = useState(false);
-  const [isStopwatchOpen, setIsStopwatchOpen] = useState(false);
-  const [isPomodoroOpen, setIsPomodoroOpen] = useState(false);
-  const [pomodoroEndOverlay, setPomodoroEndOverlay] = useState<{
-    endedMode: PomodoroMode;
-    isPreview: boolean;
-  } | null>(null);
-
-  const onPomodoroSegmentComplete = useCallback((info: { endedMode: PomodoroMode }) => {
-    setPomodoroEndOverlay({ endedMode: info.endedMode, isPreview: false });
-  }, []);
-
-  const pomodoro = usePomodoro({ onSegmentComplete: onPomodoroSegmentComplete });
-  const stopwatchHudSnap = useStopwatchHudSnapshot();
 
   // Dashboard/Welcome Screen State
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
@@ -213,8 +230,8 @@ export default function App() {
    */
   const [panelChromeDismissedForIsland, setPanelChromeDismissedForIsland] = useState(false);
   const panelSurfaceOpen = useMemo(
-    () => (isDashboardOpen || isSettingsOpen) && !panelChromeDismissedForIsland,
-    [isDashboardOpen, isSettingsOpen, panelChromeDismissedForIsland],
+    () => (isDashboardOpen || isSettingsOpen || panelNeutralizingClose) && !panelChromeDismissedForIsland,
+    [isDashboardOpen, isSettingsOpen, panelNeutralizingClose, panelChromeDismissedForIsland],
   );
 
   useEffect(() => {
@@ -234,11 +251,14 @@ export default function App() {
   const hydratedFromPersistenceRef = useRef(false);
   /** Desktop welcome / primeira sessão: corre só depois `isLoaded` (IPC não pode correr antes da hidratação). */
   const welcomeBootstrapDoneRef = useRef(false);
-  /** Full-screen notice while Windows Start menu is scanned for Main workspace (IPC can take several seconds). */
-  const [startMenuResolving, setStartMenuResolving] = useState<{
-    open: boolean;
-    lang: Language;
-  }>({ open: false, lang: 'pt' });
+  /**
+   * A varredura do Menu Iniciar corre em silêncio.
+   *
+   * Havia aqui um ecrã de espera a ocupar a janela inteira na primeira abertura. Uma app que
+   * vive na bandeja e se invoca por gesto não deve começar por prender o utilizador num aviso
+   * de progresso — sobretudo um que ele não pediu e do qual não pode sair. Os atalhos aparecem
+   * quando aparecerem; a roda já mostra o seu próprio indicador por ícone.
+   */
   /**
    * Após a descoberta do Menu Iniciar numa sessão sem dados anteriores (reset / primeiro arranque),
    * abrir o dashboard automaticamente para que o utilizador veja os seus apps.
@@ -247,22 +267,46 @@ export default function App() {
 
   // User / Auth State (Defaults to null)
   const [user, setUser] = useState<UserProfile | null>(null);
+  const userRef = useRef<UserProfile | null>(null);
+  userRef.current = user;
 
-  // Alarm Ringing State
-  const [alarmRinging, setAlarmRinging] = useState<{ alarm: Alarm; isPreview: boolean } | null>(null);
-  const [snoozeWake, setSnoozeWake] = useState<{ alarm: Alarm; at: number } | null>(null);
-  const stopAlarmAudioRef = useRef<(() => void) | null>(null);
+  /**
+   * Canal da Store. A Microsoft cobra antes de deixar instalar o pacote e so entrega o MSIX a
+   * quem comprou, portanto pedir chave de licenca a seguir seria cobrar duas vezes.
+   *
+   * Isto e deliberadamente um sinalizador DERIVADO e nao um `user` sintetico: o `user` vai para
+   * disco em `sanitizeFullPersistenceForDisk`, e gravar `isPremium: true` la dentro faria com que
+   * copiar o ficheiro de persistencia para uma instalacao do canal direto a desbloqueasse.
+   */
+  const [isStoreChannel, setIsStoreChannel] = useState(false);
+  const isStoreChannelRef = useRef(false);
+  isStoreChannelRef.current = isStoreChannel;
+
+  useEffect(() => {
+    let cancelled = false;
+    void window.electron?.getBuildChannel?.().then((channel) => {
+      if (!cancelled) setIsStoreChannel(channel === 'store');
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
 
   const [menuPosition, setMenuPosition] = useState<Coordinates>({ x: 0, y: 0 });
-  /** Screen-space anchor for the radial center — keeps client coords correct after fullscreen + multi-monitor. */
-  const menuAnchorScreenRef = useRef<{ x: number; y: number } | null>(null);
+  /** Remonta a árvore visual a cada abertura; nenhuma geometria/transition da sessão anterior sobrevive. */
+  const [radialMountKey, setRadialMountKey] = useState(0);
+  /** Token preparado ainda oculto e token cuja janela nativa já foi revelada. */
+  const [radialPendingPaintToken, setRadialPendingPaintToken] = useState<number | null>(null);
+  const [radialNativeRevealToken, setRadialNativeRevealToken] = useState<number | null>(null);
+  const [radialClientSize, setRadialClientSize] = useState(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }));
+  /** Centro absoluto escolhido pelo main; é centro do monitor, nunca posição do cursor. */
+  const radialCenterScreenRef = useRef<Coordinates | null>(null);
+  /** Bounds enviados pelo main são autoritativos enquanto window.screenX/Y ainda refletem Settings. */
+  const radialClientPositionHintRef = useRef<Coordinates | null>(null);
+  const radialWindowOriginHintRef = useRef<Coordinates | null>(null);
   const [triggerSource, setTriggerSource] = useState<'mmb' | 'mmb-click' | 'shortcut'>('shortcut');
-  /** Evita a ilha compacta aparecer no mesmo instante em que o radial ainda desvanece (flash do relógio do radial). */
-  const [islandHoldAfterRadialClose, setIslandHoldAfterRadialClose] = useState(false);
-  /** Evita repetir reapply quando já estamos em ilha de repouso; repõe ao sair do estado. */
-  const prevIdleIslandHudRef = useRef(false);
   const radialTransitionWarmedRef = useRef(false);
-  const prevIsMenuOpenRef = useRef(false);
   const [lastLaunched, setLastLaunched] = useState<AppItem | null>(null);
   const [executionError, setExecutionError] = useState<string | null>(null);
   const [isDesktopMode, setIsDesktopMode] = useState(false);
@@ -287,31 +331,18 @@ export default function App() {
 
   /** Declared before handlers that resize the window — keeps IPC + React in sync. */
   const lastWindowState = useRef<'fullscreen' | 'windowed' | 'small' | null>(null);
-  /** Após restaurar da minimização (dashboard→ilha), remonta o HUD para recalcular hit-shape e evitar o “salto” visual. */
-  const [islandHudRemountKey, setIslandHudRemountKey] = useState(0);
-  const pendingMinimizeIslandRemountRef = useRef(false);
-  /**
-   * Um commit antes de `setWindowSize('windowed')`: esconde a ilha no mesmo frame em que o painel abre no React,
-   * para o DWM não redesenhar o relógio a “voar” para o rect da janela (o HWND muda antes do paint sem isto).
-   */
-  const [hideIslandForWindowedPanelTransition, setHideIslandForWindowedPanelTransition] = useState(false);
   /**
    * Cobertura opaca durante small→windowed: mascara artefactos do DWM se o main pintar antes de `applyWindowSize`.
    * Liga no mesmo commit que o painel fica visível; desliga no microtask após resize + invalidate.
    */
   const [panelResizeSolidCover, setPanelResizeSolidCover] = useState(false);
 
-  /**
-   * Reforço: no edge `panelSurfaceOpen` false→true, esconder a ilha no layout **antes** de `setWindowSize('windowed')`
-   * (evita 1 frame em que o HWND já é o rect do dashboard mas o HUD ainda medido no viewport antigo).
-   * Caminhos IPC já fazem `setHideIslandForWindowedPanelTransition(true)` em flushSync; isto cobre qualquer outro.
-   */
+  /** No edge `panelSurfaceOpen` false→true, cobrir antes de `setWindowSize('windowed')` (frame errado do DWM). */
   const prevPanelSurfaceOpenRef = useRef(panelSurfaceOpen);
   useLayoutEffect(() => {
     const prev = prevPanelSurfaceOpenRef.current;
     prevPanelSurfaceOpenRef.current = panelSurfaceOpen;
     if (!prev && panelSurfaceOpen && isDesktopMode) {
-      setHideIslandForWindowedPanelTransition(true);
       setPanelResizeSolidCover(true);
     }
   }, [panelSurfaceOpen, isDesktopMode]);
@@ -322,6 +353,8 @@ export default function App() {
     if (!window.electron?.setWindowSize && !window.electron?.applyWindowSize) return;
     if (!panelSurfaceOpen) return;
     if (radialOpenAwaitingFullscreen) return;
+    /** Radial aberto por cima do painel: a janela é o overlay — repor `windowed` agora colapsava-o. */
+    if (isMenuOpen) return;
 
     let cancelled = false;
 
@@ -346,7 +379,6 @@ export default function App() {
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             if (!cancelled) {
-              setHideIslandForWindowedPanelTransition(false);
               setPanelResizeSolidCover(false);
             }
           });
@@ -357,11 +389,10 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [isDesktopMode, panelSurfaceOpen, radialOpenAwaitingFullscreen, isSettingsOpen]);
+  }, [isDesktopMode, panelSurfaceOpen, radialOpenAwaitingFullscreen, isSettingsOpen, isMenuOpen]);
 
   useEffect(() => {
     if (!panelSurfaceOpen) {
-      setHideIslandForWindowedPanelTransition(false);
       setPanelResizeSolidCover(false);
     }
   }, [panelSurfaceOpen]);
@@ -426,34 +457,16 @@ export default function App() {
   targetWorkspaceIndexRef.current = config.activeWorkspaceIndex;
   const switchDebounceTimer = useRef<NodeJS.Timeout | null>(null);
 
-  /** Notas / alarmes / pomodoro / stopwatch em modo painel — não combinar com ilha de repouso (camadas z-index). */
-  const anyFullscreenWidgetOpen =
-    isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen;
-
-  /** Faixas compactas (Pomodoro / Cronómetro) — mantém overlay visível em modo desktop quando aplicável. */
-  const timerHudActive = compactTimerHudShouldShow(
-    isPomodoroOpen,
-    isStopwatchOpen,
-    pomodoro.state,
-    pomodoro.config,
-    stopwatchHudSnap,
-    isDesktopMode,
-    panelSurfaceOpen,
-  );
-
   /**
-   * Sem HUD (nem faixa de Pomodoro/Cronómetro, nem radial, nem painel) não há nada para desenhar:
-   * o HWND é encolhido ao canto. Deixá-lo em `small` a ecrã inteiro mantinha uma janela layered topmost
-   * composta pelo DWM a receber todo o hit-testing do rato — cursor e sistema ficavam lentos.
-   * O `updateWindowSize` reexpande ao abrir o radial / um painel.
+   * Sem radial nem painel não há nada para desenhar: o HWND é encolhido ao canto. Deixá-lo em `small`
+   * a ecrã inteiro mantinha uma janela layered topmost composta pelo DWM a receber todo o hit-testing
+   * do rato — cursor e sistema ficavam lentos. O `updateWindowSize` reexpande ao abrir o radial / painel.
    */
   const overlayIdle =
     isDesktopMode &&
-    !timerHudActive &&
     !panelSurfaceOpen &&
     !isMenuOpen &&
-    !radialOpenAwaitingFullscreen &&
-    !anyFullscreenWidgetOpen;
+    !radialOpenAwaitingFullscreen;
 
   /**
    * Dimensão da janela do radial. Rótulos ficam para fora dos ícones; a margem de gesto é o que garante
@@ -471,17 +484,20 @@ export default function App() {
     );
     window.electron.setRadialViewport({
       size,
-      fixed: config.fixedPosition !== false,
+      fixed: true,
     });
-  }, [config.menuRadius, config.iconSize, config.fixedPosition]);
+  }, [config.menuRadius, config.iconSize]);
 
   /**
-   * O main precisa de saber isto de forma persistente: um encolhimento pontual não chega, porque
-   * mostrar da bandeja / `reapplySmallOverlay` / segunda instância repunham o rect do monitor inteiro.
+   * O main não consegue inferir isto: `hide-window` esconde a janela sem mudar de modo, por isso
+   * `windowed` sobrevive a ela e o radial seguinte abria "por cima de um painel" que não estava
+   * no ecrã — trazendo as definições atrás. Quem sabe é o renderer, e diz.
    */
   useLayoutEffect(() => {
-    window.electron?.setOverlayHudActive?.(!overlayIdle);
-  }, [overlayIdle]);
+    window.electron?.setPanelSurfaceVisible?.(
+      isDesktopMode && panelSurfaceOpen && !panelNeutralizingClose,
+    );
+  }, [isDesktopMode, panelSurfaceOpen, panelNeutralizingClose]);
 
   useLayoutEffect(() => {
     if (!overlayIdle || !window.electron?.collapseIdleOverlay) return;
@@ -493,15 +509,15 @@ export default function App() {
   }, [overlayIdle]);
 
   /**
-   * Pré-aquece small↔fullscreen enquanto a ilha está visível — a 1.ª abertura do radial
-   * (HWND encolhido pelo hit-shape) deixa de pagar o custo frio do DWM.
+   * Pré-aquece small↔fullscreen enquanto a janela está em repouso — a 1.ª abertura do radial
+   * (HWND encolhido) deixa de pagar o custo frio do DWM.
    */
   useEffect(() => {
     if (!isDesktopMode || !electronSmallOverlayReady || !window.electron?.warmRadialTransition) {
       return;
     }
     if (radialTransitionWarmedRef.current || isMenuOpen || radialOpenAwaitingFullscreen) return;
-    if (!timerHudActive || panelSurfaceOpen) return;
+    if (panelSurfaceOpen) return;
 
     let cancelled = false;
     const t = window.setTimeout(() => {
@@ -511,8 +527,6 @@ export default function App() {
           if (cancelled) return;
           radialTransitionWarmedRef.current = true;
           await window.electron?.reapplySmallOverlay?.();
-          if (cancelled) return;
-          setIslandHudRemountKey((k) => k + 1);
         } catch {
           /* ignore */
         }
@@ -526,61 +540,22 @@ export default function App() {
   }, [
     isDesktopMode,
     electronSmallOverlayReady,
-    timerHudActive,
     panelSurfaceOpen,
     isMenuOpen,
     radialOpenAwaitingFullscreen,
   ]);
-
-  useEffect(() => {
-    const wasOpen = prevIsMenuOpenRef.current;
-    if (wasOpen && !isMenuOpen) {
-      setIslandHoldAfterRadialClose(true);
-      /** Alinhar à transição da ilha (~200ms) + 1 frame — evita aparecer antes do overlay `small` estabilizar. */
-      const t = window.setTimeout(() => setIslandHoldAfterRadialClose(false), 380);
-      prevIsMenuOpenRef.current = false;
-      return () => clearTimeout(t);
-    }
-    prevIsMenuOpenRef.current = isMenuOpen;
-  }, [isMenuOpen]);
-
-  const [notes, setNotes] = useState<Note[]>([]);
-  const defaultNoteWorkspace: NoteWorkspace = { id: 'default', name: 'Geral' };
-  const [noteWorkspaces, setNoteWorkspaces] = useState<NoteWorkspace[]>([defaultNoteWorkspace]);
-  const [activeNoteWorkspaceId, setActiveNoteWorkspaceId] = useState('default');
-  const [alarms, setAlarms] = useState<Alarm[]>([]);
-
-  const alarmsRef = useRef<Alarm[]>(alarms);
-  const alarmRingingRef = useRef(alarmRinging);
-  const snoozeWakeRef = useRef(snoozeWake);
-  /** Evita disparos duplicados no mesmo minuto (e contorna throttling de timers em segundo plano). */
-  const lastScheduledAlarmSlotRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    alarmsRef.current = alarms;
-  }, [alarms]);
-  useEffect(() => {
-    alarmRingingRef.current = alarmRinging;
-  }, [alarmRinging]);
-  useEffect(() => {
-    snoozeWakeRef.current = snoozeWake;
-  }, [snoozeWake]);
 
   /** Latest snapshot for flush on pagehide / sync disk write (survives reboot). */
   const persistenceRef = useRef({
     user: null as UserProfile | null,
     apps: MINIMAL_MAIN_WORKSPACE_APPS,
     config: DEFAULT_UI_CONFIG,
-    notes: [] as Note[],
-    alarms: [] as Alarm[],
-    noteWorkspaces: [defaultNoteWorkspace] as NoteWorkspace[],
-    activeNoteWorkspaceId: 'default',
   });
   /** When load failed but disk still has a non-trivial config file — never overwrite with empty defaults. */
   const persistenceSaveBlockedRef = useRef(false);
   /**
    * Scan do Menu Iniciar foi agendado (defer longo) após strip do Main — bloqueia o auto-save aos 150ms que
-   * gravava só Notes no disco antes do scan terminar (reinício mostrava Main vazio).
+   * gravava um Main vazio no disco antes do scan terminar (reinício mostrava Main vazio).
    */
   const startMenuScanPersistenceHoldRef = useRef(false);
   /**
@@ -588,39 +563,28 @@ export default function App() {
    * não gravam. Guardamos o flush síncrono aqui e chamamo-lo sempre antes de `hideWindow()`.
    */
   const flushPersistenceToDiskRef = useRef<(() => void) | null>(null);
+  /** Prevents broken/missing shell targets from spawning PowerShell after every settings edit. */
+  const iconHealingAttemptedRef = useRef(new Set<string>());
+  /** Houve ícones que não resolveram nesta passagem — vale a pena repescar daqui a instantes. */
+  const healingHadFailuresRef = useRef(false);
+  /** Teto de repescagens: duas. Sem isto, um alvo permanentemente inválido girava para sempre. */
+  const healingRetriesRef = useRef(0);
+  const [iconHealingPass, setIconHealingPass] = useState(0);
   /** Layout: garantir ref alinhada ao state antes dos `useEffect` que gravam disco (evita flush com snapshot velho). */
   useLayoutEffect(() => {
-    persistenceRef.current = {
-      user,
-      apps,
-      config,
-      notes,
-      alarms,
-      noteWorkspaces,
-      activeNoteWorkspaceId,
-    };
+    persistenceRef.current = { user, apps, config };
   });
 
   /** Used by post-launch setTimeout — must never read stale React state or opening the dashboard after launching an app wrongly calls setWindowSize('small') (ignoreMouseEvents → "frozen" UI). */
-  const electronShrinkGateRef = useRef({
-    isNotesOpen: false,
-    isPomodoroOpen: false,
-    pomodoroEndOverlay: false as boolean,
-    panelSurfaceOpen: false,
-  });
+  const electronShrinkGateRef = useRef({ panelSurfaceOpen: false });
   useEffect(() => {
-    electronShrinkGateRef.current = {
-      isNotesOpen,
-      isPomodoroOpen,
-      pomodoroEndOverlay: !!pomodoroEndOverlay,
-      panelSurfaceOpen,
-    };
-  }, [isNotesOpen, isPomodoroOpen, pomodoroEndOverlay, panelSurfaceOpen]);
+    electronShrinkGateRef.current = { panelSurfaceOpen };
+  }, [panelSurfaceOpen]);
 
   // ICON NORMALIZATION CACHE-BUST:
   // When the extract-icon.ps1 normalization algorithm changes, bump this version
   // so all stored base64 icons get cleared and re-fetched with the new format.
-  const ICON_NORMALIZATION_VERSION = 'v3-onedirectional-75pct-threshold';
+  const ICON_NORMALIZATION_VERSION = 'v4-shell-dib-orientation';
   useEffect(() => {
     if (!isLoaded) return;
     if (!window.electron?.getFileIcon) return;
@@ -655,11 +619,17 @@ export default function App() {
 
   // Listen for execution errors from backend
   useEffect(() => {
+    let clearErrorTimer: number | undefined;
     if (window.electron?.onExecutionError) {
-      return window.electron.onExecutionError((errorMsg: string) => {
+      const unsubscribe = window.electron.onExecutionError((errorMsg: string) => {
         setExecutionError(errorMsg);
-        setTimeout(() => setExecutionError(null), 5000);
+        if (clearErrorTimer !== undefined) window.clearTimeout(clearErrorTimer);
+        clearErrorTimer = window.setTimeout(() => setExecutionError(null), 5000);
       });
+      return () => {
+        unsubscribe?.();
+        if (clearErrorTimer !== undefined) window.clearTimeout(clearErrorTimer);
+      };
     }
   }, []);
 
@@ -667,6 +637,21 @@ export default function App() {
   useEffect(() => {
     if (!isLoaded) return;
     if (!window.electron?.getFileIcon && !window.electron?.getWebsiteFaviconDataUrl) return;
+
+    let cancelled = false;
+    const healingKey = (item: AppItem) =>
+      `${isWebShortcutItem(item) ? 'web' : 'native'}:${item.id ?? ''}:${item.command?.trim().toLowerCase() ?? ''}`;
+    const canAttempt = (item: AppItem) => !iconHealingAttemptedRef.current.has(healingKey(item));
+    const rememberAttempt = (item: AppItem) => {
+      const attempted = iconHealingAttemptedRef.current;
+      attempted.add(healingKey(item));
+      // Config imports can contain thousands of stale entries. Bound this session-only guard too.
+      while (attempted.size > 512) {
+        const oldest = attempted.values().next().value as string | undefined;
+        if (!oldest) break;
+        attempted.delete(oldest);
+      }
+    };
 
     const findMissingIcons = (items: AppItem[]): AppItem[] => {
       let missing: AppItem[] = [];
@@ -676,14 +661,15 @@ export default function App() {
           const iconStr = String(item.customIconUrl ?? '').trim();
           if (web && item.command?.trim()) {
             // Falta ícone ou só URL remota (renderer não mostra → migrar para data URL)
-            if (!iconStr || isRemoteIconUrl(item.customIconUrl)) {
+            if ((!iconStr || isRemoteIconUrl(item.customIconUrl)) && canAttempt(item)) {
               missing.push(item);
             }
           } else if (
             item.iconSource === 'native' &&
             !item.customIconUrl &&
             item.command &&
-            !web
+            !web &&
+            canAttempt(item)
           ) {
             missing.push(item);
           }
@@ -700,13 +686,16 @@ export default function App() {
 
     // console.log(`[Icon Healing] Attempting to fix ${appsToHeal.length} icons...`);
 
+    const hasUpdatesLog = { value: false };
     const heal = async () => {
       let hasUpdates = false;
       /** Limits concurrent getFileIcon IPC (large configs used to spawn dozens at once and stall the UI). */
       const ICON_HEAL_BATCH = 5;
       const healRecursive = async (items: AppItem[]): Promise<AppItem[]> => {
+        if (cancelled) return items;
         const out: AppItem[] = [];
         for (let i = 0; i < items.length; i += ICON_HEAL_BATCH) {
+          if (cancelled) return items;
           const chunk = items.slice(i, i + ICON_HEAL_BATCH);
           const done = await Promise.all(
             chunk.map(async (item) => {
@@ -716,11 +705,16 @@ export default function App() {
               const webNeedsIcon =
                 web &&
                 item.command?.trim() &&
-                (!iconStr || isRemoteIconUrl(item.customIconUrl));
+                (!iconStr || isRemoteIconUrl(item.customIconUrl)) &&
+                canAttempt(item);
               if (webNeedsIcon) {
-                const iconFields = await resolveWebsiteIconFields(
-                  item.command!.trim(),
-                );
+                rememberAttempt(item);
+                let iconFields: Partial<AppItem> | null = null;
+                try {
+                  iconFields = await resolveWebsiteIconFields(item.command!.trim());
+                } catch (e) {
+                  iconFields = null;
+                }
                 const url = iconFields?.customIconUrl;
                 if (url?.startsWith('data:')) {
                   newItem = { ...newItem, ...iconFields };
@@ -728,14 +722,24 @@ export default function App() {
                 } else if (!iconStr && url) {
                   newItem = { ...newItem, ...iconFields };
                   hasUpdates = true;
+                } else {
+                  /**
+                   * Favicon é rede: no arranque a ligação pode ainda não estar de pé, e uma falha
+                   * assim ficava marcada como tentativa gasta — o atalho só ganhava ícone na
+                   * sessão seguinte. Mesma regra do caminho nativo: falhar devolve a vez.
+                   */
+                  iconHealingAttemptedRef.current.delete(healingKey(item));
+                  healingHadFailuresRef.current = true;
                 }
               } else if (
                 item.iconSource === 'native' &&
                 !item.customIconUrl &&
                 item.command &&
                 !web &&
+                canAttempt(item) &&
                 window.electron?.getFileIcon
               ) {
+                rememberAttempt(item);
                 try {
                   const iconUrl = await window.electron.getFileIcon(
                     item.command,
@@ -743,8 +747,20 @@ export default function App() {
                   if (iconUrl) {
                     newItem.customIconUrl = iconUrl;
                     hasUpdates = true;
+                  } else {
+                    /**
+                     * A marca de "já tentado" existe para não repetir extrações em cadeia, mas
+                     * estava a ser posta ANTES da tentativa e nunca retirada: um falhanço isolado
+                     * — a fila do PowerShell ocupada, por exemplo — condenava o ícone até se
+                     * reiniciar a app. Retirar a marca em caso de falha devolve-lhe uma segunda
+                     * oportunidade na passagem seguinte.
+                     */
+                    iconHealingAttemptedRef.current.delete(healingKey(item));
+                    healingHadFailuresRef.current = true;
                   }
                 } catch (e) {
+                  iconHealingAttemptedRef.current.delete(healingKey(item));
+                  healingHadFailuresRef.current = true;
                   console.warn(`[Icon Healing] Failed for ${item.label}`);
                 }
               }
@@ -765,21 +781,92 @@ export default function App() {
         updatedWorkspaces.push({ ...ws, apps: newApps });
       }
 
+      hasUpdatesLog.value = hasUpdates;
+      /**
+       * O `cancelled` NÃO pode travar a escrita.
+       *
+       * O efeito é cancelado sempre que `config.workspaces` muda — e no arranque isso acontece
+       * várias vezes (hidratação, descoberta do Menu Iniciar, normalização) enquanto os ícones
+       * estão a ser resolvidos. O trabalho terminava com sucesso e era deitado fora à porta:
+       * o log dizia `alterou=true falhas=false` e o ficheiro continuava vazio, com a passagem
+       * seguinte a encontrar os mesmos itens. Um ciclo perfeito de trabalho desperdiçado.
+       *
+       * `cancelled` serve para PARAR trabalho a meio, não para descartar resultados já obtidos.
+       * A fusão é por ID e só preenche quem continua sem ícone, portanto aplicar tarde é seguro.
+       */
       if (hasUpdates) {
-        setConfig(prev => {
-          if (prev.workspaces !== sourceWorkspaces) {
-            window.electron?.savePersistenceLog?.(
-              `iconHealing skipped stale apply | sourceWs=${sourceWorkspaces.length} currentWs=${prev.workspaces.length}`,
-            );
-            return prev;
-          }
-          return { ...prev, workspaces: updatedWorkspaces };
+        /**
+         * Aplicar por ID, não por identidade do array.
+         *
+         * A versão anterior só escrevia se `prev.workspaces` fosse EXATAMENTE o mesmo array com que
+         * a cura começou. Numa restauração isso nunca acontece: a config muda várias vezes
+         * (importação, descoberta do Menu Iniciar, normalização) enquanto o PowerShell resolve os
+         * ícones, que demora segundos. O lote inteiro era descartado — e só na sessão seguinte,
+         * com a config já estável, é que os ícones apareciam. Era isto que obrigava a fechar e
+         * abrir a app para os ver.
+         *
+         * Agora recolhemos apenas os ícones resolvidos e aplicamo-los ao estado atual, seja ele
+         * qual for. Só se preenche quem continua sem ícone, portanto nada do que o utilizador (ou
+         * outra etapa) tenha entretanto definido é sobreposto.
+         */
+        const resolved = new Map<string, { customIconUrl?: string; iconSource?: AppItem['iconSource']; iconName?: string }>();
+        const collect = (items: AppItem[]) => {
+          items.forEach((item) => {
+            if (item.id && item.customIconUrl) {
+              resolved.set(item.id, {
+                customIconUrl: item.customIconUrl,
+                iconSource: item.iconSource,
+                iconName: item.iconName,
+              });
+            }
+            if (item.children) collect(item.children);
+          });
+        };
+        updatedWorkspaces.forEach((ws) => collect(ws.apps));
+        if (resolved.size === 0) return;
+
+        setConfig((prev) => {
+          let touched = 0;
+          const apply = (items: AppItem[]): AppItem[] =>
+            items.map((item) => {
+              /** Sem ícone, ou com um URL remoto que o renderer não mostra: nos dois casos entra. */
+              const stale = !item.customIconUrl || isRemoteIconUrl(item.customIconUrl);
+              const patch = item.id ? resolved.get(item.id) : undefined;
+              const next: AppItem = patch && stale ? { ...item, ...patch } : { ...item };
+              if (patch && stale) touched += 1;
+              if (item.children) next.children = apply(item.children);
+              return next;
+            });
+          const workspaces = prev.workspaces.map((ws) => ({ ...ws, apps: apply(ws.apps) }));
+          if (touched === 0) return prev;
+          window.electron?.savePersistenceLog?.(`iconHealing applied ${touched} icons`);
+          return { ...prev, workspaces };
         });
       }
     };
 
-    void heal();
-  }, [isLoaded, config.workspaces]); // Re-run after hydration and when workspace references change.
+    window.electron?.savePersistenceLog?.(
+      `[IconHealing] passagem ${iconHealingPass} | por resolver=${appsToHeal.length} ` +
+        `(${appsToHeal.map((a) => a.label).slice(0, 8).join(', ')}${appsToHeal.length > 8 ? '…' : ''})`,
+    );
+
+    let retryTimer: number | undefined;
+    void heal().then(() => {
+      window.electron?.savePersistenceLog?.(
+        `[IconHealing] passagem ${iconHealingPass} terminada | alterou=${hasUpdatesLog.value} falhas=${healingHadFailuresRef.current}`,
+      );
+      /** Houve falhas e nada mais vai mexer na config: agendar uma repescagem. */
+      if (cancelled || !healingHadFailuresRef.current) return;
+      healingHadFailuresRef.current = false;
+      if (healingRetriesRef.current >= 2) return;
+      healingRetriesRef.current += 1;
+      retryTimer = window.setTimeout(() => setIconHealingPass((pass) => pass + 1), 4000);
+    });
+    return () => {
+      cancelled = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+    };
+  }, [isLoaded, config.workspaces, iconHealingPass]); // Re-run after hydration, on workspace changes, and on retry.
 
 
   // 1. PRIMARY PERSISTENCE: Load from Electron Main or Migrate from LocalStorage
@@ -823,33 +910,12 @@ export default function App() {
         const userStr = localStorage.getItem('zenith_user');
         const appsStr = localStorage.getItem('zenith_apps');
         const configStr = localStorage.getItem('zenith_config');
-        const notesStr = localStorage.getItem('zenith_notes');
-        const alarmsStr = localStorage.getItem('zenith_alarms');
-        const noteWsStr = localStorage.getItem('zenith_note_workspaces');
-        const activeWsStr = localStorage.getItem('zenith_active_note_workspace');
 
-        if (userStr || appsStr || configStr || notesStr || alarmsStr || noteWsStr) {
-          const parsedNotes: Note[] = notesStr ? JSON.parse(notesStr) : [];
-          let parsedWs: NoteWorkspace[] = [defaultNoteWorkspace];
-          try {
-            if (noteWsStr) {
-              const w = JSON.parse(noteWsStr) as NoteWorkspace[];
-              if (Array.isArray(w) && w.length > 0) parsedWs = w;
-            }
-          } catch {
-            /* keep default */
-          }
+        if (userStr || appsStr || configStr) {
           finalData = {
             user: userStr ? JSON.parse(userStr) : null,
             apps: appsStr ? JSON.parse(appsStr) : MINIMAL_MAIN_WORKSPACE_APPS,
             config: configStr ? JSON.parse(configStr) : DEFAULT_UI_CONFIG,
-            notes: parsedNotes.map((n) => ({ ...n, workspaceId: n.workspaceId || 'default' })),
-            alarms: alarmsStr ? JSON.parse(alarmsStr) : [],
-            noteWorkspaces: parsedWs,
-            activeNoteWorkspaceId:
-              activeWsStr && parsedWs.some((w) => w.id === activeWsStr)
-                ? activeWsStr
-                : 'default',
           };
           loadedFromLocalStorageMigration = true;
           // Save to main process immediately
@@ -869,32 +935,10 @@ export default function App() {
           `Hydration: no payload but disk has data (primary=${persistenceMeta.primaryBytes} bak=${persistenceMeta.backupBytes} quarantine=${quarantineBytes}) — blocking saves`,
         );
         setExecutionError(
-          'Zenith não conseguiu ler a configuração no disco (ficheiro em AppData). As gravações para o ficheiro estão bloqueadas para não apagar os teus dados. Consulta zenith-persistence.log na pasta de dados da app; procura ficheiros config-v2.json.broken-* ou restaura config-v2.json / .bak.',
+          'Rovyl could not read the configuration stored in AppData. Saving is blocked to protect your data. Check rovyl-persistence.log in the app data folder, look for config-v2.json.broken-* files, or restore config-v2.json / .bak.',
         );
       } else {
         persistenceSaveBlockedRef.current = false;
-      }
-
-      if (finalData) {
-        // Older config-v2.json may omit note boards — recover from localStorage mirror
-        try {
-          const noteWsStr = localStorage.getItem('zenith_note_workspaces');
-          const activeWsStr = localStorage.getItem('zenith_active_note_workspace');
-          if (!finalData.noteWorkspaces?.length && noteWsStr) {
-            const w = JSON.parse(noteWsStr) as NoteWorkspace[];
-            if (Array.isArray(w) && w.length > 0) finalData.noteWorkspaces = w;
-          }
-          if (
-            activeWsStr &&
-            (finalData.noteWorkspaces as NoteWorkspace[] | undefined)?.some(
-              (x) => x.id === activeWsStr,
-            )
-          ) {
-            finalData.activeNoteWorkspaceId = activeWsStr;
-          }
-        } catch {
-          /* ignore */
-        }
       }
 
       let nextApps: AppItem[] = MINIMAL_MAIN_WORKSPACE_APPS;
@@ -902,13 +946,50 @@ export default function App() {
 
       if (finalData) {
         if (finalData.config) {
-          nextConfig = {
+          /** Configs antigos trazem atalhos `internal:*` dos widgets removidos — descartar na leitura. */
+          nextConfig = stripInternalWidgetsFromConfig({
+            /**
+             * Base nos defaults ANTES do que veio do disco.
+             *
+             * Sem esta base, toda a definição acrescentada numa versão posterior à do ficheiro
+             * gravado chegava ao renderer como `undefined` em vez do seu valor por omissão. O
+             * sintoma engana: parece que o backup não guardou as definições, quando na verdade
+             * elas nunca chegaram a estar no ficheiro e ninguém as repunha na leitura.
+             */
+            ...DEFAULT_UI_CONFIG,
             ...finalData.config,
+            /**
+             * O ponto de abertura deixou de ser configurável: a roda nasce sempre no centro.
+             * Configs antigos podem trazer `false` — normalizar na leitura, senão sobrevivia
+             * um estado que a interface já não sabe mostrar nem desfazer.
+             */
+            fixedPosition: true,
             gameMode: {
               ...DEFAULT_UI_CONFIG.gameMode,
               ...(finalData.config.gameMode || {}),
+              /** Remove a lista demonstrativa antiga: agora a seleção é visual, por aplicativo. */
+              blockedApps:
+                (finalData.config.gameMode?.blockedApps || '').trim().toLowerCase() ===
+                'csgo.exe, valorant.exe, dota2.exe, overwatch.exe'
+                  ? ''
+                  : (finalData.config.gameMode?.blockedApps || ''),
             },
+          });
+          /**
+           * Teclas contiguas por posicao, tambem na leitura.
+           *
+           * Renumerar so nas mutacoes deixaria de fora os ficheiros ja gravados com buracos
+           * — o "1, 2, 4" que sobra de um workspace apagado a meio numa versao anterior.
+           * A operacao e idempotente: quem ja esta certo nao e tocado.
+           */
+          nextConfig = {
+            ...nextConfig,
+            workspaces: nextConfig.workspaces?.map((workspace, index) => {
+              const hotkey = index < 9 ? index + 1 : 0;
+              return workspace.hotkey === hotkey ? workspace : { ...workspace, hotkey };
+            }) ?? nextConfig.workspaces,
           };
+
           const mainWs = nextConfig.workspaces?.find(
             (ws) => ws.id === 'workspace-1' || ws.name === 'Main',
           );
@@ -956,7 +1037,7 @@ export default function App() {
         }
         /**
          * Estado inconsistente: `mainStartMenuDiscoveryDone: true` foi salvo mas o workspace Main
-         * ficou apenas com apps mínimos (ex.: só Notes). Isso ocorre quando a descoberta do Menu
+         * ficou vazio. Isso ocorre quando a descoberta do Menu
          * Iniciar marca-se como concluída antes de gravar os apps no disco (race condition ou
          * restart durante a janela de 20 s), ou quando a migração de dados legados restaura um
          * arquivo de configuração obsoleto.
@@ -964,7 +1045,7 @@ export default function App() {
          *
          * Condição adicional de segurança: só resetar se o config NÃO tem workspaces customizados
          * (nenhum workspace além dos padrões Main+Streaming). Se o utilizador tem um workspace
-         * personalizado mas deixou o Main só com Notes, a descoberta NÃO deve sobrescrever.
+         * personalizado mas deixou o Main vazio, a descoberta NÃO deve sobrescrever.
          */
         const hasCustomWorkspaces =
           nextConfig.workspaces.length > DEFAULT_UI_CONFIG.workspaces.length;
@@ -991,7 +1072,7 @@ export default function App() {
         discoveryDoneEffective = discoveryDoneEffective || lsDiscoveryDone;
       }
 
-      /** Main só com widgets Zenith (ex.: Notes) ainda não passou pelo scan do Menu Iniciar — não é “vazio” nem usa IDs do demo embutido. */
+      /** Main ainda não passou pelo scan do Menu Iniciar — não usa IDs do demo embutido. */
       const mainAwaitingStartMenuBootstrap =
         !mainCustom &&
         nextConfig.mainStartMenuDiscoveryDone !== true;
@@ -1030,18 +1111,41 @@ export default function App() {
         }
 
         const discoverHasDemoFingerprint = hasDemoFingerprint;
-        const uiLangDeferred = (nextConfig.language || 'pt') as Language;
+        nextConfig = { ...nextConfig, language: 'en' };
+        const uiLangDeferred = 'en' as Language;
 
         /**
          * Arranque sem dados anteriores (reset / primeira instalação): mostrar overlay imediatamente
          * — o temporizador de 20 s ainda aguarda antes do IPC PowerShell, mas visualmente
          * o utilizador vê a ecrã de espera desde o início.
          */
-        const isFreshStart = !finalData && !loadedFromLocalStorageMigration;
+        /**
+         * Primeira instalacao a serio, e nao uma leitura falhada.
+         *
+         * Sem a terceira condicao, um `getFullConfig` que devolvesse nulo por um instante fazia a
+         * app concluir que era arranque limpo: corria a descoberta do Menu Iniciar outra vez e
+         * abria as Definicoes sozinha. Era o "as vezes abre nas definicoes". O disco ja tinha sido
+         * inspecionado acima para bloquear gravacoes nesse mesmo caso — faltava usar o resultado.
+         */
+        const isFreshStart =
+          !finalData && !loadedFromLocalStorageMigration && !diskLooksSubstantial;
         if (isFreshStart) {
-          setStartMenuResolving({ open: true, lang: uiLangDeferred });
           openDashboardAfterDiscoveryRef.current = true;
         }
+
+        /** Só quem arranca com o Windows espera; quem abriu a app quer os atalhos agora. */
+        let openedAtLogin = false;
+        try {
+          openedAtLogin = (await window.electron?.wasOpenedAtLogin?.()) === true;
+        } catch (e) {
+          openedAtLogin = false;
+        }
+        const discoveryDeferMs = openedAtLogin
+          ? START_MENU_DISCOVERY_DEFER_LOGIN_MS
+          : START_MENU_DISCOVERY_DEFER_MANUAL_MS;
+        window.electron?.savePersistenceLog?.(
+          `[StartMenu] varredura agendada em ${discoveryDeferMs}ms (arranque com o Windows: ${openedAtLogin})`,
+        );
 
         discoveryDeferTimer = window.setTimeout(() => {
           void (async () => {
@@ -1049,9 +1153,6 @@ export default function App() {
               startMenuScanPersistenceHoldRef.current = false;
               return;
             }
-            flushSync(() =>
-              setStartMenuResolving({ open: true, lang: uiLangDeferred }),
-            );
             const mainIdx = configRef.current.workspaces.findIndex(
               (ws) => ws.id === 'workspace-1' || ws.name === 'Main',
             );
@@ -1094,9 +1195,6 @@ export default function App() {
                 discoveryAddedApps = true;
               }
             } finally {
-              flushSync(() =>
-                setStartMenuResolving({ open: false, lang: uiLangDeferred }),
-              );
               /**
                * Só marcar como concluída e gravar no LS quando apps foram realmente adicionados.
                * Se a descoberta falhou ou retornou 0 apps, manter `mainStartMenuDiscoveryDone: false`
@@ -1123,8 +1221,8 @@ export default function App() {
                 window.setTimeout(() => {
                   flushSync(() => {
                     setPanelChromeDismissedForIsland(false);
-                    setIsSettingsOpen(false);
-                    setIsDashboardOpen(true);
+                    setIsDashboardOpen(false);
+                    setIsSettingsOpen(true);
                   });
                 }, 350);
               } else {
@@ -1132,40 +1230,23 @@ export default function App() {
               }
             }
           })();
-        }, START_MENU_DISCOVERY_DEFER_MS);
+        }, discoveryDeferMs);
       } else if (!lsDiscoveryDone && discoveryDoneEffective) {
         localStorage.setItem(LS_MAIN_DISCOVERY_DONE, 'true');
       }
 
       if (cancelled) return;
 
+      /** Apply English to every profile, including previously persisted configurations. */
+      nextConfig = { ...nextConfig, language: 'en' };
+
       hydratedFromPersistenceRef.current =
         !!(finalData || loadedFromLocalStorageMigration);
 
       if (finalData) {
         if (finalData.user) setUser(finalData.user);
-        if (finalData.apps) setApps(finalData.apps);
+        if (finalData.apps) setApps(stripInternalWidgetApps(finalData.apps));
         setConfig(nextConfig);
-        if (finalData.notes) {
-          setNotes(
-            (finalData.notes as Note[]).map((n) => ({
-              ...n,
-              workspaceId: n.workspaceId || 'default',
-            })),
-          );
-        }
-        if (finalData.noteWorkspaces?.length) {
-          setNoteWorkspaces(finalData.noteWorkspaces);
-        }
-        if (
-          finalData.activeNoteWorkspaceId &&
-          (finalData.noteWorkspaces as NoteWorkspace[] | undefined)?.some(
-            (w) => w.id === finalData.activeNoteWorkspaceId,
-          )
-        ) {
-          setActiveNoteWorkspaceId(finalData.activeNoteWorkspaceId);
-        }
-        if (finalData.alarms) setAlarms(finalData.alarms);
       } else {
         setApps(nextApps);
         setConfig(nextConfig);
@@ -1204,20 +1285,19 @@ export default function App() {
 
     if (!hasRunBefore) {
       /**
-       * Se a descoberta do Menu Iniciar está pendente (hold ativo + sem dados anteriores),
-       * o overlay já está visível — não abrir o dashboard agora.
-       * `openDashboardAfterDiscoveryRef` está a true e o dashboard abrirá após a descoberta.
+       * Primeira execução: abrir as Definições já.
+       *
+       * Isto esperava pela descoberta do Menu Iniciar, porque nessa altura existia um ecrã de
+       * espera a cobrir tudo. Com o ecrã de espera removido, esperar deixou de fazer sentido:
+       * a janela ficava visível sem superfície nenhuma por baixo, ou seja, um retângulo preto
+       * vazio até a varredura terminar. As Definições abrem de imediato e os atalhos aparecem
+       * lá dentro quando a varredura os trouxer.
        */
-      const discoveryOverlayPending =
-        startMenuScanPersistenceHoldRef.current && openDashboardAfterDiscoveryRef.current;
-
-      if (!discoveryOverlayPending) {
-        flushSync(() => {
-          setPanelResizeSolidCover(true);
-          setHideIslandForWindowedPanelTransition(true);
-          setIsDashboardOpen(true);
-        });
-      }
+      flushSync(() => {
+        setPanelResizeSolidCover(true);
+        setIsDashboardOpen(false);
+        setIsSettingsOpen(true);
+      });
       localStorage.setItem('zenith_first_run_complete', 'true');
       if (window.electron) {
         setConfig((prev) => ({
@@ -1253,7 +1333,24 @@ export default function App() {
     config.gameMode?.enabled,
     config.gameMode?.mode,
     config.gameMode?.blockedApps,
+    config.gameMode?.autoDetectGames,
   ]);
+
+  /** Pré-carrega apenas os executáveis marcados; não inicia apps nem abre janelas escondidas. */
+  useEffect(() => {
+    if (!isLoaded || !window.electron?.prewarmApps) return;
+    const commands: string[] = [];
+    const visit = (items: AppItem[]) => {
+      for (const item of items) {
+        if (item.launchMode === 'prewarm' && item.commandType === 'app' && item.command) {
+          commands.push(item.command);
+        }
+        if (item.children?.length) visit(item.children);
+      }
+    };
+    for (const workspace of config.workspaces) visit(workspace.apps);
+    window.electron.prewarmApps(commands);
+  }, [isLoaded, config.workspaces]);
 
   // 2. UNIFIED SAVE EFFECT: Sync to Main Process and LocalStorage (disk + LS mirror survives reboot)
   useEffect(() => {
@@ -1279,24 +1376,12 @@ export default function App() {
         }
         // conteúdo customizado: salvar mesmo com hold ativo
       }
-      const fullData = sanitizeFullPersistenceForDisk({
-        user,
-        apps,
-        config,
-        notes,
-        alarms,
-        noteWorkspaces,
-        activeNoteWorkspaceId,
-      });
+      const fullData = sanitizeFullPersistenceForDisk({ user, apps, config });
       if (!fullData) return;
 
       localStorage.setItem('zenith_user', JSON.stringify(user));
       localStorage.setItem('zenith_apps', JSON.stringify(apps));
       localStorage.setItem('zenith_config', JSON.stringify(config));
-      localStorage.setItem('zenith_notes', JSON.stringify(notes));
-      localStorage.setItem('zenith_alarms', JSON.stringify(alarms));
-      localStorage.setItem('zenith_note_workspaces', JSON.stringify(noteWorkspaces));
-      localStorage.setItem('zenith_active_note_workspace', activeNoteWorkspaceId);
 
       if (!persistenceSaveBlockedRef.current && window.electron?.saveFullConfig) {
         const wsCount = fullData.config?.workspaces?.length ?? 0;
@@ -1306,17 +1391,13 @@ export default function App() {
             window.electron?.savePersistenceLog?.(
               `saveFullConfig failed: ${r.error || 'unknown'} | ws=${wsCount} mainApps=${mainApps}`,
             );
-          } else {
-            window.electron?.savePersistenceLog?.(
-              `saveFullConfig ok | ws=${wsCount} mainApps=${mainApps} discoveryDone=${fullData.config?.mainStartMenuDiscoveryDone}`,
-            );
           }
         });
       }
-    }, 150);
+    }, 450);
 
     return () => clearTimeout(timer);
-  }, [user, apps, config, notes, alarms, noteWorkspaces, activeNoteWorkspaceId, isLoaded]);
+  }, [user, apps, config, isLoaded]);
 
   /** Flush before exit / background so the last edit is not lost (debounce skipped). */
   useEffect(() => {
@@ -1328,20 +1409,12 @@ export default function App() {
         user: d.user,
         apps: d.apps,
         config: d.config,
-        notes: d.notes,
-        alarms: d.alarms,
-        noteWorkspaces: d.noteWorkspaces,
-        activeNoteWorkspaceId: d.activeNoteWorkspaceId,
       });
       if (!fullData) return;
       try {
         localStorage.setItem('zenith_user', JSON.stringify(d.user));
         localStorage.setItem('zenith_apps', JSON.stringify(d.apps));
         localStorage.setItem('zenith_config', JSON.stringify(d.config));
-        localStorage.setItem('zenith_notes', JSON.stringify(d.notes));
-        localStorage.setItem('zenith_alarms', JSON.stringify(d.alarms));
-        localStorage.setItem('zenith_note_workspaces', JSON.stringify(d.noteWorkspaces));
-        localStorage.setItem('zenith_active_note_workspace', d.activeNoteWorkspaceId);
       } catch (e) {
         console.warn('localStorage flush failed', e);
       }
@@ -1377,10 +1450,6 @@ export default function App() {
         user: d.user,
         apps: d.apps,
         config: d.config,
-        notes: d.notes,
-        alarms: d.alarms,
-        noteWorkspaces: d.noteWorkspaces,
-        activeNoteWorkspaceId: d.activeNoteWorkspaceId,
       });
       try {
         if (!fullData) return;
@@ -1388,10 +1457,6 @@ export default function App() {
           localStorage.setItem('zenith_user', JSON.stringify(d.user));
           localStorage.setItem('zenith_apps', JSON.stringify(d.apps));
           localStorage.setItem('zenith_config', JSON.stringify(d.config));
-          localStorage.setItem('zenith_notes', JSON.stringify(d.notes));
-          localStorage.setItem('zenith_alarms', JSON.stringify(d.alarms));
-          localStorage.setItem('zenith_note_workspaces', JSON.stringify(d.noteWorkspaces));
-          localStorage.setItem('zenith_active_note_workspace', d.activeNoteWorkspaceId);
         } catch (e) {
           console.warn('localStorage flush failed', e);
         }
@@ -1431,85 +1496,6 @@ export default function App() {
     };
   }, [isLoaded]);
 
-  const normalizeAlarmTime = (t: string) => {
-    const parts = t.trim().split(':');
-    if (parts.length < 2) return t;
-    const h = parts[0].padStart(2, '0');
-    const m = parts[1].padStart(2, '0');
-    return `${h}:${m}`;
-  };
-
-  // ALARM: soneca + horário (1 tick/s; dedupe por minuto — não depende só do segundo 0)
-  useEffect(() => {
-    const tick = () => {
-      const now = new Date();
-      const nowMs = now.getTime();
-      const ringing = alarmRingingRef.current;
-      const snooze = snoozeWakeRef.current;
-
-      if (snooze && nowMs >= snooze.at && !ringing) {
-        lastScheduledAlarmSlotRef.current = null;
-        setAlarmRinging({ alarm: snooze.alarm, isPreview: false });
-        setSnoozeWake(null);
-        return;
-      }
-
-      if (ringing) return;
-
-      const hh = now.getHours().toString().padStart(2, '0');
-      const mm = now.getMinutes().toString().padStart(2, '0');
-      const currentTimeString = `${hh}:${mm}`;
-      const dow = now.getDay();
-      const list = alarmsRef.current;
-
-      const matched = list.find((a) => {
-        if (!a.enabled) return false;
-        if (normalizeAlarmTime(a.time) !== currentTimeString) return false;
-        if (a.days && a.days.length > 0 && !a.days.includes(dow)) return false;
-        return true;
-      });
-
-      if (!matched) return;
-
-      const slotKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${hh}-${mm}-${matched.id}`;
-      if (lastScheduledAlarmSlotRef.current === slotKey) return;
-      lastScheduledAlarmSlotRef.current = slotKey;
-      setAlarmRinging({ alarm: matched, isPreview: false });
-    };
-
-    const id = window.setInterval(tick, 1000);
-    tick();
-    return () => window.clearInterval(id);
-  }, []);
-
-  // Garantir janela visível em fullscreen quando o alarme real toca (modo desktop / janela oculta)
-  useEffect(() => {
-    if (!alarmRinging || alarmRinging.isPreview) return;
-    if (!isDesktopMode || !window.electron) return;
-    window.electron.showWindow();
-    window.electron.setWindowSize('fullscreen', windowCenterScreenPoint());
-  }, [alarmRinging, isDesktopMode]);
-
-  useEffect(() => {
-    if (!pomodoroEndOverlay) return;
-    if (!isDesktopMode || !window.electron) return;
-    window.electron.showWindow();
-    window.electron.setWindowSize('fullscreen', windowCenterScreenPoint());
-  }, [pomodoroEndOverlay, isDesktopMode]);
-
-  useEffect(() => {
-    if (alarmRinging) {
-      stopAlarmAudioRef.current = startAlarmRingtone();
-      return () => {
-        stopAlarmAudioRef.current?.();
-        stopAlarmAudioRef.current = null;
-      };
-    }
-    stopAlarmAudioRef.current?.();
-    stopAlarmAudioRef.current = null;
-    return undefined;
-  }, [alarmRinging]);
-
   const lastMiddleClickTime = useRef<number>(0);
   const isHolding = useRef(false);
 
@@ -1517,9 +1503,6 @@ export default function App() {
   useEffect(() => {
     if (window.electron?.onGoogleAuthSuccess) {
       return window.electron.onGoogleAuthSuccess((authData: any) => {
-        const trialDate = new Date();
-        trialDate.setDate(trialDate.getDate() + 7);
-
         const newUser: UserProfile = {
           id: authData.isAdmin ? 'admin-001' : crypto.randomUUID(),
           name: authData.name,
@@ -1527,13 +1510,14 @@ export default function App() {
           isPremium: authData.isPremium,
           isAdmin: authData.isAdmin,
           planTier: authData.planTier ?? (authData.isPremium ? 'pro' : 'free'),
-          trialEndsAt: trialDate.toISOString(),
+          trialEndsAt: undefined,
           avatarUrl: authData.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(authData.name)}&background=0D8ABC&color=fff`,
         };
         flushSync(() => {
           setUser(newUser);
           setPanelChromeDismissedForIsland(false);
-          setIsDashboardOpen(true);
+          setIsDashboardOpen(false);
+          setIsSettingsOpen(true);
         });
       });
     }
@@ -1548,9 +1532,7 @@ export default function App() {
   /** Used to ignore double-clicks right after the radial closes (otherwise dblclick sees isMenuOpen false and opens Settings). */
   const menuJustClosedAtRef = useRef(0);
   const prevIsMenuOpenForCloseRef = useRef(false);
-  /** Após fechar widget Pomodoro/Stopwatch com HUD ainda visível — re-aplica overlay `small` no processo principal (Windows). */
-  const wasPomodoroOrStopwatchWidgetOpenRef = useRef(false);
-  /** OS hid the window (Alt+F4 / close) while React still had dashboard/widgets "open" — sync refs before state so we don't schedule hideWindow twice. */
+  /** OS hid the window (Alt+F4 / close) while React still had dashboard "open" — sync refs before state so we don't schedule hideWindow twice. */
   const syncAfterMainWindowHidRef = useRef<() => void>(() => {});
   useEffect(() => {
     syncAfterMainWindowHidRef.current = () => {
@@ -1563,12 +1545,6 @@ export default function App() {
       setIsMenuOpen(false);
       setIsSettingsOpen(false);
       setIsDashboardOpen(false);
-      setIsNotesOpen(false);
-      setIsAlarmWidgetOpen(false);
-      setIsStopwatchOpen(false);
-      setIsPomodoroOpen(false);
-      setAlarmRinging(null);
-      setPomodoroEndOverlay(null);
       setPanelChromeDismissedForIsland(false);
       setRadialOpenAwaitingFullscreen(false);
       setMinimizeNeutralCoverActive(false);
@@ -1591,13 +1567,7 @@ export default function App() {
         radialOpenAwaitingFullscreen ||
         isDashboardOpen ||
         isSettingsOpen ||
-        isNotesOpen ||
-        isAlarmWidgetOpen ||
-        isStopwatchOpen ||
-        isPomodoroOpen ||
-        !!alarmRinging ||
-        !!pomodoroEndOverlay ||
-        timerHudActive;
+        panelNeutralizingClose;
 
       const visibilityChanged = lastVisibility.current !== isAnyInteractive;
 
@@ -1628,19 +1598,10 @@ export default function App() {
         return;
       }
 
-      /** Overlay passivo `small` (ecrã inteiro + forward); widgets fullscreen usam `applyWindowSize`. */
-      const targetMode: 'fullscreen' | 'windowed' | 'small' = (
-        isNotesOpen ||
-        isAlarmWidgetOpen ||
-        isStopwatchOpen ||
-        isPomodoroOpen ||
-        !!alarmRinging ||
-        !!pomodoroEndOverlay
-      )
-        ? 'fullscreen'
-        : panelSurfaceOpen
-          ? 'windowed'
-          : 'small';
+      /** Overlay passivo `small` (HWND encolhido); painel/definições usam `windowed`. */
+      const targetMode: 'fullscreen' | 'windowed' | 'small' = panelSurfaceOpen
+        ? 'windowed'
+        : 'small';
 
       const modeChanged = lastWindowState.current !== targetMode;
 
@@ -1687,65 +1648,9 @@ export default function App() {
     radialOpenAwaitingFullscreen,
     isDashboardOpen,
     isSettingsOpen,
-    isNotesOpen,
-    isAlarmWidgetOpen,
-    isStopwatchOpen,
-    isPomodoroOpen,
-    alarmRinging,
-    pomodoroEndOverlay,
+    panelNeutralizingClose,
     isDesktopMode,
-    timerHudActive,
     panelSurfaceOpen,
-  ]);
-
-  useEffect(() => {
-    const open = isPomodoroOpen || isStopwatchOpen;
-    const prev = wasPomodoroOrStopwatchWidgetOpenRef.current;
-
-    if (prev && !open && window.electron?.reapplySmallOverlay && isDesktopMode && timerHudActive) {
-      const id = requestAnimationFrame(() => {
-        void window.electron?.reapplySmallOverlay?.();
-      });
-      wasPomodoroOrStopwatchWidgetOpenRef.current = open;
-      return () => cancelAnimationFrame(id);
-    }
-    wasPomodoroOrStopwatchWidgetOpenRef.current = open;
-  }, [isPomodoroOpen, isStopwatchOpen, timerHudActive, isDesktopMode]);
-
-  /**
-   * Arranque a frio (npm start / início do Windows): o BrowserWindow nasce em rect “windowed” e o primeiro
-   * `setWindowSize('small')` pode ficar desincronizado do DWM até haver um ciclo forte (abrir o radial fazia isso).
-   * Ao entrar pela primeira vez no estado “ilha de repouso” visível, reforçamos o overlay `small` no main.
-   */
-  useEffect(() => {
-    if (!window.electron?.reapplySmallOverlay) return;
-    const wantsIdleIslandHud =
-      isDesktopMode &&
-      electronSmallOverlayReady &&
-      timerHudActive &&
-      !panelSurfaceOpen &&
-      !isMenuOpen &&
-      !radialOpenAwaitingFullscreen;
-    const wasIdle = prevIdleIslandHudRef.current;
-    prevIdleIslandHudRef.current = wantsIdleIslandHud;
-    if (!wantsIdleIslandHud) return;
-    if (wasIdle) return;
-
-    const t = window.setTimeout(() => {
-      void (async () => {
-        await window.electron?.reapplySmallOverlay?.();
-        await window.electron?.invalidatePaint?.();
-        setIslandHudRemountKey((k) => k + 1);
-      })();
-    }, 120);
-    return () => clearTimeout(t);
-  }, [
-    isDesktopMode,
-    electronSmallOverlayReady,
-    timerHudActive,
-    panelSurfaceOpen,
-    isMenuOpen,
-    radialOpenAwaitingFullscreen,
   ]);
 
   const openMenu = async (
@@ -1754,29 +1659,50 @@ export default function App() {
     source: 'mmb' | 'mmb-click' | 'shortcut' = 'shortcut',
     /** IPC sends screen coords from the main process; MMB uses client coords relative to the current window. */
     coordSpace: 'client' | 'screen' = 'client',
-    opts?: { preSizedByMain?: boolean },
+    opts?: {
+      preSizedByMain?: boolean;
+      keepPanel?: boolean;
+      panelRect?: ScreenRect | null;
+      clientPosition?: Coordinates | null;
+      windowOrigin?: Coordinates | null;
+      clientSize?: { width: number; height: number } | null;
+      paintToken?: number;
+    },
   ) => {
-    const fixed = configRef.current.fixedPosition;
-    if (fixed) {
-      menuAnchorScreenRef.current = null;
-    } else if (coordSpace === 'screen') {
-      menuAnchorScreenRef.current = { x, y };
-    } else {
-      menuAnchorScreenRef.current = {
-        x: window.screenX + x,
-        y: window.screenY + y,
-      };
-    }
+    const triggerGeneration = ++radialTriggerGenerationRef.current;
+    /**
+     * Radial por cima do painel: a janela é uma só, por isso abrir o radial encolhia-a à caixa da
+     * roda e as definições desapareciam num flash. Guardamos o rect de ECRÃ do painel — o main já
+     * alargou a janela para o cobrir — e continuamos a desenhá-lo exatamente no mesmo sítio.
+     * Quando é o renderer que redimensiona, o rect tem de ser lido ANTES do resize.
+     */
+    const keepPanel =
+      opts?.keepPanel ?? (panelSurfaceOpen && isDesktopModeRef.current);
+    /**
+     * Com posição fixa o main não toca nos bounds: o painel continua a ser a janela inteira e
+     * não há nada para reposicionar — é esse o caminho sem flash. Só quando a janela é alargada
+     * (posição livre) é que o painel precisa de ser fixado no rect de ecrã que ocupava.
+     */
+    const panelWindowStays = keepPanel && !opts?.panelRect;
+    const panelRect: ScreenRect | null =
+      opts?.panelRect ??
+      (keepPanel && !panelWindowStays
+        ? {
+            x: window.screenX,
+            y: window.screenY,
+            width: window.innerWidth,
+            height: window.innerHeight,
+          }
+        : null);
 
-    const anchorForFullscreen: { x: number; y: number } = fixed
-      ? {
-          x: window.screenX + window.innerWidth / 2,
-          y: window.screenY + window.innerHeight / 2,
-        }
-      : (menuAnchorScreenRef.current ?? {
-          x: window.screenX + window.innerWidth / 2,
-          y: window.screenY + window.innerHeight / 2,
-        });
+    /** Posição livre foi removida: o resize usa sempre uma âncora central. */
+    const anchorForFullscreen: { x: number; y: number } =
+      coordSpace === 'screen'
+        ? { x, y }
+        : {
+            x: window.screenX + window.innerWidth / 2,
+            y: window.screenY + window.innerHeight / 2,
+          };
 
     const needsRendererFullscreenResize =
       isDesktopModeRef.current &&
@@ -1785,6 +1711,13 @@ export default function App() {
 
     if (needsRendererFullscreenResize) {
       flushSync(() => {
+        /** Antes do resize: a partir daqui o painel nunca é escondido. */
+        setPanelKeptUnderRadial(keepPanel);
+        setPanelOverlayScreenRect(panelRect);
+        /** Com o painel a permanecer visível não há textura antiga para mascarar — a cobertura opaca só piscaria por cima dele. */
+        setRadialAwaitCoverOpaque(
+          !panelRect && electronShrinkGateRef.current.panelSurfaceOpen,
+        );
         setRadialOpenAwaitingFullscreen(true);
         setMinimizeNeutralCoverActive(false);
       });
@@ -1818,28 +1751,71 @@ export default function App() {
       lastWindowState.current = 'fullscreen';
     }
 
+    /**
+     * Um segundo MMB/atalho pode fechar o radial enquanto o resize assíncrono acima ainda termina.
+     * Nesse caso, não deixar esta abertura antiga voltar a montar o menu depois do fechamento.
+     */
+    if (triggerGeneration !== radialTriggerGenerationRef.current) return;
+
+    radialCenterScreenRef.current =
+      coordSpace === 'screen'
+        ? { x, y }
+        : {
+            x: window.screenX + window.innerWidth / 2,
+            y: window.screenY + window.innerHeight / 2,
+          };
+    radialClientPositionHintRef.current = opts?.clientPosition ?? null;
+    radialWindowOriginHintRef.current = opts?.windowOrigin ?? null;
+
+    /**
+     * Nunca consultar `window.screenX/Y` para o primeiro frame. Logo após fechar Settings essas
+     * métricas ainda descrevem o rect windowed (880×600), cujo centro é exatamente o ponto errado
+     * visto no vídeo: (440,300) cliente → aproximadamente (906,345) no ecrã. Toda a informação
+     * necessária já veio no mesmo IPC do main e pertence à geração atual.
+     */
+    const authoritativeClientPosition =
+      opts?.clientPosition ??
+      (opts?.windowOrigin
+        ? { x: x - opts.windowOrigin.x, y: y - opts.windowOrigin.y }
+        : opts?.clientSize
+          ? { x: opts.clientSize.width / 2, y: opts.clientSize.height / 2 }
+          : { x: window.innerWidth / 2, y: window.innerHeight / 2 });
+
     flushSync(() => {
       setRadialOpenAwaitingFullscreen(false);
+      setRadialAwaitCoverOpaque(false);
       setRadialPreShowSolidCover(false);
-      setIsSettingsOpen(false);
-      setIsMenuOpen(true);
-      setIsDashboardOpen(false);
-      setTriggerSource(source);
-      if (fixed) {
-        setMenuPosition({
-          x: window.innerWidth / 2,
-          y: window.innerHeight / 2,
-        });
-      } else if (isDesktopModeRef.current && menuAnchorScreenRef.current) {
-        const a = menuAnchorScreenRef.current;
-        setMenuPosition({
-          x: a.x - window.screenX,
-          y: a.y - window.screenY,
-        });
-      } else {
-        setMenuPosition({ x, y });
+      setPanelKeptUnderRadial(keepPanel);
+      setPanelOverlayScreenRect(panelRect);
+      /** Só fechamos o painel quando ele não vai sobreviver por baixo do radial. */
+      if (!keepPanel) {
+        setIsSettingsOpen(false);
+        setIsDashboardOpen(false);
       }
+      setIsMenuOpen(true);
+      setRadialMountKey((key) => key + 1);
+      setRadialPendingPaintToken(
+        typeof opts?.paintToken === 'number' ? opts.paintToken : null,
+      );
+      setTriggerSource(source);
+      setMenuPosition(authoritativeClientPosition);
+      setRadialClientSize(
+        opts?.clientSize ?? { width: window.innerWidth, height: window.innerHeight },
+      );
     });
+
+    /**
+     * A janela nativa ainda está escondida. Um rAF seguido de uma tarefa confirma o paint do
+     * frame alfa zero; dois rAF completos tornavam a abertura perceptivelmente lenta.
+     */
+    if (typeof opts?.paintToken === 'number') {
+      const paintToken = opts.paintToken;
+      requestAnimationFrame(() => {
+        window.setTimeout(() => {
+          window.electron?.notifyRadialOpenPaintDone?.(paintToken);
+        }, 0);
+      });
+    }
 
     // Always call show-window when running under Electron — do not gate on isDesktopMode (it is still false for
     // one frame after load; main already set native opacity 0 in showMenuAtCursor).
@@ -1848,9 +1824,15 @@ export default function App() {
         clearTimeout(hideTimeout.current);
         hideTimeout.current = null;
       }
-      window.electron.showWindow();
+      /**
+       * Com o painel no ecrã e sem resize a janela já está visível e no sítio: um `show()` extra
+       * só recompõe o HWND. Pela mesma razão não há `invalidatePaint` ao abrir — no Windows
+       * costuma causar um flash (textura antiga) logo a seguir ao radial aparecer.
+       */
+      if (!panelWindowStays && typeof opts?.paintToken !== 'number') {
+        window.electron.showWindow();
+      }
       lastVisibility.current = true;
-      /** Evitar `invalidatePaint` ao abrir — no Windows costuma causar um flash (dashboard/textura antiga) logo após o radial aparecer. */
     }
 
     isHolding.current = true;
@@ -1862,6 +1844,8 @@ export default function App() {
     // Do not dip window opacity to 0 here — show-window already sets opacity 1 in main. A 0 → rAF → 1
     // sequence left the BrowserWindow stuck invisible on some systems (clicks still hit; radial UI gone).
     } catch (e) {
+      radialClientPositionHintRef.current = null;
+      radialWindowOriginHintRef.current = null;
       flushSync(() => {
         setRadialOpenAwaitingFullscreen(false);
         setMinimizeNeutralCoverActive(false);
@@ -1885,26 +1869,86 @@ export default function App() {
   const openMenuRef = useRef(openMenu);
   openMenuRef.current = openMenu;
 
+  /**
+   * Alternância do gatilho (MMB / atalho global): o main não sabe se o radial está aberto,
+   * por isso a decisão vive aqui — segundo gatilho com o radial no ecrã fecha em vez de reabrir.
+   */
+  const isMenuOpenRef = useRef(isMenuOpen);
+  isMenuOpenRef.current = isMenuOpen;
+  const radialOpenAwaitingFullscreenRef = useRef(radialOpenAwaitingFullscreen);
+  radialOpenAwaitingFullscreenRef.current = radialOpenAwaitingFullscreen;
+  /** Impede o `click` gerado depois do `mouseup` que fechou o radial de atingir o painel. */
+  const radialClickShieldUntilRef = useRef(0);
+  /** Invalida uma abertura assíncrona quando o mesmo gatilho é usado para fechar. */
+  const radialTriggerGenerationRef = useRef(0);
+  const handleMenuCloseRef = useRef<
+    ((selectedId: string | null, selectedApp?: AppItem | null) => void) | null
+  >(null);
+  /** Verdadeiro quando um novo gatilho deve fechar o radial em vez de o abrir. */
+  const closeMenuFromTrigger = useCallback(() => {
+    if (!isMenuOpenRef.current && !radialOpenAwaitingFullscreenRef.current) return false;
+    radialTriggerGenerationRef.current += 1;
+    /** RadialMenu consome qualquer mouseup pendente deste gesto sem confirmar a fatia ativa. */
+    window.dispatchEvent(new CustomEvent('zenith-radial-toggle-close'));
+    handleMenuCloseRef.current?.(null);
+    return true;
+  }, []);
+
+  useEffect(() => {
+    const blockClickThrough = (event: MouseEvent) => {
+      const radialActive =
+        isMenuOpenRef.current || radialOpenAwaitingFullscreenRef.current;
+      const target = event.target instanceof Element ? event.target : null;
+      const belongsToRadial = !!target?.closest('[data-zenith-radial-modal="true"]');
+
+      /** Ícones e hub continuam a receber o clique que executa a ação escolhida. */
+      if (radialActive && belongsToRadial) return;
+      if (!radialActive && Date.now() > radialClickShieldUntilRef.current) return;
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+
+    document.addEventListener('click', blockClickThrough, true);
+    document.addEventListener('auxclick', blockClickThrough, true);
+    return () => {
+      document.removeEventListener('click', blockClickThrough, true);
+      document.removeEventListener('auxclick', blockClickThrough, true);
+    };
+  }, []);
+
   // After setBounds(fullscreen), inner/outer window metrics update a frame late — re-map screen anchor → client so the radial is not clipped (multi-monitor / half-screen).
   const syncMenuPositionFromAnchor = useCallback(() => {
-    if (configRef.current.fixedPosition) {
-      setMenuPosition({
-        x: window.innerWidth / 2,
-        y: window.innerHeight / 2,
-      });
-      return;
+    const hintedOrigin = radialWindowOriginHintRef.current;
+    const clientOriginX = hintedOrigin?.x ?? window.screenX;
+    const clientOriginY = hintedOrigin?.y ?? window.screenY;
+    /** Mesmo remapeamento da âncora, aplicado ao painel que ficou por baixo do radial. */
+    const panelScreen = panelOverlayScreenRectRef.current;
+    if (panelScreen) {
+      const next = {
+        x: Math.round(panelScreen.x - clientOriginX),
+        y: Math.round(panelScreen.y - clientOriginY),
+        width: panelScreen.width,
+        height: panelScreen.height,
+      };
+      setPanelOverlayClientRect((prev) =>
+        prev && prev.x === next.x && prev.y === next.y && prev.width === next.width && prev.height === next.height
+          ? prev
+          : next,
+      );
+    } else {
+      setPanelOverlayClientRect(null);
     }
-    const ax = menuAnchorScreenRef.current;
-    if (ax) {
-      setMenuPosition({
-        x: ax.x - window.screenX,
-        y: ax.y - window.screenY,
-      });
-    }
+
+    /**
+     * A posição da roda é congelada no `clientPosition` recebido no open-menu. Recalculá-la aqui
+     * com métricas tardias de `window.screenX/Y` fazia a árvore já visível saltar para outra origem.
+     * Este sincronizador continua responsável apenas pelo painel preservado sob o radial.
+     */
   }, []);
 
   useLayoutEffect(() => {
-    if (!isMenuOpen || !isDesktopMode) return;
+    if ((!isMenuOpen && !radialOpenAwaitingFullscreen) || !isDesktopMode) return;
     syncMenuPositionFromAnchor();
     let raf2 = 0;
     const raf1 = requestAnimationFrame(() => {
@@ -1916,10 +1960,10 @@ export default function App() {
       cancelAnimationFrame(raf1);
       cancelAnimationFrame(raf2);
     };
-  }, [isMenuOpen, isDesktopMode, syncMenuPositionFromAnchor]);
+  }, [isMenuOpen, radialOpenAwaitingFullscreen, isDesktopMode, syncMenuPositionFromAnchor]);
 
   useEffect(() => {
-    if (!isMenuOpen || !isDesktopMode) return;
+    if ((!isMenuOpen && !radialOpenAwaitingFullscreen) || !isDesktopMode) return;
 
     const sync = () => {
       syncMenuPositionFromAnchor();
@@ -1936,7 +1980,26 @@ export default function App() {
       cancelAnimationFrame(rafB);
       window.removeEventListener('resize', sync);
     };
-  }, [isMenuOpen, isDesktopMode, syncMenuPositionFromAnchor]);
+  }, [isMenuOpen, radialOpenAwaitingFullscreen, isDesktopMode, syncMenuPositionFromAnchor]);
+
+  /**
+   * O radial fecha por muitos caminhos (Escape, botão direito, duplo-MMB → definições, seleção).
+   * Em vez de limpar o rect do painel em cada um, limpamos aqui: enquanto não houver radial
+   * nem espera de resize, o painel volta a ser a própria janela.
+   *
+   * Não limpar os hints de geometria aqui. Este é um efeito passivo da sessão FECHADA e pode ser
+   * drenado pelo `flushSync` da abertura seguinte depois de `openMenu` já ter gravado os novos
+   * hints. Isso apagava a origem autoritativa e o primeiro frame voltava a `window.screenX/Y`
+   * ainda pertencente ao Settings; o rAF seguinte corrigia e a roda parecia saltar até ao centro.
+   * Cada abertura sobrescreve ambos os refs antes do seu próprio commit, portanto mantê-los entre
+   * sessões é seguro e elimina a escrita atrasada entre gerações.
+   */
+  useEffect(() => {
+    if (isMenuOpen || radialOpenAwaitingFullscreen) return;
+    setPanelKeptUnderRadial((prev) => (prev ? false : prev));
+    setPanelOverlayScreenRect((prev) => (prev === null ? prev : null));
+    setPanelOverlayClientRect((prev) => (prev === null ? prev : null));
+  }, [isMenuOpen, radialOpenAwaitingFullscreen]);
 
   /** Repaint só ao fechar o radial — invalidate ao abrir piscava o frame (dashboard→fullscreen) no Windows. */
   const prevIsMenuOpenForPaintRef = useRef(isMenuOpen);
@@ -1958,10 +2021,45 @@ export default function App() {
       x: number;
       y: number;
       source?: 'mmb' | 'mmb-click' | 'shortcut';
+      /** O main já sabe que o radial está aberto: este evento nunca deve abrir nem confirmar uma seleção. */
+      closeOnly?: boolean;
       preSizedByMain?: boolean;
+      keepPanel?: boolean;
+      panelRect?: ScreenRect | null;
+      clientPosition?: Coordinates | null;
+      windowOrigin?: Coordinates | null;
+      clientSize?: { width: number; height: number } | null;
+      paintToken?: number;
     }) => {
+      if (data.closeOnly) {
+        closeMenuFromTrigger();
+        return;
+      }
+      /** Segundo MMB / atalho com o radial já aberto: alternar (fechar) em vez de reabrir. */
+      if (closeMenuFromTrigger()) return;
+      /**
+       * Sem licença mostramos o gate — mas pela MESMA porta.
+       *
+       * Isto duplicava o caminho de abertura: calculava a posição sem a cadeia de recurso do
+       * `windowOrigin`, não repunha os sinalizadores de cobertura e não trocava a chave de
+       * montagem. Resultado: flash ao abrir e fechar sobre o painel, e a roda uns cem pixels
+       * acima do cursor — exatamente os defeitos que já tinham sido corrigidos no caminho normal.
+       *
+       * Levantar a bandeira ANTES de abrir garante que o `RadialMenu` nunca chega a montar: a
+       * árvore troca de componente no mesmo commit, sem um frame com a roda real à mostra.
+       */
+      if (!isStoreChannelRef.current && !userRef.current?.isPremium) {
+        flushSync(() => setIsLicenseGateOpen(true));
+      }
+
       void openMenuRef.current(data.x, data.y, data.source ?? 'shortcut', 'screen', {
         preSizedByMain: data.preSizedByMain === true,
+        keepPanel: data.keepPanel === true,
+        panelRect: data.panelRect ?? null,
+        clientPosition: data.clientPosition ?? null,
+        windowOrigin: data.windowOrigin ?? null,
+        clientSize: data.clientSize ?? null,
+        paintToken: data.paintToken,
       });
     });
 
@@ -1972,6 +2070,10 @@ export default function App() {
       });
     });
 
+    const cleanupRadialNativeRevealed = window.electron?.onRadialNativeRevealed?.((paintToken) => {
+      setRadialNativeRevealToken(paintToken);
+    });
+
     const cleanupDashboard = window.electron?.onOpenDashboard(() => {
       flushSync(() => {
         // Não ligar panelResizeSolidCover aqui se o painel já estiver aberto (ex.: Settings→Dashboard):
@@ -1979,8 +2081,8 @@ export default function App() {
         setPanelChromeDismissedForIsland(false);
         setMinimizeNeutralCoverActive(false);
         setRadialPreShowSolidCover(false);
-        setIsSettingsOpen(false);
-        setIsDashboardOpen(true);
+        setIsDashboardOpen(false);
+        setIsSettingsOpen(true);
       });
       /** Não chamar `showWindow()` aqui: corre antes dos `useLayoutEffect` + microtask com `applyWindowSize('windowed')`
        * e o DWM pinta o HWND grande com a textura da ilha (relógio “puxado”). O show fica no microtask após resize. */
@@ -1991,7 +2093,7 @@ export default function App() {
         setPanelChromeDismissedForIsland(false);
         setIsMenuOpen(false);
         setIsSettingsOpen(true);
-        setIsDashboardOpen(true);
+        setIsDashboardOpen(false);
       });
       requestAnimationFrame(() => {
         void window.electron?.invalidatePaint?.();
@@ -2024,7 +2126,7 @@ export default function App() {
 
       setLastLaunched({
         id: 'error',
-        label: isShortcutError ? 'Erro de Atalho' : 'Erro de Execução',
+        label: isShortcutError ? 'Shortcut Error' : 'Execution Error',
         command: '',
         iconName: 'AlertTriangle',
         description: errorMsg
@@ -2048,10 +2150,6 @@ export default function App() {
         (isDashboardOpenRef.current || isSettingsOpenRef.current)
       ) {
         setPanelChromeDismissedForIsland(true);
-        pendingMinimizeIslandRemountRef.current = true;
-      } else if (!minimized && pendingMinimizeIslandRemountRef.current) {
-        pendingMinimizeIslandRemountRef.current = false;
-        setIslandHudRemountKey((k) => k + 1);
       }
     });
 
@@ -2070,6 +2168,7 @@ export default function App() {
     return () => {
       cleanupMenu?.();
       cleanupPrepareRadial?.();
+      cleanupRadialNativeRevealed?.();
       cleanupDashboard?.();
       cleanupSettings?.();
       cleanupWindowState?.();
@@ -2167,7 +2266,7 @@ export default function App() {
       // Se já estamos no dashboard, ligar aqui deixa a cobertura para sempre — o efeito de resize não re-corre.
       setPanelChromeDismissedForIsland(false);
       setIsSettingsOpen(true);
-      setIsDashboardOpen(true);
+      setIsDashboardOpen(false);
     });
     requestAnimationFrame(() => {
       void window.electron?.invalidatePaint?.();
@@ -2176,29 +2275,48 @@ export default function App() {
       });
     });
   };
+
+  /** Fecha apenas a superfície de Settings; o processo, tray e atalhos continuam ativos. */
+  const handleClosePanelToBackground = useCallback(() => {
+    /**
+     * O main precisa saber no mesmo gesto que já não há painel. Esperar pelo effect
+     * deixava uma janela entre este clique e o próximo atalho em que o radial
+     * preservava/renderizava a textura antiga das definições.
+     */
+    window.electron?.setPanelSurfaceVisible?.(false);
+    flushSync(() => {
+      /** Mantém o HWND windowed por dois paints, mas sem desenhar o painel. */
+      setPanelNeutralizingClose(true);
+      setIsSettingsOpen(false);
+      setIsDashboardOpen(false);
+    });
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        flushSync(() => setPanelNeutralizingClose(false));
+      });
+    });
+  }, []);
+
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button === 1) { // Botão do meio
       e.preventDefault();
+      /**
+       * No Electron, o mesmo MMB também chega pelo monitor global no main process. Se ambos os
+       * caminhos alternarem o estado, o React fecha primeiro e o hook global pode interpretar o
+       * mesmo gesto como uma nova abertura alguns ms depois. O main é o único dono do MMB no app.
+       */
+      if (isDesktopModeRef.current && window.electron) return;
+      if (closeMenuFromTrigger()) return;
       void openMenu(e.clientX, e.clientY, 'mmb', 'client');
     }
   };
 
-  // Double Click (Left) to Open Settings — não dispara com widgets / alarme / overlay abertos
+  // Double Click (Left) to Open Settings — não dispara com o radial aberto
   const handleDoubleClick = (e: React.MouseEvent) => {
     if (Date.now() - menuJustClosedAtRef.current < 650) {
       return;
     }
-    if (
-      !isMenuOpen &&
-      !radialOpenAwaitingFullscreen &&
-      !isSettingsOpen &&
-      !isNotesOpen &&
-      !isPomodoroOpen &&
-      !isAlarmWidgetOpen &&
-      !isStopwatchOpen &&
-      !alarmRinging &&
-      !pomodoroEndOverlay
-    ) {
+    if (!isMenuOpen && !radialOpenAwaitingFullscreen && !isSettingsOpen) {
       handleOpenSettings();
     }
   };
@@ -2206,6 +2324,7 @@ export default function App() {
   const handleKeyDown = (e: KeyboardEvent) => {
     /* Removed hardcoded Alt+Z */
     if (e.key === 'Escape' && isMenuOpen) {
+      setIsLicenseGateOpen(false);
       setIsMenuOpen(false);
     }
   };
@@ -2223,73 +2342,21 @@ export default function App() {
     }
   }, []);
 
-  const openFullscreenWidget = async (
-    command: 'internal:notes' | 'internal:alarm' | 'internal:stopwatch' | 'internal:pomodoro',
-  ) => {
-    if (isDesktopMode && window.electron) {
-      try {
-        const anchor = windowCenterScreenPoint();
-        if (window.electron.applyWindowSize) {
-          await window.electron.applyWindowSize('fullscreen', anchor);
-        } else {
-          window.electron.setWindowSize('fullscreen', anchor);
-        }
-        await window.electron.ensureWindowInteractive?.();
-        lastWindowState.current = 'fullscreen';
-        if (hideTimeout.current) {
-          clearTimeout(hideTimeout.current);
-          hideTimeout.current = null;
-        }
-        window.electron.showWindow();
-      } catch {
-        /* ignore */
-      }
-    }
-
-    switch (command) {
-      case 'internal:notes':
-        setIsNotesOpen(true);
-        break;
-      case 'internal:alarm':
-        setIsAlarmWidgetOpen(true);
-        break;
-      case 'internal:stopwatch':
-        setIsStopwatchOpen(true);
-        break;
-      case 'internal:pomodoro':
-        setIsPomodoroOpen(true);
-        break;
-    }
-  };
-
   const executeAction = (
     command: string,
     commandType: "app" | "url" | "folder",
-    itemForToast?: AppItem,
-    options?: { openTerminal?: boolean; terminalCommands?: string[] }
+    _itemForToast?: AppItem,
+    options?: { openTerminal?: boolean; terminalCommands?: string[]; workingDirectory?: string; launchMode?: 'normal' | 'reuse' | 'prewarm' }
   ) => {
-    // console.log("🚀 Zenith executing:", command, "Type:", commandType, itemForToast);
+    // console.log("🚀 Zenith executing:", command, "Type:", commandType);
     if (!command) {
       console.warn("Attempted to execute an empty command");
       return;
     }
 
-    if (
-      command === 'internal:notes' ||
-      command === 'internal:alarm' ||
-      command === 'internal:stopwatch' ||
-      command === 'internal:pomodoro'
-    ) {
-      void openFullscreenWidget(command);
+    /** Widgets internos (Notas / Alarme / Cronómetro / Pomodoro) foram removidos — ignorar restos de configs antigos. */
+    if (command.startsWith('internal:')) {
       return;
-    }
-
-    if (itemForToast) {
-      setLastLaunched(itemForToast);
-      setTimeout(() => setLastLaunched(null), 3000);
-    } else {
-      setLastLaunched({ id: 'custom', label: 'Terminal', command: command, iconName: 'Terminal', description: 'Executando...' });
-      setTimeout(() => setLastLaunched(null), 3000);
     }
 
     if (isDesktopMode && window.electron) {
@@ -2297,12 +2364,7 @@ export default function App() {
       window.electron.executeCommand(command, commandType, options);
       setTimeout(() => {
         const g = electronShrinkGateRef.current;
-        if (
-          !g.isNotesOpen &&
-          !g.isPomodoroOpen &&
-          !g.pomodoroEndOverlay &&
-          !g.panelSurfaceOpen
-        ) {
+        if (!g.panelSurfaceOpen) {
           window.electron?.setWindowSize('small', windowCenterScreenPoint());
           // Unified visibility effect will handle hiding automatically based on state
         }
@@ -2316,71 +2378,33 @@ export default function App() {
   const handleMenuClose = useCallback((selectedId: string | null, selectedApp?: AppItem | null) => {
     const cfg = configRef.current;
     const currentWorkspaceApps = cfg.workspaces[cfg.activeWorkspaceIndex]?.apps || apps;
-    const app =
-      selectedId && selectedId !== '__CENTER__'
-        ? selectedApp ?? findAppRecursive(currentWorkspaceApps, selectedId)
-        : null;
-    const centerTargetCommand = (() => {
-      if (selectedId !== '__CENTER__') return null;
-      const centerConfig = cfg.centerButton;
-      if (centerConfig.type === 'app' || centerConfig.type === 'widget') {
-        const targetApp = findAppRecursive(currentWorkspaceApps, centerConfig.target);
-        return targetApp ? targetApp.command : centerConfig.target;
-      }
-      return null;
-    })();
-    const openingInternalWidget =
-      !!app?.command?.startsWith('internal:') ||
-      !!centerTargetCommand?.startsWith('internal:');
 
-    const closeMenu = () => {
-      setIsMenuOpen(false);
-      setRadialOpenAwaitingFullscreen(false);
-      setRadialPreShowSolidCover(false);
-      isHolding.current = false;
-    };
+    radialClickShieldUntilRef.current = Date.now() + 400;
+    setIsMenuOpen(false);
+    setIsLicenseGateOpen(false);
+    setRadialOpenAwaitingFullscreen(false);
+    setRadialPreShowSolidCover(false);
+    setRadialPendingPaintToken(null);
+    /** O painel volta a ser a própria janela: o efeito de modo repõe `windowed` com o rect guardado. */
+    setPanelKeptUnderRadial(false);
+    setPanelOverlayScreenRect(null);
+    setPanelOverlayClientRect(null);
+    isHolding.current = false;
 
-    if (openingInternalWidget) {
-      flushSync(closeMenu);
-    } else {
-      closeMenu();
-    }
-
-    if (
-      !selectedId &&
-      isDesktopMode &&
-      !panelSurfaceOpen &&
-      !isNotesOpen &&
-      !isPomodoroOpen &&
-      !alarmRinging &&
-      !pomodoroEndOverlay
-    ) {
+    if (!selectedId && isDesktopMode && !panelSurfaceOpen) {
       window.electron?.setWindowSize('small', windowCenterScreenPoint());
       return;
     }
 
     if (selectedId) {
-      const app =
-        selectedApp ?? findAppRecursive(currentWorkspaceApps, selectedId);
-
-      const isInternalWidget = app?.command?.startsWith('internal:');
-      if (!isInternalWidget) {
-        setIsDashboardOpen(false);
-      }
+      setIsDashboardOpen(false);
     }
 
     if (selectedId === '__CENTER__') {
       const centerConfig = cfg.centerButton;
 
       if (centerConfig.type === 'cancel') {
-        if (
-          isDesktopMode &&
-          !panelSurfaceOpen &&
-          !isNotesOpen &&
-          !isPomodoroOpen &&
-          !alarmRinging &&
-          !pomodoroEndOverlay
-        ) {
+        if (isDesktopMode && !panelSurfaceOpen) {
           window.electron?.setWindowSize('small', windowCenterScreenPoint());
         }
         return;
@@ -2392,7 +2416,9 @@ export default function App() {
         console.log("Center action, target command:", command);
         executeActionRef.current(command, targetApp?.commandType || 'app', targetApp, {
           openTerminal: targetApp?.openTerminal,
-          terminalCommands: targetApp?.terminalCommands
+          terminalCommands: targetApp?.terminalCommands,
+          workingDirectory: targetApp?.workingDirectory,
+          launchMode: targetApp?.launchMode,
         });
         return;
       } else if (centerConfig.type === 'command') {
@@ -2410,13 +2436,17 @@ export default function App() {
         console.log("Attempting to execute app command:", app.command);
         executeActionRef.current(app.command, app.commandType || 'app', app, {
           openTerminal: app.openTerminal,
-          terminalCommands: app.terminalCommands
+          terminalCommands: app.terminalCommands,
+          workingDirectory: app.workingDirectory,
+          launchMode: app.launchMode,
         });
       } else {
         console.warn("Could not find app with ID in active workspace:", selectedId);
       }
     }
-  }, [apps, isDesktopMode, panelSurfaceOpen, isNotesOpen, isPomodoroOpen, alarmRinging, pomodoroEndOverlay]);
+  }, [apps, isDesktopMode, panelSurfaceOpen]);
+
+  handleMenuCloseRef.current = handleMenuClose;
 
 
 
@@ -2429,29 +2459,121 @@ export default function App() {
       return;
     }
 
-    // Simulate Email Login (fallback)
-    const trialDate = new Date();
-    trialDate.setDate(trialDate.getDate() + 7); // 7 Days Trial
-
-    const newUser: UserProfile = {
-      id: 'user-123',
-      name: 'Email User',
-      isPremium: false,
-      isAdmin: false,
-      planTier: 'free',
-      trialEndsAt: trialDate.toISOString(),
-      avatarUrl: undefined,
-      email: 'user@example.com',
-    };
-    setUser(newUser);
+    window.electron?.openExternalUrl?.('https://zenithos.online/#download');
   };
+
+  const handleActivateLicense = useCallback(async (licenseKey: string) => {
+    if (!window.electron?.activateRovylLicense) {
+      return { ok: false, error: 'License activation is only available in the Rovyl desktop app.' };
+    }
+    const result = await window.electron.activateRovylLicense(licenseKey);
+    if (result.ok && result.license) {
+      const license = result.license;
+      const name = license.name || 'Rovyl User';
+      flushSync(() => {
+        setUser({
+          id: crypto.randomUUID(),
+          name,
+          /** Sem email real nao se inventa um: um placeholder faz parecer que a licenca nao e do utilizador. */
+          email: license.email || '',
+          isPremium: license.isPremium !== false,
+          isAdmin: license.isAdmin === true,
+          planTier: license.planTier ?? 'pro',
+          deviceLimit: typeof license.deviceLimit === 'number' ? license.deviceLimit : undefined,
+          trialEndsAt: undefined,
+          avatarUrl: license.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=111111&color=ffffff`,
+        });
+      });
+      /** A janela pode fechar-se logo a seguir (radial) — não esperar pelo debounce de 450 ms. */
+      flushPersistenceToDiskRef.current?.();
+    }
+    return result;
+  }, []);
+
+  /**
+   * Remover a licença é local: o `deviceId` guardado mantém-se, portanto reativar a mesma chave
+   * nesta máquina volta a ocupar o mesmo lugar em vez de gastar um dispositivo novo.
+   */
+  /**
+   * A roda trancada não pede a chave: encaminha para o cartão da licença nas definições, que é
+   * onde o teclado já funciona sem depender do roubo de foreground para a janela do radial.
+   */
+  const handleOpenLicenseSettings = useCallback(() => {
+    /**
+     * Uma única transição: fechar a roda pelo caminho normal chamaria `setWindowSize('small')` e a
+     * janela encolhia antes de as definições a voltarem a abrir — um salto visível. Aqui o estado
+     * passa direto de "roda trancada" para "painel aberto no cartão da licença".
+     */
+    radialClickShieldUntilRef.current = Date.now() + 400;
+    isHolding.current = false;
+    flushSync(() => {
+      setIsLicenseGateOpen(false);
+      setIsMenuOpen(false);
+      setRadialOpenAwaitingFullscreen(false);
+      setRadialPreShowSolidCover(false);
+      setRadialPendingPaintToken(null);
+      setPanelKeptUnderRadial(false);
+      setPanelOverlayScreenRect(null);
+      setPanelOverlayClientRect(null);
+      setPanelChromeDismissedForIsland(false);
+      setIsDashboardOpen(false);
+      setIsSettingsOpen(true);
+    });
+    setLicenseEditorRequested(true);
+    /** O painel acabado de revelar precisa do teclado tanto como o gate precisava. */
+    window.electron?.requestKeyboardFocus?.();
+    requestAnimationFrame(() => {
+      void window.electron?.invalidatePaint?.();
+    });
+  }, []);
+
+  const handleLicenseEditorConsumed = useCallback(() => setLicenseEditorRequested(false), []);
+
+  /** Objeto estável: o memo das secções das definições depende dele. */
+  const licenseState = useMemo(
+    () => ({
+      active: isStoreChannel || user?.isPremium === true,
+      name: user?.name,
+      email: user?.email,
+      planTier: isStoreChannel ? (user?.planTier ?? 'pro') : user?.planTier,
+      deviceLimit: user?.deviceLimit,
+    }),
+    [isStoreChannel, user?.isPremium, user?.name, user?.email, user?.planTier, user?.deviceLimit],
+  );
+
+  const handleRemoveLicense = useCallback(async () => {
+    /**
+     * Primeiro libertar o lugar no servidor, depois esquecer localmente.
+     *
+     * Pela ordem inversa — ou sem a chamada, como estava — o dispositivo continuava a contar
+     * para o limite de três e o utilizador não tinha forma de o reaver. A remoção local acontece
+     * mesmo que o servidor recuse ou a rota ainda não exista: ficar preso a uma licença que já
+     * não se quer é pior do que um lugar por libertar, e o registo diz o que aconteceu.
+     */
+    let release: { ok: boolean; error?: string; code?: string } | undefined;
+    try {
+      release = await window.electron?.deactivateRovylLicense?.();
+    } catch (e) {
+      release = { ok: false, error: 'Falha ao contactar o serviço de licenças.' };
+    }
+    if (release && !release.ok) {
+      window.electron?.savePersistenceLog?.(
+        `[License] lugar NÃO libertado no servidor: ${release.code ?? '?'} ${release.error ?? ''}`,
+      );
+    }
+
+    flushSync(() => {
+      setUser(null);
+    });
+    flushPersistenceToDiskRef.current?.();
+  }, []);
 
   const handleLogout = () => {
     flushSync(() => {
       setUser(null);
-      setIsSettingsOpen(false);
       setPanelChromeDismissedForIsland(false);
-      setIsDashboardOpen(true);
+      setIsDashboardOpen(false);
+      setIsSettingsOpen(true);
     });
   };
 
@@ -2460,30 +2582,19 @@ export default function App() {
   }, []);
 
   /** Menu-only slice of config: stable when unrelated settings (e.g. widget opacities) change — keeps RadialMenu from re-rendering the full wheel. */
-  const radialMenuConfig = React.useMemo(
-    () => config,
-    [
-      config.accentColor,
-      config.menuRadius,
-      config.iconSize,
-      config.backdropOpacity,
-      config.menuBackgroundStyle,
-      config.appSpacing,
-      config.activationThreshold,
-      config.centerButton,
-      config.showLabels,
-      config.alwaysShowAppLabels,
-      config.showBattery,
-      config.showWeather,
-      config.weatherLocation,
-      config.clockPosition,
-      config.workspaces,
-      config.activeWorkspaceIndex,
-      config.workspaceSwitchMode,
-      config.language,
-      config.performanceMode,
-    ]
-  );
+  /**
+   * A roda recebe o config inteiro; a memo existe so para estabilizar a referencia.
+   *
+   * As dependencias eram uma LISTA DE CAMPOS escrita a mao. Como o callback devolve `config`
+   * tal e qual, qualquer definicao fora dessa lista mudava no estado e a roda continuava a
+   * receber o objeto ANTERIOR — a alteracao so passava quando, por acaso, um dos campos
+   * listados tambem mudasse. Foi o que aconteceu a mira por cursor: alternar a opcao nao
+   * produzia efeito nenhum. Cada campo novo era uma armadilha silenciosa.
+   *
+   * Depender do objeto resolve a classe inteira de problemas: `config` so troca de identidade
+   * quando o `setConfig` corre, ou seja quando algo mudou mesmo.
+   */
+  const radialMenuConfig = React.useMemo(() => config, [config]);
 
   const radialApps = React.useMemo(() => {
     const w = config.workspaces[config.activeWorkspaceIndex];
@@ -2497,15 +2608,38 @@ export default function App() {
 
   // Check if any modal is open
   const isAnyModalOpen =
-    panelSurfaceOpen ||
-    isNotesOpen ||
-    isAlarmWidgetOpen ||
-    isStopwatchOpen ||
-    isPomodoroOpen ||
-    alarmRinging ||
-    pomodoroEndOverlay ||
-    isMenuOpen ||
-    radialOpenAwaitingFullscreen;
+    panelSurfaceOpen || isMenuOpen || radialOpenAwaitingFullscreen;
+
+  /**
+   * O painel sobrevive ao radial (ver `panelOverlayScreenRect`). São duas fases:
+   * `…Staying` cobre já a espera do resize — é o que impede o `hidden` de piscar o painel;
+   * `…UnderRadial` é a fase em que ele já é posicionado pelo rect dentro da janela alargada.
+   */
+  const panelStaysUnderRadial =
+    (isMenuOpen || radialOpenAwaitingFullscreen) &&
+    panelSurfaceOpen &&
+    panelKeptUnderRadial;
+  const panelUnderRadial = panelStaysUnderRadial && !!panelOverlayClientRect;
+  const radialBlocksPanelInteraction = isMenuOpen || radialOpenAwaitingFullscreen;
+  /**
+   * O conteúdo do painel desenha-se: fora do radial como sempre, ou por baixo dele neste modo.
+   *
+   * Com uma exceção. Quando o main ALARGA a janela para o radial, manda o rect do painel para ele
+   * ser reposicionado lá dentro — e esse rect só existe em coordenadas do cliente depois de um
+   * `useLayoutEffect` o converter. Nesse intervalo o painel era desenhado sem posição nenhuma, ou
+   * seja `inset-0` de uma janela agora do tamanho do ecrã: as Definições saltavam para gigantes.
+   *
+   * Havendo rect de ecrã, o painel só aparece depois de estar posicionado. Sem rect (o caminho em
+   * que a janela não é alargada), `inset-0` é a posição correta e não há nada a esperar.
+   */
+  const panelAwaitingOverlayPlacement =
+    panelStaysUnderRadial && !!panelOverlayScreenRect && !panelOverlayClientRect;
+  const panelContentVisible =
+    (panelStaysUnderRadial && !panelAwaitingOverlayPlacement) ||
+    (!isMenuOpen && !radialOpenAwaitingFullscreen);
+
+  /** Tema das superfícies opacas (titlebar + painéis). O radial nunca é temado: é overlay do ambiente de trabalho. */
+  const panelTheme = config.appearanceTheme === 'white' ? 'white' : 'black';
 
   return (
     <div
@@ -2521,9 +2655,23 @@ export default function App() {
         if (isMenuOpen) setIsMenuOpen(false);
       }}
     >
-      {isDesktopMode && (minimizeNeutralCoverActive || radialPreShowSolidCover) && (
+      {/* Antes de minimizar: frame opaco de propósito, para o Windows guardar um bitmap neutro. */}
+      {isDesktopMode && minimizeNeutralCoverActive && (
         <div
           className="fixed inset-0 z-[99999] bg-[#0A0A0A] pointer-events-none"
+          aria-hidden
+        />
+      )}
+
+      {/**
+       * `prepare-radial-show`: main já fez `showInactive()` nos bounds antigos, por isso um frame
+       * preto aqui é visível como um retângulo a piscar. Só é preciso forçar um paint novo para
+       * não expor textura obsoleta — limpar para (quase) transparente serve, e não se vê.
+       */}
+      {isDesktopMode && radialPreShowSolidCover && (
+        <div
+          className="fixed inset-0 z-[99999] pointer-events-none"
+          style={{ background: 'rgba(10,10,10,0.01)' }}
           aria-hidden
         />
       )}
@@ -2531,47 +2679,124 @@ export default function App() {
       {/* Visibility Wrapper — ONLY for opaque content (Dashboard, Settings, Widgets) */}
       {/* RadialMenu renders OUTSIDE this wrapper to stay truly transparent */}
       {/* When radial opens: hide this layer instantly (no opacity transition) — otherwise the 300ms fade shows a flash of the last settings/dashboard frame */}
-      <div className={`
-        absolute inset-0 overflow-hidden [--zenith-title-bar-h:38px]
-        ${isMenuOpen || radialOpenAwaitingFullscreen
-          ? 'hidden !transition-none pointer-events-none'
-          : `${panelSurfaceOpen ? '!transition-none' : 'transition-all duration-300'} ${(panelSurfaceOpen || isNotesOpen || isAlarmWidgetOpen || isStopwatchOpen || isPomodoroOpen || alarmRinging || pomodoroEndOverlay) ? 'opacity-100 visible' : 'opacity-0 pointer-events-none invisible'}`
+      {/*
+        A janela é UMA superfície. Antes havia `border` + `rounded-xl` + `shadow-[0_0_50px]`
+        neste mesmo elemento `absolute inset-0`: como o pai é `fixed inset-0 overflow-hidden`,
+        a sombra externa era recortada e só sobravam os borrões nos entalhes dos cantos —
+        lia-se como uma segunda camada por trás de uma borda desenhada por cima.
+        `zenith-panel-surface` (index.css) substitui os três por um hairline interior
+        tokenizado + raio. `hasShadow:false` no main mantém-se: a separação do ambiente
+        de trabalho vem do raio e do contraste de superfície, não de um halo interno.
+      */}
+      {/**
+       * Radial por cima do painel: a janela foi alargada para cobrir os dois, por isso o painel
+       * deixa de poder ser `inset-0` — ficaria esticado ao tamanho do overlay. Passa a ser
+       * desenhado na caixa exata que ocupava no ecrã, e só o radial recebe rato: um clique
+       * perdido nas definições durante o gesto seria uma ação que o utilizador não pediu.
+       */}
+      <div
+        data-zn-theme={panelTheme}
+        data-radial-background-inert={radialBlocksPanelInteraction ? 'true' : undefined}
+        {...({ inert: radialBlocksPanelInteraction ? '' : undefined } as any)}
+        aria-hidden={radialBlocksPanelInteraction ? true : undefined}
+        style={panelStaysUnderRadial ? {
+          /**
+           * `z-index` explícito por duas razões: fica por baixo do radial (z-70) e, sobretudo,
+           * cria um contexto de empilhamento — sem ele o `z-index: 100` do `.zs-shell` competia
+           * no contexto da raiz e as definições desenhavam-se POR CIMA da roda.
+           */
+          zIndex: 5,
+          /** Posicionamento só existe no caminho com resize; sem ele o painel continua a ser a janela. */
+          ...(panelUnderRadial
+            ? {
+                position: 'absolute' as const,
+                left: panelOverlayClientRect!.x,
+                top: panelOverlayClientRect!.y,
+                width: panelOverlayClientRect!.width,
+                height: panelOverlayClientRect!.height,
+              }
+            : null),
+        } : undefined}
+        className={`
+        overflow-hidden [--zenith-title-bar-h:38px]
+        ${panelUnderRadial ? '' : 'absolute inset-0'}
+        ${panelNeutralizingClose
+          ? 'opacity-0 invisible !transition-none pointer-events-none'
+          : panelStaysUnderRadial
+          ? 'zenith-panel-surface pointer-events-none !transition-none'
+          : (isMenuOpen || radialOpenAwaitingFullscreen)
+            ? 'hidden !transition-none pointer-events-none'
+            : panelSurfaceOpen
+              ? 'zenith-panel-surface !transition-none opacity-100 visible'
+              : 'hidden !transition-none pointer-events-none'
         }
-        ${!isMenuOpen && !radialOpenAwaitingFullscreen && panelSurfaceOpen ? 'bg-[#0A0A0A]' : ''}
-        ${!isMenuOpen && !radialOpenAwaitingFullscreen && panelSurfaceOpen ? 'border border-white/10 rounded-xl shadow-[0_0_50px_rgba(0,0,0,0.5)]' : ''}
       `}>
         {/* CUSTOM TITLE BAR OVERLAY (for drag region + app name) */}
-        {panelSurfaceOpen && !isMenuOpen && !radialOpenAwaitingFullscreen && (
+        {panelSurfaceOpen && panelContentVisible && (
           <div
-            className="absolute top-0 left-0 right-0 h-[var(--zenith-title-bar-h)] z-[999] flex items-center justify-between px-4 bg-[#0A0A0A]/80 backdrop-blur-xl border-b border-white/[0.05]"
-            style={{ WebkitAppRegion: 'drag' } as any}
+            /* `zenith-titlebar` — estilo em index.css, a par do painel radial. */
+            className="zenith-titlebar absolute top-0 left-0 right-0 h-[var(--zenith-title-bar-h)] z-[999] flex items-center justify-between pl-3 rounded-t-[12px] overflow-hidden"
+            /* Sob o radial a região de arrasto moveria a janela do overlay inteira, não o painel. */
+            style={{ WebkitAppRegion: panelStaysUnderRadial ? 'no-drag' : 'drag' } as any}
           >
-            <div className="flex items-center gap-3 pointer-events-none">
-              <div className="w-5 h-5 bg-gradient-to-br from-white/10 to-transparent border border-white/10 rounded-md flex items-center justify-center bg-black shadow-inner">
-                <img src="icon.png" alt="Zenith" className="w-3.5 h-3.5 opacity-90" />
+            {isSettingsOpen ? (
+              <div
+                className="flex items-center gap-1 pointer-events-auto"
+                style={{ WebkitAppRegion: 'no-drag' } as any}
+                aria-label="Settings navigation"
+              >
+                <button
+                  className="zenith-titlebar-btn w-8 h-6 flex items-center justify-center rounded-md"
+                  onClick={() => window.dispatchEvent(new CustomEvent('zenith-settings-toggle-sidebar'))}
+                  aria-label="Hide or show sidebar"
+                >
+                  <PanelLeftClose size={14} strokeWidth={1.9} />
+                </button>
+                <button
+                  className="zenith-titlebar-btn w-8 h-6 flex items-center justify-center rounded-md"
+                  onClick={() => window.dispatchEvent(new CustomEvent('zenith-settings-navigation', { detail: 'back' }))}
+                  aria-label="Back in settings"
+                >
+                  <ArrowLeft size={14} strokeWidth={1.9} />
+                </button>
+                <button
+                  className="zenith-titlebar-btn w-8 h-6 flex items-center justify-center rounded-md"
+                  onClick={() => window.dispatchEvent(new CustomEvent('zenith-settings-navigation', { detail: 'forward' }))}
+                  aria-label="Forward in settings"
+                >
+                  <ArrowRight size={14} strokeWidth={1.9} />
+                </button>
               </div>
-            </div>
+            ) : (
+              <div />
+            )}
 
             {/* Custom Window Controls */}
-            <div className="flex items-center gap-1 pointer-events-auto" style={{ WebkitAppRegion: 'no-drag' } as any}>
+            <div className="flex items-stretch h-full pointer-events-auto" style={{ WebkitAppRegion: 'no-drag' } as any}>
+              {/*
+                Controlos de janela como os do Windows: sem `title` (o tooltip nativo aparecia
+                sobre a barra e não existe em janela nenhuma do sistema) e sem transições — o
+                realce de fundo é instantâneo, como no Explorador. O `aria-label` fica, porque é
+                para leitores de ecrã e não desenha nada.
+              */}
               <button
-                className="w-8 h-6 flex items-center justify-center text-white/30 hover:text-white hover:bg-white/10 rounded-md transition-all duration-200"
+                className="zenith-titlebar-btn h-full w-[46px] flex items-center justify-center"
                 onClick={() => flushNeutralFrameThenMinimize()}
-                title="Minimizar para a bandeja (sem ícone na barra de tarefas)"
+                aria-label="Minimize"
               >
                 <Minus size={13} strokeWidth={2} />
               </button>
               <button
-                className="w-8 h-6 flex items-center justify-center text-white/30 hover:text-white hover:bg-white/10 rounded-md transition-all duration-200"
+                className="zenith-titlebar-btn h-full w-[46px] flex items-center justify-center"
                 onClick={() => window.electron?.toggleMaximize()}
-                title={windowState === 'maximized' ? "Restaurar" : "Maximizar"}
+                aria-label={windowState === 'maximized' ? 'Restore' : 'Maximize'}
               >
                 {windowState === 'maximized' ? <Square size={11} strokeWidth={2.5} /> : <Maximize size={11} strokeWidth={2.5} />}
               </button>
               <button
-                className="w-8 h-6 flex items-center justify-center text-white/30 hover:text-red-500/80 rounded-md transition-all duration-200"
-                onClick={() => window.electron?.quitApp()}
-                title="Fechar Zenith"
+                className="zenith-titlebar-btn is-close h-full w-[46px] flex items-center justify-center"
+                onClick={handleClosePanelToBackground}
+                aria-label="Close"
               >
                 <X size={13} strokeWidth={2.5} />
               </button>
@@ -2586,30 +2811,8 @@ export default function App() {
         {/* DELETED: Removed redundant background to allow RadialMenu to handle it exclusively */}
 
         {/* WELCOME SCREEN / DASHBOARD — AnimatePresence sync evita buraco só com fundo entre dashboard e definições (DWM). */}
-        {!isMenuOpen && !radialOpenAwaitingFullscreen && (
+        {panelContentVisible && (
           <AnimatePresence mode="sync">
-            {isDashboardOpen && panelSurfaceOpen && !isSettingsOpen && !isNotesOpen && !isAlarmWidgetOpen && !isStopwatchOpen && !isPomodoroOpen && !alarmRinging && !pomodoroEndOverlay && (
-              <motion.div
-                key="welcome"
-                initial={{ opacity: 0, x: -20, filter: 'blur(10px)' }}
-                animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
-                exit={{ opacity: 0, x: -20, filter: 'blur(10px)' }}
-                transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-                className="absolute inset-x-0 bottom-0 top-[var(--zenith-title-bar-h)] z-10 min-h-0"
-                id="dashboard-container"
-              >
-                <WelcomeScreen
-                  onOpenSettings={handleOpenSettings}
-                  onClose={() => setIsDashboardOpen(false)}
-                  config={config}
-                  user={user}
-                  onLogin={handleLogin}
-                  onLogout={handleLogout}
-                  onUserProfileUpdate={handleUserProfileUpdate}
-                />
-              </motion.div>
-            )}
-
             {isSettingsOpen && panelSurfaceOpen && (
               <motion.div
                 key="settings-page"
@@ -2617,14 +2820,15 @@ export default function App() {
                 animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
                 exit={{ opacity: 0, x: 20, filter: 'blur(10px)' }}
                 transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-                className="absolute inset-0 z-20"
+                className="absolute inset-x-0 bottom-0 top-[var(--zenith-title-bar-h)] z-20"
               >
-                <SettingsModal
+                <React.Suspense
+                  fallback={<div className="absolute inset-0 bg-[#08090b]" aria-hidden />}
+                >
+                <PrecisionSettings
                   isOpen={isSettingsOpen}
                   isPage={true}
-                  onClose={() => {
-                    setIsSettingsOpen(false);
-                  }}
+                  onClose={handleClosePanelToBackground}
                   apps={apps} setApps={setApps} config={config} setConfig={setConfig} onReset={async () => { 
                     try {
                       setIsDashboardOpen(false);
@@ -2643,16 +2847,14 @@ export default function App() {
                         window.location.reload();
                     }
                   }}
-                  onOpenDashboard={() => {
-                    flushSync(() => {
-                      setIsSettingsOpen(false);
-                      setPanelChromeDismissedForIsland(false);
-                      setIsDashboardOpen(true);
-                    });
-                  }}
-                  user={user}
-                  onLogout={handleLogout}
+                  onOpenDashboard={handleOpenSettings}
+                  onActivateLicense={handleActivateLicense}
+                  license={licenseState}
+                  onRemoveLicense={isStoreChannel ? undefined : handleRemoveLicense}
+                  licenseEditorRequested={licenseEditorRequested}
+                  onLicenseEditorConsumed={handleLicenseEditorConsumed}
                 />
+                </React.Suspense>
               </motion.div>
             )}
           </AnimatePresence>
@@ -2660,57 +2862,20 @@ export default function App() {
 
       </div>
 
-      {/* Widgets fullscreen — fora do wrapper opaco/hidden do painel para não ficarem `display:none` com o radial aberto */}
-      <NotesWidget
-        isOpen={isNotesOpen}
-        onClose={() => { setIsNotesOpen(false); }}
-        notes={notes}
-        setNotes={setNotes}
-        config={config}
-        setConfig={setConfig}
-        noteWorkspaces={noteWorkspaces}
-        setNoteWorkspaces={setNoteWorkspaces}
-        activeNoteWorkspaceId={activeNoteWorkspaceId}
-        setActiveNoteWorkspaceId={setActiveNoteWorkspaceId}
-      />
-      <AlarmWidget
-        isOpen={isAlarmWidgetOpen}
-        onClose={() => { setIsAlarmWidgetOpen(false); }}
-        alarms={alarms}
-        setAlarms={setAlarms}
-        config={config}
-        setConfig={setConfig}
-        onPreviewAlarm={(a) => setAlarmRinging({ alarm: a, isPreview: true })}
-      />
-      <StopwatchWidget
-        isOpen={isStopwatchOpen}
-        onClose={() => {
-          setIsStopwatchOpen(false);
-        }}
-        config={config}
-        setConfig={setConfig}
-      />
-      <PomodoroWidget
-        isOpen={isPomodoroOpen}
-        onClose={() => { setIsPomodoroOpen(false); }}
-        {...pomodoro}
-        uiConfig={config}
-        setConfig={setConfig}
-        onPreviewSessionEnd={(mode) => {
-          if (shouldPlayPomodoroSounds()) {
-            void resumePomodoroAudio();
-            if (loadPomodoroUiPrefs().ambientPreset === 'off') {
-              playPomodoroSegmentEnd();
-            }
-          }
-          setPomodoroEndOverlay({ endedMode: mode, isPreview: true });
-        }}
-      />
+      {/* Último frame do painel: quase transparente, mas não vazio, para Chromium submetê-lo ao DWM. */}
+      {isDesktopMode && panelNeutralizingClose && (
+        <div
+          className="fixed inset-0 z-[99999] pointer-events-none"
+          style={{ background: 'rgba(10,10,10,0.01)' }}
+          aria-hidden
+        />
+      )}
 
-      {/* Durante `applyWindowSize` o painel já está oculto no React — fundo sólido evita flash do wallpaper / última textura do compositor. */}
+      {/* Durante `applyWindowSize` o painel já está oculto no React — fundo sólido evita flash da última textura do compositor.
+          Sem painel opaco antes (bandeja/ilha) fica transparente: aí o preto era ele próprio o flash. */}
       {isDesktopMode && radialOpenAwaitingFullscreen && (
         <div
-          className="fixed inset-0 z-[65] bg-[#0A0A0A] pointer-events-auto"
+          className={`fixed inset-0 z-[65] pointer-events-auto ${radialAwaitCoverOpaque ? 'bg-[#0A0A0A]' : ''}`}
           aria-hidden
         />
       )}
@@ -2723,70 +2888,50 @@ export default function App() {
         />
       )}
 
-      {/* ALARM — fora da camada opaca: visível mesmo com janela “passiva” / nada aberto */}
-      <AnimatePresence>
-        {alarmRinging && (
-          <AlarmRingingOverlay
-            key={`${alarmRinging.alarm.id}-${alarmRinging.isPreview ? 'p' : 'r'}`}
-            alarm={alarmRinging.alarm}
-            isPreview={alarmRinging.isPreview}
-            config={config}
-            onDismiss={() => setAlarmRinging(null)}
-            onSnoozeMinutes={(minutes) => {
-              const a = alarmRinging.alarm;
-              setAlarmRinging(null);
-              setSnoozeWake({ alarm: a, at: Date.now() + minutes * 60 * 1000 });
-            }}
-          />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {pomodoroEndOverlay && (
-          <PomodoroCompleteOverlay
-            key={`pomodoro-end-${pomodoroEndOverlay.endedMode}-${pomodoroEndOverlay.isPreview ? 'p' : 'r'}`}
-            endedMode={pomodoroEndOverlay.endedMode}
-            isPreview={pomodoroEndOverlay.isPreview}
-            config={config}
-            onDismiss={() => setPomodoroEndOverlay(null)}
-          />
-        )}
-      </AnimatePresence>
-
       {/* ------------------------------------------------------------------ */}
       {/* TRANSPARENT LAYER — no background, RadialMenu + toasts live here    */}
       {/* ------------------------------------------------------------------ */}
 
-        {!isMenuOpen &&
-          !radialOpenAwaitingFullscreen &&
-          !islandHoldAfterRadialClose &&
-          !hideIslandForWindowedPanelTransition &&
-          electronSmallOverlayReady &&
-          timerHudActive &&
-          !anyFullscreenWidgetOpen && (
-            <CompactTimerHud
-              key={islandHudRemountKey}
-              config={config}
-              isDesktopMode={isDesktopMode}
-              isPomodoroOpen={isPomodoroOpen}
-              isStopwatchOpen={isStopwatchOpen}
-              pomodoroState={pomodoro.state}
-              pomodoroConfig={pomodoro.config}
-              stopwatchSnap={stopwatchHudSnap}
-            />
-          )}
-
         {/* Durante `radialOpenAwaitingFullscreen` o menu não pode ficar montado com `isOpen={false}` — o Framer animava “fechar” e depois “abrir”, causando flash de saída/entrada. */}
-        {(!radialOpenAwaitingFullscreen || isMenuOpen) && !anyFullscreenWidgetOpen && (
+        {!isLicenseGateOpen && (!radialOpenAwaitingFullscreen || isMenuOpen) && (
           <RadialMenu
+            key={radialMountKey}
             isOpen={isMenuOpen}
             position={menuPosition}
+            viewportSize={radialClientSize}
             onClose={handleMenuClose}
             apps={radialApps}
             config={radialMenuConfig}
             triggerSource={triggerSource}
+            updateReady={updateReady}
             onWorkspaceSwitch={handleWorkspaceSwitch}
             currentWorkspace={radialCurrentWorkspace}
+            animationReady={
+              radialPendingPaintToken === null ||
+              radialNativeRevealToken === radialPendingPaintToken
+            }
+          />
+        )}
+
+        {/*
+          Mesma condição do radial: enquanto a janela alarga, nada é montado. Sem isto o gate
+          aparecia antes do primeiro paint transparente e via-se o flash que a máquina de estados
+          do radial existe para evitar.
+        */}
+        {isLicenseGateOpen && (!radialOpenAwaitingFullscreen || isMenuOpen) && (
+          <LicenseGate
+            /** Mesma chave de montagem da roda: cada abertura começa de estado limpo. */
+            key={radialMountKey}
+            onOpenLicenseSettings={handleOpenLicenseSettings}
+            onDismiss={() => handleMenuClose(null)}
+            triggerSource={triggerSource}
+            position={menuPosition}
+            config={radialMenuConfig}
+            viewportSize={radialClientSize}
+            animationReady={
+              radialPendingPaintToken === null ||
+              radialNativeRevealToken === radialPendingPaintToken
+            }
           />
         )}
 
@@ -2805,7 +2950,7 @@ export default function App() {
                   <AlertTriangle size={20} />
                 </div>
                 <div className="flex-1">
-                  <div className="text-[10px] font-black uppercase tracking-widest text-white/60 mb-1">Erro de Execução</div>
+                  <div className="text-[10px] font-black uppercase tracking-widest text-white/60 mb-1">Execution Error</div>
                   <div className="text-sm font-bold text-white leading-tight">{executionError}</div>
                 </div>
                 <button onClick={() => setExecutionError(null)} className="text-white/40 hover:text-white transition-colors">
@@ -2816,11 +2961,6 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        <StartMenuResolvingOverlay
-          open={startMenuResolving.open}
-          language={startMenuResolving.lang}
-          accentColor={config.accentColor}
-        />
 
         {/* FLASH PREVENTION BLANKER */}
         {!isAppReady && (

@@ -1,5 +1,4 @@
 import React from 'react';
-import { motion } from 'framer-motion';
 import { Cloud } from 'lucide-react';
 import { CLOCK_HUD_POSITIONS, ClockHudPosition, UIConfig } from '../types';
 
@@ -169,14 +168,14 @@ export const RadialHud: React.FC<RadialHudProps> = ({
 
   return (
     <div className={shellClass}>
-      <motion.div
-        initial={false}
-        animate={{
-          opacity: isOpen ? 1 : 0,
-          y: isOpen ? 0 : enterY,
+      <div
+        className={`zn-radial-pill ${innerClass}`}
+        style={{
+          ['--zn-tf' as string]: `translate3d(0, ${isOpen ? 0 : enterY}px, 0)`,
+          ['--zn-op' as string]: isOpen ? 1 : 0,
+          ['--zn-dur' as string]: isOpen ? '260ms' : '140ms',
+          ['--zn-dur-op' as string]: isOpen ? '200ms' : '120ms',
         }}
-        transition={{ duration: isOpen ? 0.26 : 0.14, ease: [0.22, 1, 0.36, 1] }}
-        className={innerClass}
       >
         <HudStatusStrip
           align={align}
@@ -186,7 +185,7 @@ export const RadialHud: React.FC<RadialHudProps> = ({
           batteryLevel={batteryLevel}
           weather={weather}
         />
-      </motion.div>
+      </div>
     </div>
   );
 };

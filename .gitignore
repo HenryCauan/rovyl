@@ -42,3 +42,15 @@ backend/debug_*.json
 *.njsproj
 *.sln
 *.sw?
+
+# Assistant / editor tooling — local to whoever is working, not part of the project
+.claude/
+.cursor/
+.codex-video-review/
+.codex-video-review-current/
+.openai/
+.agents/
+
+# Local build verification runs
+build-out-update-validation/
+build/appx/

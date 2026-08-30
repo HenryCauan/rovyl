@@ -1,7 +1,7 @@
 /**
  * Public marketing / help site (opened in the default browser from the desktop app).
  */
-export const ZENITH_LAUNCHER_SITE_URL = "https://zenithos.online";
+export const ZENITH_LAUNCHER_SITE_URL = "https://rovyl-red.vercel.app";
 
 /**
  * Web sign-in (Google). Desktop opens with `?client=desktop` and bridges id_token to localhost:3892.

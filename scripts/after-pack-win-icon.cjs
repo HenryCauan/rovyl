@@ -50,6 +50,29 @@ module.exports = async function afterPackWinIcon(context) {
     );
   }
 
-  await rcedit(exePath, { icon: iconPath });
-  console.log(`after-pack-win-icon: set icon on ${exePath}`);
+  /**
+   * Além do ícone, os metadados do executável.
+   *
+   * O Gestor de Tarefas mostra o campo `FileDescription` do recurso de versão do PE. O binário
+   * pré-compilado do Electron traz lá "Electron", e com `signAndEditExecutable: false` ninguém o
+   * reescrevia — a app aparecia ao utilizador com o nome do runtime em vez do seu. `rcedit` já
+   * estava a ser usado para o ícone; escrever a versão no mesmo passo não custa nada.
+   */
+  const pkg = require("../package.json");
+  const year = new Date().getFullYear();
+
+  await rcedit(exePath, {
+    icon: iconPath,
+    "file-version": pkg.version,
+    "product-version": pkg.version,
+    "version-string": {
+      FileDescription: "Rovyl",
+      ProductName: "Rovyl",
+      InternalName: "Rovyl",
+      OriginalFilename: `${path.basename(exePath)}`,
+      CompanyName: "Henry Cauan",
+      LegalCopyright: `Copyright © ${year} Henry Cauan`,
+    },
+  });
+  console.log(`after-pack-win-icon: set icon and version info on ${exePath}`);
 };

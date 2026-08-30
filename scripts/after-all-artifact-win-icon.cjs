@@ -42,6 +42,20 @@ module.exports = async function afterAllArtifactWinIcon(buildResult) {
     if (!artifactPath.endsWith(".exe")) continue;
     const base = path.basename(artifactPath).toLowerCase();
     if (base.includes("setup") || base.includes("installer")) continue;
+    /**
+     * O target portable do electron-builder é um stub PE seguido por um arquivo 7z no overlay.
+     * `rcedit` regrava apenas o PE e descarta esse overlay, reduzindo ~86 MB a ~320 KB. O ícone
+     * configurado no próprio builder já é aplicado durante a criação; nunca pós-processar esse
+     * artefato grande.
+     */
+    try {
+      if (fs.statSync(artifactPath).size > 10 * 1024 * 1024) {
+        console.log(`after-all-artifact-win-icon: preserved portable payload ${artifactPath}`);
+        continue;
+      }
+    } catch {
+      continue;
+    }
     try {
       await rcedit(artifactPath, { icon: iconPath });
       console.log(`after-all-artifact-win-icon: patched ${artifactPath}`);

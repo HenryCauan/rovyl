@@ -1,16 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { NativeAppIcon, useInstalledApps, type InstalledApp } from './installedApps';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Search, X, Loader2, Monitor, Folder, Package, Terminal,
     Globe, Link, ChevronRight, FolderOpen, ArrowRight, Check
 } from 'lucide-react';
 
-interface WindowsApp {
-    Name: string;
-    Path: string;
-    IconPath: string;
-    DisplayName: string;
-}
+type WindowsApp = InstalledApp;
 
 interface AppSelectorProps {
     isOpen: boolean;
@@ -26,41 +22,20 @@ type Tab = 'apps' | 'url' | 'folder';
 
 // ─── App Icon with lazy native icon fetch ─────────────────────────────────────
 const AppIcon: React.FC<{ path: string; size?: number }> = ({ path, size = 40 }) => {
-    const [iconUrl, setIconUrl] = useState<string | null>(null);
-
-    useEffect(() => {
-        if (!path || path.length < 2) return;
-        let isMounted = true;
-        const fetch = async () => {
-            try {
-                if (window.electron?.getFileIcon) {
-                    const url = await window.electron.getFileIcon(path);
-                    if (isMounted && url) setIconUrl(url);
-                }
-            } catch { /* silent */ }
-        };
-        fetch();
-        return () => { isMounted = false; };
-    }, [path]);
-
     const isAUMID = path.includes('!');
     const isSimple = !path.includes('\\') && !path.includes('/') && !isAUMID;
 
     return (
-        <div
-            className="rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden bg-white/[0.04] border border-white/[0.06]"
-            style={{ width: size, height: size }}
-        >
-            {iconUrl ? (
-                <img src={iconUrl} className="w-full h-full object-contain p-1.5" alt="" />
-            ) : isAUMID ? (
-                <Package size={size * 0.5} className="text-blue-400/40" />
-            ) : isSimple ? (
-                <Terminal size={size * 0.5} className="text-emerald-400/40" />
-            ) : (
-                <Monitor size={size * 0.5} className="text-white/20" />
-            )}
-        </div>
+        <NativeAppIcon
+            path={path}
+            size={size}
+            className="app-selector-icon rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden bg-white/[0.04] border border-white/[0.06]"
+            fallback={
+                isAUMID ? <Package size={size * 0.5} className="text-blue-400/40" />
+                    : isSimple ? <Terminal size={size * 0.5} className="text-emerald-400/40" />
+                        : <Monitor size={size * 0.5} className="text-white/20" />
+            }
+        />
     );
 };
 
@@ -102,8 +77,7 @@ export const AppSelector: React.FC<AppSelectorProps> = ({
     subtitle = 'Escolha o tipo de atalho',
 }) => {
     const [tab, setTab] = useState<Tab>('apps');
-    const [apps, setApps] = useState<WindowsApp[]>([]);
-    const [loading, setLoading] = useState(false);
+    const { apps, loading } = useInstalledApps(isOpen && tab === 'apps');
     const [searchTerm, setSearchTerm] = useState('');
     const [urlInput, setUrlInput] = useState('');
     const [urlName, setUrlName] = useState('');
@@ -120,7 +94,6 @@ export const AppSelector: React.FC<AppSelectorProps> = ({
         setUrlName('');
         setFolderPath('');
         setFolderName('');
-        loadApps();
     }, [isOpen, appsOnly]);
 
     // Autofocus search
@@ -135,22 +108,10 @@ export const AppSelector: React.FC<AppSelectorProps> = ({
         if (!isOpen) document.body.style.cursor = 'default';
     }, [isOpen]);
 
-    const loadApps = async () => {
-        setLoading(true);
-        try {
-            if (window.electron?.getInstalledApps) {
-                const list = await window.electron.getInstalledApps();
-                setApps(list || []);
-            }
-        } catch { /* silent */ } finally {
-            setLoading(false);
-        }
-    };
-
     const filteredApps = useMemo(() => {
         const t = searchTerm.toLowerCase();
         return !t ? apps : apps.filter(a =>
-            a.Name.toLowerCase().includes(t) || a.DisplayName.toLowerCase().includes(t)
+            `${a.Name || ''} ${a.DisplayName || ''}`.toLowerCase().includes(t)
         );
     }, [apps, searchTerm]);
 
@@ -166,7 +127,8 @@ export const AppSelector: React.FC<AppSelectorProps> = ({
     };
 
     const handleAppSelect = (app: WindowsApp) => {
-        onAppSelect({ name: app.DisplayName, path: app.Path, type: 'app' });
+        if (!app.Path) return;
+        onAppSelect({ name: app.DisplayName || app.Name || app.Path, path: app.Path, type: 'app' });
         document.body.style.cursor = 'default';
         onClose();
     };
@@ -326,10 +288,12 @@ export const AppSelector: React.FC<AppSelectorProps> = ({
                                                     onClick={() => handleAppSelect(app)}
                                                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left group hover:bg-white/[0.06] active:bg-white/10 transition-all duration-150 cursor-pointer"
                                                 >
-                                                    <AppIcon path={app.Path} size={36} />
+                                                    <AppIcon path={app.Path || ''} size={36} />
                                                     <div className="flex-1 min-w-0">
-                                                        <div className="text-sm font-medium text-white/80 group-hover:text-white truncate transition-colors">{app.DisplayName}</div>
-                                                        <div className="text-[10px] text-white/20 font-mono truncate mt-0.5">{app.Path}</div>
+                                                        <div className="text-sm font-medium text-white/80 group-hover:text-white truncate transition-colors">{app.DisplayName || app.Name}</div>
+                                                        <div className={`text-[10px] text-white/20 truncate mt-0.5 ${appsOnly ? '' : 'font-mono'}`}>
+                                                            {appsOnly ? 'Aplicativo instalado' : app.Path}
+                                                        </div>
                                                     </div>
                                                     <ChevronRight size={14} className="text-white/10 group-hover:text-white/40 transition-all -translate-x-1 group-hover:translate-x-0 flex-shrink-0" />
                                                 </motion.button>
