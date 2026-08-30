@@ -103,8 +103,8 @@ Requires **Windows 10 or 11** and **Node 20+**. Windows-only by design: the trig
 icon pipeline and the window handling all depend on Win32 behaviour.
 
 ```bash
-git clone https://github.com/HenryCauan/zenith-app
-cd zenith-app
+git clone https://github.com/HenryCauan/rovyl
+cd rovyl
 npm install
 npm start
 ```

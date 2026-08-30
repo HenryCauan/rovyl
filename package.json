@@ -7,7 +7,7 @@
   "description": "Rovyl radial launcher",
   "repository": {
     "type": "git",
-    "url": "https://github.com/HenryCauan/Rovyl.git"
+    "url": "https://github.com/HenryCauan/rovyl.git"
   },
   "scripts": {
     "dev": "vite",
