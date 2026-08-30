@@ -166,10 +166,17 @@ period, is the fix.
 ## Release
 
 ```bash
-npm run build
 $env:GH_TOKEN = "<token with contents:write on this repository>"
-npx electron-builder --win --publish always
+npm run dist -- --publish always
 ```
+
+Always go through `scripts/run-electron-builder.mjs` — which is what `npm run dist` does —
+rather than calling `electron-builder` directly. The runner picks the output directory, and
+`ZENITH_BUILD_OUTPUT` overrides it. That override is the escape hatch for a real and
+recurring failure: Windows security software opens `build-outwin-unpackedesourcesapp.asar`
+to inspect it and does not always let go, and the next packaging run dies on
+`EnsureEmptyDir` because it cannot delete a file nothing of yours is holding. Build
+somewhere else and the run completes; the stale file disappears on the next reboot.
 
 `build.publish` in `package.json` points at this repository, so the source and the builds
 made from it live in one place. It must be public: the updater reads `latest.yml` from the
