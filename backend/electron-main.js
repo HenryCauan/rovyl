@@ -1597,9 +1597,18 @@ function showMenuAtCursor(source = "shortcut") {
 }
 
 /**
- * Em `small` não há absolutamente nada para desenhar — o HWND encolhe ao canto e é escondido.
- * Deixá-lo ao tamanho do monitor mantinha uma janela layered topmost que o DWM compõe em cada frame
- * e que recebe todo o hit-testing do rato: ~22% de `dwm|3d`, com cursor e arrasto lentos em todo o sistema.
+ * Em `small` não há nada para desenhar, mas o HWND NÃO é escondido nem encolhido: `smallModeBounds`
+ * mantém-no nos bounds do radial (988×988, centrado) e visível — ver "Repouso estável" mais abaixo,
+ * que troca isso por não precisar de hide/show nem resize ao abrir. Este comentário descrevia o
+ * comportamento antigo e ficou a mentir durante várias investigações de lag; a redação anterior era
+ * "o HWND encolhe ao canto e é escondido".
+ *
+ * O risco que o texto antigo descrevia é real mas é de COMPOSIÇÃO (DWM/MPO), não de input: uma
+ * janela layered topmost ao tamanho do monitor fá-la compor em cada frame. Medido nesta máquina, a
+ * caixa de 988×988 em repouso não move a agulha do `dwm` (4,5% -> 4,3%, dentro do ruído). Se algum
+ * dia se quiser mesmo eliminá-la, estacionar os bounds fora do desktop visível preserva a
+ * superfície quente; esconder reintroduz o flash de textura obsoleta que o handshake de abertura
+ * existe para evitar.
  *
  * Existia aqui uma flag `overlayHudActive` para o caso de haver um HUD (faixa de Pomodoro/Cronómetro).
  * Além de os widgets já não existirem, a flag causava um artefacto: ao FECHAR o radial, o renderer
@@ -2607,9 +2616,17 @@ function configureAutoUpdates() {
 }
 
 app.whenReady().then(async () => {
-  /** Compila/inicializa o helper em repouso; ao abrir o radial o bloqueio entra sem atraso. */
-  ensureRadialMouseBlocker();
   if (!gotTheLock) return;
+
+  /**
+   * Compila/inicializa o helper em repouso; ao abrir o radial o bloqueio entra sem atraso.
+   *
+   * DEPOIS do `gotTheLock`: uma segunda instância vai fechar-se a seguir, e arrancar aqui o
+   * helper deixava um `powershell` com um hook WH_MOUSE_LL global pendurado no arranque que foi
+   * rejeitado. `setRadialMouseBlocking` e `setRadialTriggerCapture` também o garantem, por isso
+   * esta chamada é só aquecimento — nunca a única.
+   */
+  ensureRadialMouseBlocker();
 
   configureAutoUpdates();
 
@@ -4490,7 +4507,8 @@ app.whenReady().then(async () => {
     return isDev ? p : p.replace("app.asar", "app.asar.unpacked");
   };
 
-  // 2. PowerShell middle-button monitor (GetAsyncKeyState; never intercepts cursor movement)
+  // 2. Captura do botão do meio pelo hook WH_MOUSE_LL global em `backend/mouse-blocker.ps1`.
+  //    NÃO é sondagem: o hook vê todos os eventos de rato do sistema, movimento incluído.
   let mouseHook = null;
   /** Botão com que a sonda atual foi lançada — comparado para saber se é preciso relançá-la. */
   let activeMouseHookButton = "middle";
@@ -4712,8 +4730,16 @@ app.whenReady().then(async () => {
   stopMouseHookForShutdown = stopMouseHook;
 
   syncMouseHookState = () => {
-    // MMB remains global, but uses GetAsyncKeyState polling rather than WH_MOUSE_LL. The old
-    // low-level hook was invoked synchronously for every pointer movement and could delay the cursor.
+    /**
+     * O gatilho É um hook WH_MOUSE_LL global (`backend/mouse-blocker.ps1`), não sondagem — este
+     * comentário afirmava o contrário e foi por isso que uma regressão de lag global sobreviveu a
+     * várias investigações. Tem de ser o hook a detetar E a engolir: um poller `GetAsyncKeyState`
+     * só observava, o clique seguia para a janela por baixo e o Windows entrava em autoscroll.
+     *
+     * INVARIANTE: nada que bloqueie, aloque ou enumere pode correr no thread que serve esse hook —
+     * todo o rato do sistema passa por lá, serializado. Um watchdog de 15 ms que chamava
+     * `Process.GetProcessById` custava 12 ms por tique e engasgava o ecrã inteiro.
+     */
     const wantHook = cachedRadialFlags.enableMouseTrigger;
     /** Trocar de botão exige relançar a sonda: o VK é passado no arranque do processo. */
     /** Botao OU modo: ambos vao no comando TRIGGER, logo qualquer um exige re-armar a captura. */
