@@ -9,6 +9,7 @@ using System.Windows.Forms;
 
 public static class ZenithRadialMouseBlocker {
     private const int WH_MOUSE_LL = 14;
+    private const int WM_MOUSEMOVE = 0x0200;
     private const int WM_LBUTTONDOWN = 0x0201;
     private const int WM_LBUTTONUP = 0x0202;
     private const int WM_LBUTTONDBLCLK = 0x0203;
@@ -28,6 +29,9 @@ public static class ZenithRadialMouseBlocker {
     private const int MOUSEEVENTF_MIDDLEUP = 0x0040;
     private const int MOUSEEVENTF_XDOWN = 0x0080;
     private const int MOUSEEVENTF_XUP = 0x0100;
+
+    private const uint SYNCHRONIZE = 0x00100000;
+    private const uint INFINITE = 0xFFFFFFFF;
 
     /** Assinatura dos eventos que nos proprios injetamos, para o hook nao os voltar a engolir. */
     private const uint SYNTHETIC_TAG = 0x524F5659;
@@ -64,15 +68,31 @@ public static class ZenithRadialMouseBlocker {
     private static extern IntPtr GetModuleHandle(string moduleName);
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint count, INPUT[] inputs, int size);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr OpenProcess(uint access, bool inheritHandle, int processId);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(IntPtr handle);
 
     private static readonly ConcurrentQueue<string> Commands = new ConcurrentQueue<string>();
     private static readonly ConcurrentQueue<int> Passthroughs = new ConcurrentQueue<int>();
+    private static readonly ConcurrentQueue<string> Outbound = new ConcurrentQueue<string>();
+    private static readonly AutoResetEvent OutboundSignal = new AutoResetEvent(false);
     private static readonly LowLevelMouseProc Callback = HookCallback;
-    private static readonly object WriteLock = new object();
     private static IntPtr Hook = IntPtr.Zero;
     private static volatile bool Blocking;
     private static int Left, Top, Right, Bottom;
     private static int MonitorLeft, MonitorTop, MonitorRight, MonitorBottom;
+
+    /**
+     * Deslocamentos dos campos que o hook precisa de ler. `Marshal.PtrToStructure` encaixotava a
+     * MSLLHOOKSTRUCT inteira a CADA evento; com um rato de 1000 Hz isso e lixo para o GC no unico
+     * thread por onde passa todo o rato do sistema. Ler tres campos soltos nao aloca nada.
+     */
+    private static readonly int OffsetPoint = (int)Marshal.OffsetOf(typeof(MSLLHOOKSTRUCT), "pt");
+    private static readonly int OffsetMouseData = (int)Marshal.OffsetOf(typeof(MSLLHOOKSTRUCT), "mouseData");
+    private static readonly int OffsetExtraInfo = (int)Marshal.OffsetOf(typeof(MSLLHOOKSTRUCT), "dwExtraInfo");
 
     /**
      * Captura do botao de disparo.
@@ -93,8 +113,23 @@ public static class ZenithRadialMouseBlocker {
     /** Uma pressao mais longa que isto foi intencao de abrir a roda, nao um clique. */
     private const long PASSTHROUGH_MAX_MS = 250;
 
+    /**
+     * Escrever no stdout a partir do hook e um risco real: se o pai parar de ler, o pipe enche e o
+     * `Console.WriteLine` BLOQUEIA -- e o thread bloqueado e justamente o que serve o hook, ou seja,
+     * congela o rato de todo o sistema ate ao `LowLevelHooksTimeout`. Enfileirar e devolver e sempre
+     * O(1); um thread dedicado faz a escrita.
+     */
     private static void Emit(string line) {
-        lock (WriteLock) { Console.WriteLine(line); Console.Out.Flush(); }
+        Outbound.Enqueue(line);
+        OutboundSignal.Set();
+    }
+
+    private static void DrainOutbound() {
+        string line;
+        while (Outbound.TryDequeue(out line)) {
+            Console.WriteLine(line);
+            Console.Out.Flush();
+        }
     }
 
     private static bool IsBlockedMessage(int message) {
@@ -123,23 +158,41 @@ public static class ZenithRadialMouseBlocker {
     private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam) {
         if (nCode < 0) return CallNextHookEx(Hook, nCode, wParam, lParam);
 
-        var data = (MSLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(MSLLHOOKSTRUCT));
+        int message = wParam.ToInt32();
+
+        /**
+         * Todo o rato do sistema passa por aqui, serializado. O WM_MOUSEMOVE e a esmagadora maioria
+         * dos eventos (um rato gaming de 1000 Hz gera mil por segundo) e NUNCA e acionavel: nao esta
+         * em `IsBlockedMessage` nem em `TriggerFor`. Sair antes de tocar no lParam poupa o
+         * marshalling em ~99% dos eventos.
+         */
+        if (message == WM_MOUSEMOVE) return CallNextHookEx(Hook, nCode, wParam, lParam);
+
+        int trigger = TriggerButton;
+        bool blocking = Blocking;
+        /** Sem gatilho armado nem bloqueio ativo nao ha decisao nenhuma a tomar. */
+        if (trigger == 0 && !blocking) return CallNextHookEx(Hook, nCode, wParam, lParam);
+
+        ulong extraInfo = IntPtr.Size == 8
+            ? (ulong)Marshal.ReadInt64(lParam, OffsetExtraInfo)
+            : (ulong)(uint)Marshal.ReadInt32(lParam, OffsetExtraInfo);
 
         /** Os nossos proprios cliques devolvidos passam sem serem reinterpretados. */
-        if ((uint)data.dwExtraInfo.ToUInt64() == SYNTHETIC_TAG) {
+        if ((uint)extraInfo == SYNTHETIC_TAG) {
             return CallNextHookEx(Hook, nCode, wParam, lParam);
         }
 
-        int message = wParam.ToInt32();
-        int trigger = TriggerButton;
+        int px = Marshal.ReadInt32(lParam, OffsetPoint);
+        int py = Marshal.ReadInt32(lParam, OffsetPoint + 4);
 
         if (trigger != 0) {
             bool isDown;
-            int which = TriggerFor(message, data.mouseData, out isDown);
+            uint mouseData = (uint)Marshal.ReadInt32(lParam, OffsetMouseData);
+            int which = TriggerFor(message, mouseData, out isDown);
             if (which == trigger) {
                 if (isDown) {
-                    DownX = data.pt.x;
-                    DownY = data.pt.y;
+                    DownX = px;
+                    DownY = py;
                     DownAt = Environment.TickCount;
                     Emit("TRIGGER_DOWN");
                 } else {
@@ -149,8 +202,8 @@ public static class ZenithRadialMouseBlocker {
                      * botao do meio. Devolvemos o clique a janela por baixo -- mas fora do hook,
                      * porque injetar aqui reentraria nele.
                      */
-                    int dx = data.pt.x - DownX;
-                    int dy = data.pt.y - DownY;
+                    int dx = px - DownX;
+                    int dy = py - DownY;
                     long held = Environment.TickCount - DownAt;
                     int threshold = TriggerThreshold;
                     if (TriggerHoldMode && held <= PASSTHROUGH_MAX_MS &&
@@ -162,10 +215,10 @@ public static class ZenithRadialMouseBlocker {
             }
         }
 
-        if (Blocking && IsBlockedMessage(message)) {
-            bool insideAllowed = data.pt.x >= Left && data.pt.x < Right && data.pt.y >= Top && data.pt.y < Bottom;
-            bool insideMonitor = data.pt.x >= MonitorLeft && data.pt.x < MonitorRight &&
-                                 data.pt.y >= MonitorTop && data.pt.y < MonitorBottom;
+        if (blocking && IsBlockedMessage(message)) {
+            bool insideAllowed = px >= Left && px < Right && py >= Top && py < Bottom;
+            bool insideMonitor = px >= MonitorLeft && px < MonitorRight &&
+                                 py >= MonitorTop && py < MonitorBottom;
             if (insideMonitor && !insideAllowed) return new IntPtr(1);
         }
 
@@ -258,6 +311,16 @@ public static class ZenithRadialMouseBlocker {
 
     public static void Run(int parentPid) {
         var context = new ApplicationContext();
+
+        var output = new Thread(() => {
+            while (true) {
+                OutboundSignal.WaitOne();
+                DrainOutbound();
+            }
+        });
+        output.IsBackground = true;
+        output.Start();
+
         var input = new Thread(() => {
             string line;
             while ((line = Console.ReadLine()) != null) Commands.Enqueue(line);
@@ -266,11 +329,33 @@ public static class ZenithRadialMouseBlocker {
         input.IsBackground = true;
         input.Start();
 
+        /**
+         * Vigia do pai SEM sondagem.
+         *
+         * O tick do timer chamava `Process.GetProcessById(parentPid)`. No Windows PowerShell
+         * (.NET Framework) essa chamada tira um retrato de TODA a tabela de processos: medidos
+         * ~12 ms com 350 processos -- num timer de 15 ms, ou seja, 80% do tempo ocupado. E o timer
+         * corre no MESMO thread que serve o hook WH_MOUSE_LL, por onde o Windows serializa todo o
+         * rato do sistema. Resultado: o ecra inteiro engasgava, nao so o radial.
+         *
+         * Um handle SYNCHRONIZE mais `WaitForSingleObject` deteta a morte do pai instantaneamente e
+         * nao custa absolutamente nada enquanto ele estiver vivo.
+         */
+        var parentWatch = new Thread(() => {
+            IntPtr handle = OpenProcess(SYNCHRONIZE, false, parentPid);
+            /** Se o handle falhar, o EOF do stdin continua a ser a rede de seguranca. */
+            if (handle == IntPtr.Zero) return;
+            WaitForSingleObject(handle, INFINITE);
+            CloseHandle(handle);
+            Commands.Enqueue("EXIT");
+        });
+        parentWatch.IsBackground = true;
+        parentWatch.Start();
+
+        /** So esvaziar filas: microssegundos por tick, ao contrario do retrato de processos. */
         var timer = new System.Windows.Forms.Timer();
         timer.Interval = 15;
         timer.Tick += (sender, args) => {
-            try { Process.GetProcessById(parentPid); }
-            catch { Commands.Enqueue("EXIT"); }
             string command;
             while (Commands.TryDequeue(out command)) Apply(command, context);
             int passthrough;
@@ -282,6 +367,7 @@ public static class ZenithRadialMouseBlocker {
         timer.Stop();
         TriggerButton = 0;
         DisableBlocking();
+        DrainOutbound();
     }
 }
 "@
