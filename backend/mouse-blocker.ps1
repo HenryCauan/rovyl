@@ -247,6 +247,27 @@ public static class ZenithRadialMouseBlocker {
         }
     }
 
+    /**
+     * O Windows remove SILENCIOSAMENTE um hook WH_MOUSE_LL se o callback exceder o
+     * `LowLevelHooksTimeout` (por omissao ~300 ms) uma unica vez -- p.ex. um pico de carga do
+     * sistema. O nosso `Hook` continua nao-nulo, portanto `InstallHook` nunca o reinstala e o
+     * gatilho fica morto ate reiniciar a app. Reinstalar periodicamente e barato (SetWindowsHookEx
+     * custa microssegundos) e garante recuperacao automatica sem sondagem nem trabalho no thread.
+     * Instala o novo ANTES de largar o antigo para nunca haver um intervalo sem hook.
+     */
+    private static void ReArmHook() {
+        if (TriggerButton == 0 && !Blocking) return;
+        IntPtr fresh;
+        using (var process = Process.GetCurrentProcess())
+        using (var module = process.MainModule) {
+            fresh = SetWindowsHookEx(WH_MOUSE_LL, Callback, GetModuleHandle(module.ModuleName), 0);
+        }
+        if (fresh == IntPtr.Zero) return; // reinstalacao falhou: mantem o hook atual
+        IntPtr old = Hook;
+        Hook = fresh;
+        if (old != IntPtr.Zero && old != fresh) UnhookWindowsHookEx(old);
+    }
+
     /** O hook fica enquanto houver motivo: bloqueio do radial OU captura do botao de disparo. */
     private static void ReleaseHookIfIdle() {
         if (Blocking || TriggerButton != 0) return;
@@ -362,8 +383,20 @@ public static class ZenithRadialMouseBlocker {
             while (Passthroughs.TryDequeue(out passthrough)) SendPassthrough(passthrough);
         };
         timer.Start();
+
+        /**
+         * Vigia de recuperacao do hook: reinstala periodicamente enquanto o gatilho/bloqueio estiver
+         * ativo, para o caso de o Windows ter evictado o hook por timeout. Intervalo folgado (2 s) e
+         * so reinstala quando ha motivo, portanto nao pesa nada em repouso.
+         */
+        var rearmTimer = new System.Windows.Forms.Timer();
+        rearmTimer.Interval = 2000;
+        rearmTimer.Tick += (sender, args) => { ReArmHook(); };
+        rearmTimer.Start();
+
         Emit("READY");
         Application.Run(context);
+        rearmTimer.Stop();
         timer.Stop();
         TriggerButton = 0;
         DisableBlocking();
