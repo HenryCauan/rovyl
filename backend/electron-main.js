@@ -653,20 +653,26 @@ if (!gotTheLock) {
   app.quit();
 } else {
   app.on("second-instance", () => {
-    diagLog("Second instance launch detected — focusing existing window.");
-    if (mainWindow && !mainWindow.isDestroyed()) {
+    diagLog("Second instance launch detected — opening hub.");
+    /**
+     * Relançar o atalho tem de ABRIR o hub, não apenas revelar a janela no estado em que estiver.
+     * Em repouso a janela é a superfície radial transparente com passthrough do rato: um simples
+     * `show()` deixava uma entrada na barra de tarefas sem nada visível. Fazer o mesmo que a bandeja
+     * ("Open Settings") — `ensureMainWindow` + `openSettingsFromMainProcess` — garante o modo
+     * `windowed`, opaco e com o rato ativo, e manda o renderer pintar o hub.
+     */
+    (async () => {
       try {
+        await ensureMainWindow();
         windowBuriedPassive = false;
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.setOpacity(1);
-        applyMousePolicyAfterReveal(mainWindow);
-        mainWindow.setSkipTaskbar(false);
-        mainWindow.show();
-        mainWindow.focus();
+        if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isMinimized()) {
+          mainWindow.restore();
+        }
+        openSettingsFromMainProcess();
       } catch (e) {
         console.error("second-instance focus failed:", e);
       }
-    }
+    })();
   });
 }
 
