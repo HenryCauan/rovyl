@@ -1655,6 +1655,19 @@ let radialMouseBlocker = null;
 let radialMouseBlockerReady = false;
 let pendingRadialMouseBlockCommand = null;
 /**
+ * The trigger lives in a helper process, and a helper process can die — crash, a stray taskkill,
+ * an OS hiccup. Nothing used to notice: `exit` only cleared the reference, `mouseHook` stayed a
+ * truthy flag, and `startMouseHook` returns early on it. The middle button was dead until the
+ * whole app was restarted, with nothing in the log to say why.
+ *
+ * So we remember the armed TRIGGER command and replay it onto a fresh helper.
+ */
+let lastRadialTriggerCommand = null;
+/** A deliberate `stopRadialMouseBlocker` must not look like a death worth recovering from. */
+let radialMouseBlockerStopping = false;
+let radialMouseBlockerRestartTimer = null;
+let radialMouseBlockerRestartAttempts = 0;
+/**
  * Quem recebe TRIGGER_DOWN/TRIGGER_UP. O botao de disparo passou a ser capturado pelo hook do
  * bloqueador em vez de sondado por GetAsyncKeyState: engolir o evento e continuar a deteta-lo
  * por sondagem e impossivel, porque um hook que devolve 1 esconde o botao do GetAsyncKeyState.
@@ -1680,9 +1693,30 @@ function writeRadialMouseBlocker(command) {
   }
 }
 
+/**
+ * Brings the helper back after an unexpected death, and re-arms the trigger on it. Backs off to
+ * 30 s so a helper that cannot start (blocked PowerShell, say) costs one attempt a minute rather
+ * than a spawn loop, and keeps trying — the machine may well recover on its own.
+ */
+function scheduleRadialMouseBlockerRestart() {
+  if (radialMouseBlockerRestartTimer || !lastRadialTriggerCommand) return;
+  const delay = Math.min(1000 * 2 ** radialMouseBlockerRestartAttempts, 30_000);
+  radialMouseBlockerRestartAttempts += 1;
+  radialMouseBlockerRestartTimer = setTimeout(() => {
+    radialMouseBlockerRestartTimer = null;
+    if (radialMouseBlocker || isAppQuitting || !lastRadialTriggerCommand) return;
+    diagLog("[RadialBlocker] Restarting the helper and re-arming the trigger");
+    ensureRadialMouseBlocker();
+    /** Queued by `writeRadialMouseBlocker` until the new helper answers READY. */
+    writeRadialMouseBlocker(lastRadialTriggerCommand);
+  }, delay);
+  radialMouseBlockerRestartTimer.unref?.();
+}
+
 function ensureRadialMouseBlocker() {
   if (process.platform !== "win32" || radialMouseBlocker) return;
   radialMouseBlockerReady = false;
+  radialMouseBlockerStopping = false;
   const child = spawn(
     "powershell",
     [
@@ -1709,6 +1743,8 @@ function ensureRadialMouseBlocker() {
     /** Linha isolada: "TRIGGER_READY" tambem contem READY e nao anuncia o arranque. */
     if (!/^READY\s*$/m.test(text)) return;
     radialMouseBlockerReady = true;
+    /** It is up: the next death starts counting from scratch. */
+    radialMouseBlockerRestartAttempts = 0;
     if (pendingRadialMouseBlockCommand) {
       const command = pendingRadialMouseBlockCommand;
       pendingRadialMouseBlockCommand = null;
@@ -1718,11 +1754,25 @@ function ensureRadialMouseBlocker() {
   child.stderr.on("data", (data) => {
     diagLog(`[RadialBlocker] ${data.toString().trim()}`);
   });
-  child.on("exit", () => {
+  /** A failed spawn emits `error` and may never emit `exit`: recover from here too. */
+  child.on("error", (err) => {
+    diagLog(`[RadialBlocker] Spawn failed: ${err.message}`);
     if (radialMouseBlocker === child) {
       radialMouseBlocker = null;
       radialMouseBlockerReady = false;
     }
+    if (radialMouseBlockerStopping || isAppQuitting) return;
+    scheduleRadialMouseBlockerRestart();
+  });
+
+  child.on("exit", (code, signal) => {
+    if (radialMouseBlocker !== child) return;
+    radialMouseBlocker = null;
+    radialMouseBlockerReady = false;
+    if (radialMouseBlockerStopping || isAppQuitting) return;
+    /** Logged on purpose: without this line a dead trigger left no trace at all. */
+    diagLog(`[RadialBlocker] Helper exited unexpectedly (code=${code} signal=${signal})`);
+    scheduleRadialMouseBlockerRestart();
   });
 }
 
@@ -1741,11 +1791,15 @@ function setRadialMouseBlocking(bounds, monitorBounds) {
 function setRadialTriggerCapture(virtualKey, mode, slop) {
   if (process.platform !== "win32") return;
   ensureRadialMouseBlocker();
-  writeRadialMouseBlocker(`TRIGGER ${virtualKey} ${mode} ${slop}`);
+  /** Remembered so a replacement helper comes up armed the same way. */
+  lastRadialTriggerCommand = `TRIGGER ${virtualKey} ${mode} ${slop}`;
+  writeRadialMouseBlocker(lastRadialTriggerCommand);
 }
 
 function clearRadialTriggerCapture() {
   if (process.platform !== "win32") return;
+  /** No trigger armed: a helper that dies now has nothing to be brought back for. */
+  lastRadialTriggerCommand = null;
   if (!radialMouseBlocker) return;
   writeRadialMouseBlocker("TRIGGER OFF");
 }
@@ -1758,6 +1812,11 @@ function clearRadialMouseBlocking() {
 
 function stopRadialMouseBlocker() {
   pendingRadialMouseBlockCommand = null;
+  radialMouseBlockerStopping = true;
+  if (radialMouseBlockerRestartTimer) {
+    clearTimeout(radialMouseBlockerRestartTimer);
+    radialMouseBlockerRestartTimer = null;
+  }
   if (!radialMouseBlocker) return;
   const child = radialMouseBlocker;
   radialMouseBlocker = null;

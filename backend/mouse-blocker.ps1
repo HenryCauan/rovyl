@@ -81,6 +81,13 @@ public static class ZenithRadialMouseBlocker {
     private static readonly AutoResetEvent OutboundSignal = new AutoResetEvent(false);
     private static readonly LowLevelMouseProc Callback = HookCallback;
     private static IntPtr Hook = IntPtr.Zero;
+    /**
+     * Handle do modulo, resolvido uma unica vez. `Process.MainModule` enumera os modulos do
+     * processo -- barato uma vez no arranque, caro a cada 2 s no `ReArmHook`, e nesta thread
+     * exatamente: e ela que serve o callback do hook, e um Tick lento e o que faz o Windows
+     * despejar o hook. O vigia nao pode ser a causa daquilo que existe para corrigir.
+     */
+    private static IntPtr ModuleHandle = IntPtr.Zero;
     private static volatile bool Blocking;
     private static int Left, Top, Right, Bottom;
     private static int MonitorLeft, MonitorTop, MonitorRight, MonitorBottom;
@@ -239,12 +246,18 @@ public static class ZenithRadialMouseBlocker {
         SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT)));
     }
 
-    private static void InstallHook() {
-        if (Hook != IntPtr.Zero) return;
+    private static IntPtr EnsureModuleHandle() {
+        if (ModuleHandle != IntPtr.Zero) return ModuleHandle;
         using (var process = Process.GetCurrentProcess())
         using (var module = process.MainModule) {
-            Hook = SetWindowsHookEx(WH_MOUSE_LL, Callback, GetModuleHandle(module.ModuleName), 0);
+            ModuleHandle = GetModuleHandle(module.ModuleName);
         }
+        return ModuleHandle;
+    }
+
+    private static void InstallHook() {
+        if (Hook != IntPtr.Zero) return;
+        Hook = SetWindowsHookEx(WH_MOUSE_LL, Callback, EnsureModuleHandle(), 0);
     }
 
     /**
@@ -257,11 +270,7 @@ public static class ZenithRadialMouseBlocker {
      */
     private static void ReArmHook() {
         if (TriggerButton == 0 && !Blocking) return;
-        IntPtr fresh;
-        using (var process = Process.GetCurrentProcess())
-        using (var module = process.MainModule) {
-            fresh = SetWindowsHookEx(WH_MOUSE_LL, Callback, GetModuleHandle(module.ModuleName), 0);
-        }
+        IntPtr fresh = SetWindowsHookEx(WH_MOUSE_LL, Callback, EnsureModuleHandle(), 0);
         if (fresh == IntPtr.Zero) return; // reinstalacao falhou: mantem o hook atual
         IntPtr old = Hook;
         Hook = fresh;
