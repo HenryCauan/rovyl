@@ -135,6 +135,14 @@ The direct build keeps both: `electron-updater` against this repository's releas
 license key. There is no native update dialog — the main process emits `update-state`, the
 wheel shows a badge on the hub, and Settings → Advanced offers the restart.
 
+Applying the update is `beginUpdateInstall()`, and every path goes through it: the Settings
+row, and the end of the quit flush. `autoInstallOnAppQuit` is deliberately off — it hooks
+the `quit` event, which this process does not always emit (the persistence flush ends in
+`app.exit(0)`, skipping `will-quit`), so the download was never applied and the same version
+was re-announced on every launch. The install is silent (`/S`) with `--force-run`: the NSIS
+installer here is the assisted one, and in interactive mode the update waits behind a wizard
+the user is closing, then never relaunches the app.
+
 For direct clients to see an update, `version` in `package.json` must be higher than the
 installed one, and the release must carry `latest.yml` alongside the installer. For the
 Store, the version must simply be higher than the published one and end in `.0`.

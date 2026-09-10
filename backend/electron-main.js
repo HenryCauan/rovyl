@@ -885,6 +885,15 @@ app.on("before-quit", (event) => {
     if (finished) return;
     finished = true;
     if (timeoutId != null) clearTimeout(timeoutId);
+    /**
+     * Update already downloaded: install it HERE, after the flush.
+     *
+     * `electron-updater`'s `autoInstallOnAppQuit` hooks the `quit` event, and this exit is an
+     * `app.exit(0)` — which skips `will-quit` and leaves the PowerShell helpers alive, holding
+     * files inside the install directory. The update was never applied: the same version was
+     * downloaded and offered again on every launch, forever.
+     */
+    if (beginUpdateInstall()) return;
     app.exit(0);
   };
 
@@ -2569,6 +2578,59 @@ function notifyRendererUpdateState(state, version) {
   }
 }
 
+/** `1.2.10` > `1.2.9`: compare number by number, not string by string. */
+function isNewerThanInstalled(version) {
+  if (typeof version !== "string" || version.length === 0) return false;
+  const parts = (v) => v.split(/[.+-]/).map((n) => parseInt(n, 10) || 0);
+  const a = parts(version);
+  const b = parts(app.getVersion());
+  for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
+    const diff = (a[i] ?? 0) - (b[i] ?? 0);
+    if (diff !== 0) return diff > 0;
+  }
+  return false;
+}
+
+/**
+ * Runs the installer for the already-downloaded update and exits. Returns `false` when there is
+ * nothing to install — the caller then proceeds with its own exit.
+ *
+ * Silent, and with relaunch. The installer is the assisted one (`oneClick: false`): in
+ * interactive mode the update sat waiting for someone to click "Next" in a window that pops up
+ * exactly while the user is closing everything — and if that window was dismissed, nothing was
+ * installed and the badge came back on the next launch. With `/S` NSIS replaces the files with no
+ * wizard, and `--force-run` brings Rovyl back on its own.
+ */
+function beginUpdateInstall() {
+  if (updateInstallInProgress) return false;
+  if (!app.isPackaged || process.platform !== "win32" || isStoreBuild()) return false;
+  if (lastKnownUpdate.state !== "ready") return false;
+
+  diagLog(`[Update] Installing version ${lastKnownUpdate.version ?? "?"}`);
+  updateInstallInProgress = true;
+
+  /**
+   * Stop the helpers BEFORE exiting. `will-quit` stops them too, but not every exit goes through
+   * it, and one orphaned PowerShell holding a file from the install directory is enough to make
+   * the replacement fail.
+   */
+  stopMouseHookForShutdown();
+  stopRadialMouseBlocker();
+  stopForegroundFocusHelper();
+
+  try {
+    autoUpdater.quitAndInstall(true, true);
+  } catch (error) {
+    diagLog(`[Update] quitAndInstall failed: ${error?.message || error}`);
+    updateInstallInProgress = false;
+    return false;
+  }
+
+  /** `quitAndInstall` asks to quit in a `setImmediate`; if anything holds it back, force the exit. */
+  setTimeout(() => app.exit(0), 4000).unref?.();
+  return true;
+}
+
 function configureAutoUpdates() {
   if (!app.isPackaged || process.platform !== "win32") return;
 
@@ -2583,13 +2645,23 @@ function configureAutoUpdates() {
   }
 
   autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
+  /**
+   * Install-on-quit is ours, in `beginUpdateInstall`. The `electron-updater` one runs on the
+   * `quit` event, which this app does not always emit (it exits through `app.exit(0)`) and which
+   * fires before the helpers stop — an installer running against files that are still open.
+   */
+  autoUpdater.autoInstallOnAppQuit = false;
 
   autoUpdater.on("error", (error) => {
     diagLog(`[Update] ${error?.message || error}`);
   });
 
   autoUpdater.on("update-available", (info) => {
+    /** Announcing a version that is not above the installed one is the badge asking for what is already done. */
+    if (!isNewerThanInstalled(info?.version)) {
+      diagLog(`[Update] Ignoring version ${info?.version} — not above ${app.getVersion()}`);
+      return;
+    }
     diagLog(`[Update] Downloading version ${info.version}`);
     notifyRendererUpdateState("downloading", info.version);
   });
@@ -2603,6 +2675,7 @@ function configureAutoUpdates() {
    * interrompe: o selo no hub do radial, e uma linha nas Definições com a ação.
    */
   autoUpdater.on("update-downloaded", (info) => {
+    if (!isNewerThanInstalled(info?.version)) return;
     diagLog(`[Update] Downloaded version ${info.version}`);
     notifyRendererUpdateState("ready", info.version);
   });
@@ -5823,7 +5896,7 @@ ipcMain.handle("check-for-updates", async () => {
   try {
     const result = await autoUpdater.checkForUpdates();
     const version = result?.updateInfo?.version;
-    if (version && version !== app.getVersion()) {
+    if (isNewerThanInstalled(version)) {
       return { ok: true, state: "downloading", version };
     }
     return { ok: true, state: "current", version: app.getVersion() };
@@ -5835,25 +5908,8 @@ ipcMain.handle("check-for-updates", async () => {
 
 /** Reinício para instalar — o utilizador escolhe o momento, na linha das Definições. */
 ipcMain.on("install-update-now", () => {
-  if (isStoreBuild()) return;
-  if (lastKnownUpdate.state !== "ready") return;
-  diagLog("[Update] Instalação pedida pelo utilizador");
-  updateInstallInProgress = true;
-
-  /**
-   * Parar os helpers ANTES de sair. O `will-quit` também os para, mas o `quitAndInstall` corre o
-   * instalador assim que o processo termina, e um PowerShell órfão com um ficheiro da pasta de
-   * instalação aberto chega para a substituição falhar.
-   */
-  stopMouseHookForShutdown();
-  stopRadialMouseBlocker();
-  stopForegroundFocusHelper();
-
-  /**
-   * `isForceRunAfter: true` — sem isto o NSIS instala e NÃO relança a app, obrigando o utilizador
-   * a abri-la à mão. Uma app que vive na bandeja simplesmente desaparecia depois de atualizar.
-   */
-  autoUpdater.quitAndInstall(false, true);
+  diagLog("[Update] Install requested by the user");
+  beginUpdateInstall();
 });
 
 ipcMain.on("request-keyboard-focus", () => {
