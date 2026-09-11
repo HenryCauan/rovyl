@@ -8,8 +8,6 @@ A radial launcher for Windows. Hold the middle mouse button anywhere, aim, relea
 
 [![Microsoft Store](https://img.shields.io/badge/Microsoft%20Store-Get%20it-0067b8?style=flat-square&logo=microsoft)](https://apps.microsoft.com/detail/9N03SVPMXSV1)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078d4?style=flat-square)
-![Electron](https://img.shields.io/badge/Electron-28-47848f?style=flat-square&logo=electron&logoColor=white)
-![React](https://img.shields.io/badge/React-19-149eca?style=flat-square&logo=react&logoColor=white)
 
 </div>
 
@@ -26,9 +24,7 @@ mouse button and a wheel blooms under your cursor. Move toward what you want. Re
 The whole thing takes less than a second, happens wherever you already were, and never
 puts a window between you and your work.
 
-<div align="center">
-<img src="docs/media/wheel.png" alt="The Rovyl wheel open over the desktop" width="620">
-</div>
+https://github.com/user-attachments/assets/16e57138-9344-42d8-a33e-cd66cb92dadc
 
 ## Features
 
@@ -46,47 +42,10 @@ puts a window between you and your work.
 **From the Microsoft Store** — [apps.microsoft.com](https://apps.microsoft.com/detail/9N03SVPMXSV1).
 Installs and updates automatically, no security warnings.
 
+**Direct download** — the installer on the [latest release](https://github.com/HenryCauan/rovyl/releases/latest).
+Updates itself from there on.
+
 **From source** — see [Building](#building) below.
-
-## How it works
-
-<table>
-<tr>
-<td width="50%" valign="top">
-
-**Hold**
-
-Press and hold the middle mouse button anywhere in Windows. The wheel appears centred on
-your cursor — you never move to reach it.
-
-</td>
-<td width="50%" valign="top">
-
-**Aim**
-
-Move toward the shortcut you want. In direction mode the slice you point at lights up from
-anywhere on screen; in pointer mode only the icon under the cursor does.
-
-</td>
-</tr>
-<tr>
-<td valign="top">
-
-**Release**
-
-The target opens and the wheel disappears. Release in the centre, or press Escape, to
-cancel without launching anything.
-
-</td>
-<td valign="top">
-
-**Switch**
-
-Number keys move between workspaces while the wheel is open, or use the picker in the hub.
-
-</td>
-</tr>
-</table>
 
 ## Screenshots
 
