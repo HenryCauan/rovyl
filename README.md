@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="docs/media/banner.png" alt="" width="720">
-
 # Rovyl
 
 **One gesture. Any destination.**
