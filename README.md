@@ -27,7 +27,7 @@ The whole thing takes less than a second, happens wherever you already were, and
 puts a window between you and your work.
 
 <div align="center">
-<img src="docs/media/wheel.png" alt="The Rovyl wheel open over the desktop" width="620">
+[<img src="docs/media/wheel.png" alt="The Rovyl wheel open over the desktop" width="620">](https://github.com/user-attachments/assets/16e57138-9344-42d8-a33e-cd66cb92dadc)
 </div>
 
 ## Features
