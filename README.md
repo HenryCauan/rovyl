@@ -13,17 +13,6 @@ A radial launcher for Windows. Hold the middle mouse button anywhere, aim, relea
 
 ---
 
-## Why
-
-Every launcher asks you to stop what you are doing. Open a window, type a few letters,
-read a list, pick a row. It is fast, but it is still an interruption — and your hand
-leaves the mouse.
-
-Rovyl takes a different bet: **you already know where your things are.** Hold the middle
-mouse button and a wheel blooms under your cursor. Move toward what you want. Release.
-The whole thing takes less than a second, happens wherever you already were, and never
-puts a window between you and your work.
-
 https://github.com/user-attachments/assets/16e57138-9344-42d8-a33e-cd66cb92dadc
 
 ## Features
@@ -47,12 +36,6 @@ Updates itself from there on.
 
 **From source** — see [Building](#building) below.
 
-## Screenshots
-
-<div align="center">
-<img src="docs/media/workspaces.png" alt="Workspace cards, each previewing its own wheel" width="440">
-<img src="docs/media/settings.png" alt="Activation settings" width="440">
-</div>
 
 ## Building
 
