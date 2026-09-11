@@ -26,17 +26,6 @@ https://github.com/user-attachments/assets/16e57138-9344-42d8-a33e-cd66cb92dadc
 - **Focus protection** — stays out of the way while you are in a fullscreen game
 - **Fully offline** — no account, no telemetry, no ads, nothing leaves your machine
 
-## Install
-
-**From the Microsoft Store** — [apps.microsoft.com](https://apps.microsoft.com/detail/9N03SVPMXSV1).
-Installs and updates automatically, no security warnings.
-
-**Direct download** — the installer on the [latest release](https://github.com/HenryCauan/rovyl/releases/latest).
-Updates itself from there on.
-
-**From source** — see [Building](#building) below.
-
-
 ## Building
 
 Requires **Windows 10 or 11** and **Node 20+**. Windows-only by design: the trigger, the
