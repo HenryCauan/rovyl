@@ -24,7 +24,12 @@ mouse button and a wheel blooms under your cursor. Move toward what you want. Re
 The whole thing takes less than a second, happens wherever you already were, and never
 puts a window between you and your work.
 
+<<<<<<< HEAD
 https://github.com/user-attachments/assets/16e57138-9344-42d8-a33e-cd66cb92dadc
+=======
+<div align="center">
+</div>
+>>>>>>> 6faf464997d6cbd1a6bf151ddd67a0198834596a
 
 ## Features
 
